@@ -1,0 +1,34 @@
+{
+  "name": "socialboost-ai-fullstack",
+  "version": "1.0.0",
+  "description": "An AI-powered dashboard to streamline social media promotion.",
+  "type": "module",
+  "main": "server.js",
+  "scripts": {
+    "start": "npm run build && node server.js",
+    "dev:client": "vite --force",
+    "dev:server": "nodemon server.js",
+    "dev": "concurrently \"npm:dev:client\" \"npm:dev:server\"",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@google/genai": "^1.12.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "recharts": "^3.1.0"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.3",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-basic-ssl": "^1.1.0",
+    "@vitejs/plugin-react": "^4.3.1",
+    "concurrently": "^8.2.2",
+    "nodemon": "^3.1.4",
+    "typescript": "^5.5.3",
+    "vite": "^5.3.3"
+  }
+}

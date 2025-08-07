@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SocialBoost AI</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              'brand-primary': '#4F46E5',
+              'brand-secondary': '#7C3AED',
+              'brand-light': '#EEF2FF',
+              'dark-bg': '#111827',
+              'dark-card': '#1F2937',
+              'dark-border': '#374151',
+              'dark-text': '#E5E7EB',
+              'dark-text-secondary': '#9CA3AF',
+            },
+          },
+        },
+      };
+    </script>
+<script type="importmap">
+{
+  "imports": {
+    "express": "https://esm.sh/express@^5.1.0",
+    "dotenv/": "https://esm.sh/dotenv@^17.2.1/",
+    "@google/genai": "https://esm.sh/@google/genai@^1.13.0",
+    "cors": "https://esm.sh/cors@^2.8.5",
+    "path": "https://esm.sh/path@^0.12.7",
+    "url": "https://esm.sh/url@^0.11.4",
+    "vite": "https://esm.sh/vite@^7.0.6",
+    "@vitejs/plugin-react": "https://esm.sh/@vitejs/plugin-react@^4.7.0",
+    "@vitejs/plugin-basic-ssl": "https://esm.sh/@vitejs/plugin-basic-ssl@^2.1.0",
+    "react": "https://esm.sh/react@^19.1.1",
+    "react-dom/": "https://esm.sh/react-dom@^19.1.1/",
+    "react/": "https://esm.sh/react@^19.1.1/",
+    "recharts": "https://esm.sh/recharts@^3.1.2"
+  }
+}
+</script>
+</head>
+  <body class="bg-dark-bg text-dark-text">
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
