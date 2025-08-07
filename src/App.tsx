@@ -1,5 +1,6 @@
 
 
+
 import React, { useState, useCallback, useEffect } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { DashboardView } from './components/DashboardView';
@@ -27,6 +28,7 @@ const App: React.FC = () => {
     [Platform.Instagram]: false,
     [Platform.YouTube]: false,
   });
+  const [isFbSdkInitialized, setIsFbSdkInitialized] = useState(false);
 
   // Fetch initial connection state from our own backend on app load.
   useEffect(() => {
@@ -82,7 +84,8 @@ const App: React.FC = () => {
     // Initialize the SDK once it's loaded
     window.fbAsyncInit = function() {
         if (!import.meta.env.VITE_FACEBOOK_APP_ID) {
-            console.error("VITE_FACEBOOK_APP_ID is not defined. Facebook integration will not work. Please create a .env file and add VITE_FACEBOOK_APP_ID=your_app_id");
+            console.error("VITE_FACEBOOK_APP_ID is not defined. Facebook integration will not work.");
+            setIsFbSdkInitialized(false);
             return;
         }
         window.FB.init({
@@ -91,6 +94,7 @@ const App: React.FC = () => {
             xfbml: true,
             version: 'v19.0'
         });
+        setIsFbSdkInitialized(true);
         window.FB.AppEvents.logPageView();
         
         // As you suggested, check the login status on initialization for a smoother UX.
@@ -118,7 +122,7 @@ const App: React.FC = () => {
       case View.SEO_ASSISTANT:
         return <SeoAssistantView />;
       case View.CONNECTIONS:
-        return <ConnectionsView connections={connections} setConnections={setConnections} />;
+        return <ConnectionsView connections={connections} setConnections={setConnections} isFbSdkInitialized={isFbSdkInitialized} />;
       case View.DASHBOARD:
       default:
         return <DashboardView posts={posts} />;

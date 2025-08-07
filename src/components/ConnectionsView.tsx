@@ -2,6 +2,8 @@
 
 
 
+
+
 import React, { useState, useEffect, useRef } from 'react';
 import type { ConnectionStatus, Platform } from '../types';
 import { Platform as PlatformEnum } from '../types';
@@ -13,6 +15,7 @@ import { YoutubeIcon } from './icons/YoutubeIcon';
 interface ConnectionsViewProps {
     connections: ConnectionStatus;
     setConnections: React.Dispatch<React.SetStateAction<ConnectionStatus>>;
+    isFbSdkInitialized: boolean;
 }
 
 const platformConfig = {
@@ -21,7 +24,7 @@ const platformConfig = {
     [PlatformEnum.YouTube]: { icon: <YoutubeIcon className="w-8 h-8" />, color: "text-red-600" },
 };
 
-export const ConnectionsView: React.FC<ConnectionsViewProps> = ({ connections, setConnections }) => {
+export const ConnectionsView: React.FC<ConnectionsViewProps> = ({ connections, setConnections, isFbSdkInitialized }) => {
     const [loadingPlatform, setLoadingPlatform] = useState<Platform | null>(null);
     const [error, setError] = useState<string | null>(null);
     const popupRef = useRef<Window | null>(null);
@@ -30,8 +33,8 @@ export const ConnectionsView: React.FC<ConnectionsViewProps> = ({ connections, s
     const handleConnect = (platform: Platform) => {
         if (platform === PlatformEnum.Facebook) {
             // --- REAL Facebook Login using SDK ---
-            if (!window.FB) {
-                setError('Facebook SDK is not loaded or failed to initialize. Please check your App ID and browser console for errors.');
+            if (!isFbSdkInitialized || !window.FB) {
+                setError('Facebook integration is not available. Please ensure the VITE_FACEBOOK_APP_ID is correctly configured in your environment variables.');
                 return;
             }
     
@@ -164,6 +167,8 @@ export const ConnectionsView: React.FC<ConnectionsViewProps> = ({ connections, s
                         const isConnected = connections[platform];
                         const isLoading = loadingPlatform === platform;
                         const config = platformConfig[platform];
+                        const isFacebook = platform === PlatformEnum.Facebook;
+                        const isConnectActionDisabled = isFacebook && !isConnected && !isFbSdkInitialized;
 
                         return (
                             <li key={platform} className="p-6 flex items-center justify-between">
@@ -178,7 +183,8 @@ export const ConnectionsView: React.FC<ConnectionsViewProps> = ({ connections, s
                                 </div>
                                 <button
                                     onClick={() => isConnected ? handleDisconnect(platform) : handleConnect(platform)}
-                                    disabled={isLoading}
+                                    disabled={isLoading || isConnectActionDisabled}
+                                    title={isConnectActionDisabled ? "Facebook connection is disabled. The VITE_FACEBOOK_APP_ID environment variable is not configured." : ""}
                                     className={`relative inline-flex items-center justify-center px-6 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-offset-dark-card transition-colors disabled:opacity-50 min-w-[130px]
                                         ${isConnected
                                             ? 'bg-red-600 hover:bg-red-700 focus:ring-red-500'
