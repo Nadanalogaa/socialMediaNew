@@ -31,7 +31,7 @@ export const ConnectionsView: React.FC<ConnectionsViewProps> = ({ connections, s
         if (platform === PlatformEnum.Facebook) {
             // --- REAL Facebook Login using SDK ---
             if (!window.FB) {
-                setError('Facebook SDK not loaded yet. Please try again in a moment.');
+                setError('Facebook SDK is not loaded or failed to initialize. Please check your App ID and browser console for errors.');
                 return;
             }
     
@@ -56,7 +56,7 @@ export const ConnectionsView: React.FC<ConnectionsViewProps> = ({ connections, s
                         });
                 } else {
                     console.log('User cancelled login or did not fully authorize.');
-                    const detailedError = 'Facebook login was cancelled or failed. This can happen if you close the login window or if popups are blocked. Please ensure popups are allowed and try again. If the issue persists, the app may not be correctly configured in the Facebook Developer dashboard.';
+                    const detailedError = "Facebook login failed. Please check your browser's console for a 'JSSDK Unknown Host domain' error. This common issue means the app's current URL is not whitelisted. Go to your Facebook Developer dashboard, find the 'Facebook Login for Web' product, and add your app's domain to the 'Allowed Domains for the JavaScript SDK' field.";
                     setError(detailedError);
                     setLoadingPlatform(null);
                 }

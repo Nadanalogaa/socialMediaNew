@@ -64,7 +64,7 @@ const App: React.FC = () => {
         } else if (response.status === 'not_authorized') {
             console.log('User is logged into Facebook, but has not authorized our app.');
         } else {
-            console.log('User is not logged into Facebook.');
+            console.log('User is not logged into Facebook or has not authorized the app.');
         }
     }
 
@@ -81,9 +81,12 @@ const App: React.FC = () => {
 
     // Initialize the SDK once it's loaded
     window.fbAsyncInit = function() {
+        if (!import.meta.env.VITE_FACEBOOK_APP_ID) {
+            console.error("VITE_FACEBOOK_APP_ID is not defined. Facebook integration will not work. Please create a .env file and add VITE_FACEBOOK_APP_ID=your_app_id");
+            return;
+        }
         window.FB.init({
-            // Using the App ID you provided.
-            appId: '607172899117212', 
+            appId: import.meta.env.VITE_FACEBOOK_APP_ID, 
             cookie: true,
             xfbml: true,
             version: 'v19.0'
