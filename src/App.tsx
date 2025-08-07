@@ -1,4 +1,5 @@
 
+
 import React, { useState, useCallback, useEffect } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { DashboardView } from './components/DashboardView';
@@ -60,8 +61,10 @@ const App: React.FC = () => {
                      console.error('Failed to sync Facebook connection on backend:', err);
                 });
 
+        } else if (response.status === 'not_authorized') {
+            console.log('User is logged into Facebook, but has not authorized our app.');
         } else {
-            console.log('User is not connected to Facebook or has not authorized the app.');
+            console.log('User is not logged into Facebook.');
         }
     }
 

@@ -1,6 +1,7 @@
 
 
 
+
 import React, { useState, useEffect, useRef } from 'react';
 import type { ConnectionStatus, Platform } from '../types';
 import { Platform as PlatformEnum } from '../types';
@@ -55,7 +56,8 @@ export const ConnectionsView: React.FC<ConnectionsViewProps> = ({ connections, s
                         });
                 } else {
                     console.log('User cancelled login or did not fully authorize.');
-                    setError('Facebook login was cancelled or failed.');
+                    const detailedError = 'Facebook login was cancelled or failed. This can happen if you close the login window or if popups are blocked. Please ensure popups are allowed and try again. If the issue persists, the app may not be correctly configured in the Facebook Developer dashboard.';
+                    setError(detailedError);
                     setLoadingPlatform(null);
                 }
             }
