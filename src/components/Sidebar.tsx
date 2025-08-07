@@ -72,12 +72,14 @@
           <div>
             <span>&copy; 2024 Nadanaloga</span>
             <span className="mx-1">·</span>
-            <button 
-              onClick={() => setActiveView(ViewEnum.PRIVACY_POLICY)} 
+            <a
+              href="/privacy-policy.html"
+              target="_blank"
+              rel="noopener noreferrer"
               className="hover:text-dark-text underline"
             >
               Privacy Policy
-            </button>
+            </a>
           </div>
         </div>
       </aside>
