@@ -17,6 +17,7 @@ export enum View {
   CREATE_POST = 'CREATE_POST',
   SEO_ASSISTANT = 'SEO_ASSISTANT',
   CONNECTIONS = 'CONNECTIONS',
+  PRIVACY_POLICY = 'PRIVACY_POLICY',
 }
 
 
@@ -64,7 +65,7 @@ export interface MediaAsset {
   id: string;
   file: File;
   previewUrl: string;
-  name: string;
+  name:string;
   prompt: string;
   description: string;
   hashtags: string[];
