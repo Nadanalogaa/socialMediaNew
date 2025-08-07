@@ -37,7 +37,7 @@ export const ConnectionsView: React.FC<ConnectionsViewProps> = ({ connections, s
     
             // Define the callback as a standard function to ensure compatibility with the FB SDK
             function loginCallback(response: any) {
-                if (response.authResponse) {
+                if (response.status === 'connected') {
                     console.log('Facebook login successful. Received authResponse.');
                     const accessToken = response.authResponse.accessToken;
                     // Send token to our backend to verify, store, and confirm connection
@@ -51,9 +51,13 @@ export const ConnectionsView: React.FC<ConnectionsViewProps> = ({ connections, s
                         .finally(() => {
                             setLoadingPlatform(null);
                         });
-                } else {
+                } else if (response.status === 'not_authorized') {
                     console.log('User cancelled login or did not fully authorize.');
-                    const detailedError = "Facebook login failed. Please check your browser's console for a 'JSSDK Unknown Host domain' error. This common issue means the app's current URL is not whitelisted. Go to your Facebook Developer dashboard, find the 'Facebook Login for Web' product, and add your app's domain to the 'Allowed Domains for the JavaScript SDK' field.";
+                    setError('Connection cancelled. Please try again and authorize the application to proceed.');
+                    setLoadingPlatform(null);
+                } else {
+                    console.log('Facebook login failed with status:', response.status);
+                    const detailedError = "Facebook login failed. This might be due to a configuration issue. A common problem for developers is that the app's domain is not whitelisted. Please check your browser's console for a 'JSSDK Unknown Host domain' error and, if present, add your app's URL to the 'Allowed Domains for the JavaScript SDK' list in your Facebook App dashboard.";
                     setError(detailedError);
                     setLoadingPlatform(null);
                 }
