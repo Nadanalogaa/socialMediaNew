@@ -1,6 +1,7 @@
 
 
 
+
 import React, { useState, useCallback, useEffect } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { DashboardView } from './components/DashboardView';
@@ -47,7 +48,7 @@ const App: React.FC = () => {
 
   // Load and initialize the Facebook SDK, and check login status
   useEffect(() => {
-    // This function will be called by FB.getLoginStatus
+    // This function will be called by FB.getLoginStatus and handles state changes.
     function statusChangeCallback(response: any) {
         console.log('Facebook statusChangeCallback:', response);
         if (response.status === 'connected') {
@@ -63,10 +64,23 @@ const App: React.FC = () => {
                      console.error('Failed to sync Facebook connection on backend:', err);
                 });
 
-        } else if (response.status === 'not_authorized') {
-            console.log('User is logged into Facebook, but has not authorized our app.');
         } else {
-            console.log('User is not logged into Facebook or has not authorized the app.');
+            // Handle cases where the user is not connected to the app.
+            if (response.status === 'not_authorized') {
+                console.log('User is logged into Facebook, but has not authorized our app.');
+            } else {
+                console.log('User is not logged into Facebook or has logged out.');
+            }
+            // If the app's state thinks Facebook is connected, but it's not, we sync the state to false.
+            // This handles cases like the user revoking permissions on Facebook's website.
+            // We use a functional update to prevent issues with stale state in the closure.
+            setConnections(prevConnections => {
+                if (prevConnections[Platform.Facebook]) {
+                    console.log('Syncing disconnected Facebook status to the app state.');
+                    return { ...prevConnections, [Platform.Facebook]: false };
+                }
+                return prevConnections; // No change needed
+            });
         }
     }
 
@@ -92,12 +106,12 @@ const App: React.FC = () => {
             appId: import.meta.env.VITE_FACEBOOK_APP_ID, 
             cookie: true,
             xfbml: true,
-            version: 'v19.0'
+            version: 'v23.0'
         });
         setIsFbSdkInitialized(true);
         window.FB.AppEvents.logPageView();
         
-        // As you suggested, check the login status on initialization for a smoother UX.
+        // Check the login status on initialization for a smoother UX.
         console.log('Checking Facebook login status...');
         window.FB.getLoginStatus(statusChangeCallback);
     };
