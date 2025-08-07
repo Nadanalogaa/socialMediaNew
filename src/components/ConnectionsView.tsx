@@ -1,9 +1,3 @@
-
-
-
-
-
-
 import React, { useState, useEffect, useRef } from 'react';
 import type { ConnectionStatus, Platform } from '../types';
 import { Platform as PlatformEnum } from '../types';
@@ -67,9 +61,8 @@ export const ConnectionsView: React.FC<ConnectionsViewProps> = ({ connections, s
 
             // Trigger the Facebook Login dialog
             // Reduced scope to fix "Invalid Scopes" error. 
-            // 'pages_manage_posts' and other advanced permissions require App Review from Facebook.
-            // 'public_profile' and 'email' are standard permissions.
-            window.FB.login(loginCallback, { scope: 'public_profile,email' });
+            // 'public_profile' is a standard permission that doesn't require App Review.
+            window.FB.login(loginCallback, { scope: 'public_profile' });
 
         } else {
             // --- MOCK OAuth Flow for other platforms ---
