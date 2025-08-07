@@ -336,27 +336,5 @@ app.post('/api/generate-seo', async (req, res) => {
 });
 
 
-// --- Static assets and SPA Fallback for Production ---
-// Serve static files from the 'dist' directory
-app.use(express.static(path.join(__dirname, 'dist')));
-
-// Handle all other routes by sending the index.html file
-app.get('*', (req, res) => {
-    // Exclude API routes from this fallback
-    if (req.originalUrl.startsWith('/api')) {
-        return res.status(404).json({ message: 'API endpoint not found' });
-    }
-    res.sendFile(path.join(__dirname, 'dist', 'index.html'));
-});
-
-// --- Server Start ---
-app.listen(port, () => {
-    console.log(`Server listening at http://localhost:${port}`);
-    if (!hasApiKey) {
-        console.log("----------------------------------------------------------");
-        console.log("WARNING: API_KEY is not set in your environment.");
-        console.log("The application will run with mock data.");
-        console.log("For full functionality, add API_KEY to your .env file.");
-        console.log("----------------------------------------------------------");
-    }
-});
+// Export the Express app for Vercel to use as a serverless function
+export default app;
