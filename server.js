@@ -1,5 +1,6 @@
 
 
+
 import express from 'express';
 import 'dotenv/config';
 import { GoogleGenAI, Type } from '@google/genai';
@@ -336,9 +337,20 @@ app.post('/api/publish-post', async (req, res) => {
                     
                     // NOTE: Facebook Graph API requires a publicly accessible URL.
                     // The client-side `imageUrl` is a temporary `blob:` URL and cannot be accessed by Facebook's servers.
-                    // For this demonstration, we will use a dynamic placeholder image from picsum.photos.
-                    // The original blob URL will still be returned to the client to be displayed in the post history.
-                    const publicImageUrl = `https://picsum.photos/seed/${encodeURIComponent(prompt.slice(0, 20))}/800/600`;
+                    // For this demonstration, we use a dynamic placeholder image from picsum.photos.
+                    // We fetch it first on the server to resolve any redirects, which can be problematic for the Graph API crawler.
+                    const placeholderSeed = prompt.slice(0, 20).trim() || `post-${Date.now()}`;
+                    const placeholderSeedUrl = `https://picsum.photos/seed/${encodeURIComponent(placeholderSeed)}/800/600`;
+                    
+                    console.log(`[REAL FB] Fetching placeholder image from: ${placeholderSeedUrl}`);
+                    const placeholderResponse = await fetch(placeholderSeedUrl);
+
+                    if (!placeholderResponse.ok) {
+                        throw new Error(`Failed to fetch placeholder image from picsum.photos (status: ${placeholderResponse.status}).`);
+                    }
+
+                    const publicImageUrl = placeholderResponse.url; // This gives the final, direct image URL
+                    console.log(`[REAL FB] Using resolved image URL: ${publicImageUrl}`);
 
                     const fbResponse = await fetch(postUrl, {
                         method: 'POST',
