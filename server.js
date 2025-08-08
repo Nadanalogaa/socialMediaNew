@@ -1,5 +1,6 @@
 
 
+
 import express from 'express';
 import 'dotenv/config';
 import { GoogleGenAI, Type } from '@google/genai';
@@ -28,8 +29,9 @@ let connections = {
         pageId: null,
         pageAccessToken: null,
         pageName: null,
+        instagramBusinessAccountId: null, // New field
     },
-    Instagram: false,
+    Instagram: false, // This will be true if an IG account is linked to the FB page
     YouTube: false,
 };
 
@@ -224,18 +226,33 @@ app.post('/api/connect/facebook', async (req, res) => {
         if (!targetPage) {
             return res.status(404).json({ message: `Could not find a page named '${TARGET_PAGE_NAME}'. Please ensure you have admin rights to this page and have granted the 'pages_show_list' permission.` });
         }
+        
+        // 3. Check for a linked Instagram Business Account
+        const igResponse = await fetch(`https://graph.facebook.com/v23.0/${targetPage.id}?fields=instagram_business_account&access_token=${targetPage.access_token}`);
+        const igData = await igResponse.json();
 
-        // 3. We found the page. Store its ID and its own Page Access Token.
+        // 4. We found the page. Store its ID and its own Page Access Token.
         connections.Facebook = {
             connected: true,
             pageId: targetPage.id,
             pageAccessToken: targetPage.access_token,
-            pageName: targetPage.name
+            pageName: targetPage.name,
+            instagramBusinessAccountId: igData.instagram_business_account ? igData.instagram_business_account.id : null,
         };
+        
+        // 5. Update Instagram connection status based on the linked account
+        if (connections.Facebook.instagramBusinessAccountId) {
+            connections.Instagram = true;
+            console.log(`[REAL AUTH] Successfully connected to Facebook Page: ${targetPage.name} (ID: ${targetPage.id})`);
+            console.log(`[REAL AUTH] Found and linked Instagram Business Account: ${connections.Facebook.instagramBusinessAccountId}`);
+        } else {
+            connections.Instagram = false;
+            console.log(`[REAL AUTH] Successfully connected to Facebook Page: ${targetPage.name} (ID: ${targetPage.id})`);
+            console.log(`[REAL AUTH] No Instagram Business Account is linked to this page.`);
+        }
 
-        console.log(`[REAL AUTH] Successfully connected to Facebook Page: ${targetPage.name} (ID: ${targetPage.id})`);
 
-        // 4. Send back the simplified connection status
+        // 6. Send back the simplified connection status
         res.status(200).json({
             Facebook: connections.Facebook.connected,
             Instagram: connections.Instagram,
@@ -244,7 +261,8 @@ app.post('/api/connect/facebook', async (req, res) => {
 
     } catch (error) {
         console.error('[REAL AUTH] Failed to connect Facebook page:', error);
-        connections.Facebook = { connected: false, pageId: null, pageAccessToken: null, pageName: null };
+        connections.Facebook = { connected: false, pageId: null, pageAccessToken: null, pageName: null, instagramBusinessAccountId: null };
+        connections.Instagram = false;
         res.status(500).json({ message: `Failed to connect Facebook page: ${error.message}` });
     }
 });
@@ -257,8 +275,8 @@ app.get('/auth/:platform/consent', (req, res) => {
         return res.status(400).send("Invalid platform");
     }
     // Facebook uses the real SDK, so this shouldn't be called for it.
-    if (platform === 'Facebook') {
-        return res.status(400).send("Facebook connection should be handled by the client-side SDK.");
+    if (platform === 'Facebook' || platform === 'Instagram') {
+        return res.status(400).send("Facebook and Instagram connections are handled by the client-side SDK.");
     }
     res.send(consentPageHTML(platform));
 });
@@ -286,27 +304,42 @@ app.post('/auth/:platform/callback', (req, res) => {
 
 app.delete('/api/connections/:platform', (req, res) => {
     const { platform } = req.params;
-    const simplifiedConnections = {
-        Facebook: connections.Facebook.connected,
-        Instagram: connections.Instagram,
-        YouTube: connections.YouTube,
-    };
 
     if (platform === 'Facebook') {
         const pageName = connections.Facebook.pageName;
-        connections.Facebook = { connected: false, pageId: null, pageAccessToken: null, pageName: null };
-        console.log(`[REAL AUTH] Facebook Page '${pageName || 'Facebook'}' disconnected.`);
-        simplifiedConnections.Facebook = false;
-        res.json(simplifiedConnections);
-    } else if (platform in connections) {
+        // Reset both Facebook and Instagram since IG is dependent
+        connections.Facebook = { connected: false, pageId: null, pageAccessToken: null, pageName: null, instagramBusinessAccountId: null };
+        connections.Instagram = false;
+        console.log(`[REAL AUTH] Facebook Page '${pageName || 'Facebook'}' and linked Instagram account disconnected.`);
+    } else if (platform in connections && platform !== 'Instagram') { // Prevent direct IG disconnect
         connections[platform] = false;
         console.log(`[MOCK] ${platform} disconnected.`);
-        simplifiedConnections[platform] = false;
-        res.json(simplifiedConnections);
+    } else if (platform === 'Instagram') {
+         return res.status(400).json({ message: "Instagram must be disconnected by disconnecting the managing Facebook Page." });
     } else {
-        res.status(400).json({ message: "Invalid platform" });
+        return res.status(400).json({ message: "Invalid platform" });
     }
+
+    res.json({
+        Facebook: connections.Facebook.connected,
+        Instagram: connections.Instagram,
+        YouTube: connections.YouTube,
+    });
 });
+
+
+const getFormDataFromDataUrl = (dataUrl, caption) => {
+    const parts = dataUrl.split(',');
+    const meta = parts[0].split(';');
+    const mimeType = meta[0].split(':')[1];
+    const base64Data = parts[1];
+    const imageBuffer = Buffer.from(base64Data, 'base64');
+    
+    const formData = new FormData();
+    formData.append('caption', caption);
+    formData.append('source', new Blob([imageBuffer], { type: mimeType }), 'upload.jpg');
+    return formData;
+}
 
 app.post('/api/publish-post', async (req, res) => {
     const { platforms, generatedContent, imageUrl, audience, prompt } = req.body;
@@ -322,53 +355,27 @@ app.post('/api/publish-post', async (req, res) => {
 
     // Use a for...of loop to handle async operations sequentially if needed
     for (const platform of platforms) {
+        const description = generatedContent.facebook || generatedContent.instagram || '';
+        const hashtags = (generatedContent.hashtags || []).map(h => `#${h}`).join(' ');
+        const caption = `${description}\n\n${hashtags}`.trim();
+        
         if (platform === 'Facebook') {
             if (connections.Facebook.connected && connections.Facebook.pageId && connections.Facebook.pageAccessToken) {
                 try {
                     console.log(`[REAL FB] Publishing to Facebook page: ${connections.Facebook.pageName}`);
-
-                    const description = generatedContent.facebook || '';
-                    const hashtags = (generatedContent.hashtags || []).map(h => `#${h}`).join(' ');
-                    const caption = `${description}\n\n${hashtags}`.trim();
-
-                    const postUrl = `https://graph.facebook.com/v23.0/${connections.Facebook.pageId}/photos`;
                     
-                    const publicImageUrl = imageUrl;
-                    if (!publicImageUrl || !(publicImageUrl.startsWith('data:image') || publicImageUrl.startsWith('data:video'))) {
+                    if (!imageUrl || !(imageUrl.startsWith('data:image') || imageUrl.startsWith('data:video'))) {
                          throw new Error('A valid image or video data URL was not provided for the Facebook post.');
                     }
-                    console.log(`[REAL FB] Preparing multipart/form-data upload from data URL.`);
-
-                    // The Facebook Graph API's 'url' parameter requires a public URL.
-                    // To upload from data, we must use a multipart/form-data request with the 'source' parameter.
                     
-                    // 1. Parse the base64 data URL
-                    const parts = publicImageUrl.split(',');
-                    const meta = parts[0].split(';');
-                    const mimeType = meta[0].split(':')[1];
-                    const base64Data = parts[1];
-                    
-                    // 2. Convert base64 to a Buffer
-                    const imageBuffer = Buffer.from(base64Data, 'base64');
-                    
-                    // 3. Create FormData object for the multipart request
-                    const formData = new FormData();
+                    const postUrl = `https://graph.facebook.com/v23.0/${connections.Facebook.pageId}/photos`;
+                    const formData = getFormDataFromDataUrl(imageUrl, caption);
                     formData.append('access_token', connections.Facebook.pageAccessToken);
-                    formData.append('caption', caption);
-                    // The 'source' field contains the image data. We create a Blob from the Buffer.
-                    formData.append('source', new Blob([imageBuffer], { type: mimeType }), 'upload.jpg'); // Filename is good practice
 
-                    // 4. Make the fetch request. 'fetch' will automatically set the Content-Type header
-                    // to 'multipart/form-data' with the correct boundary when the body is a FormData instance.
-                    const fbResponse = await fetch(postUrl, {
-                        method: 'POST',
-                        body: formData,
-                    });
-
+                    const fbResponse = await fetch(postUrl, { method: 'POST', body: formData });
                     const fbData = await fbResponse.json();
 
                     if (fbData.error) {
-                        // Log the full error for better debugging
                         console.error('[REAL FB] Graph API Error Response:', JSON.stringify(fbData.error, null, 2));
                         throw new Error(`Graph API post error: ${fbData.error.message}`);
                     }
@@ -383,6 +390,68 @@ app.post('/api/publish-post', async (req, res) => {
                 }
             } else {
                 failedToPublish.push({ platform, reason: 'Not connected.' });
+            }
+        } else if (platform === 'Instagram') {
+            if (connections.Instagram && connections.Facebook.instagramBusinessAccountId && connections.Facebook.pageAccessToken) {
+                try {
+                    console.log(`[REAL IG] Publishing to Instagram account: ${connections.Facebook.instagramBusinessAccountId}`);
+                    // Instagram requires a public URL, so we post an unpublished photo to the FB page first.
+                    
+                    // 1. Upload photo to Facebook Page as unpublished to get a URL
+                    console.log('[REAL IG] Step 1: Uploading temporary unpublished photo to Facebook page...');
+                    const fbUnpublishedUrl = `https://graph.facebook.com/v23.0/${connections.Facebook.pageId}/photos`;
+                    const tempFormData = getFormDataFromDataUrl(imageUrl, 'Temporary image for Instagram post');
+                    tempFormData.append('access_token', connections.Facebook.pageAccessToken);
+                    tempFormData.append('published', 'false'); // This is the key part
+
+                    const fbUnpublishedRes = await fetch(fbUnpublishedUrl, { method: 'POST', body: tempFormData });
+                    const fbUnpublishedData = await fbUnpublishedRes.json();
+                    if (fbUnpublishedData.error) throw new Error(`IG Step 1 Failed (FB Upload): ${fbUnpublishedData.error.message}`);
+                    
+                    // 2. Get the public URL of the temporary photo
+                    console.log('[REAL IG] Step 2: Fetching public URL for temporary photo...');
+                    const photoDetailsUrl = `https://graph.facebook.com/v23.0/${fbUnpublishedData.id}?fields=images&access_token=${connections.Facebook.pageAccessToken}`;
+                    const photoDetailsRes = await fetch(photoDetailsUrl);
+                    const photoDetailsData = await photoDetailsRes.json();
+                    if (photoDetailsData.error || !photoDetailsData.images || photoDetailsData.images.length === 0) {
+                        throw new Error(`IG Step 2 Failed (URL Fetch): Could not retrieve URL for temporary photo. ${photoDetailsData.error?.message || ''}`);
+                    }
+                    const publicImageUrl = photoDetailsData.images[0].source;
+                    console.log(`[REAL IG] Public URL obtained: ${publicImageUrl.substring(0, 50)}...`);
+
+                    // 3. Create Instagram Media Container
+                    console.log('[REAL IG] Step 3: Creating Instagram media container...');
+                    const igMediaUrl = `https://graph.facebook.com/v23.0/${connections.Facebook.instagramBusinessAccountId}/media`;
+                    const igMediaParams = new URLSearchParams({
+                        image_url: publicImageUrl,
+                        caption: caption,
+                        access_token: connections.Facebook.pageAccessToken,
+                    });
+                    const igMediaRes = await fetch(igMediaUrl, { method: 'POST', body: igMediaParams });
+                    const igMediaData = await igMediaRes.json();
+                    if (igMediaData.error) throw new Error(`IG Step 3 Failed (Container Creation): ${igMediaData.error.message}`);
+                    const creationId = igMediaData.id;
+
+                    // 4. Publish Instagram Media Container
+                    console.log(`[REAL IG] Step 4: Publishing container ${creationId}...`);
+                    const igPublishUrl = `https://graph.facebook.com/v23.0/${connections.Facebook.instagramBusinessAccountId}/media_publish`;
+                    const igPublishParams = new URLSearchParams({
+                        creation_id: creationId,
+                        access_token: connections.Facebook.pageAccessToken
+                    });
+                    const igPublishRes = await fetch(igPublishUrl, { method: 'POST', body: igPublishParams });
+                    const igPublishData = await igPublishRes.json();
+                    if (igPublishData.error) throw new Error(`IG Step 4 Failed (Publishing): ${igPublishData.error.message}`);
+
+                    console.log('[REAL IG] Successfully posted to Instagram. Media ID:', igPublishData.id);
+                    publishedTo.push(platform);
+
+                } catch (error) {
+                     console.error('[REAL IG] Failed to publish to Instagram:', error);
+                     failedToPublish.push({ platform, reason: error.message });
+                }
+            } else {
+                 failedToPublish.push({ platform, reason: 'Instagram account not connected via Facebook.' });
             }
         } else { // Mock logic for other platforms
             if (connections[platform]) {
@@ -411,7 +480,7 @@ app.post('/api/publish-post', async (req, res) => {
     };
 
     // Simulate network delay for mock platforms if they were part of the request
-    const hasMockPlatform = platforms.some(p => p !== 'Facebook');
+    const hasMockPlatform = platforms.some(p => p !== 'Facebook' && p !== 'Instagram');
     setTimeout(() => {
         console.log(`Created new post with ID: ${newPost.id}`);
         res.status(200).json(newPost);
