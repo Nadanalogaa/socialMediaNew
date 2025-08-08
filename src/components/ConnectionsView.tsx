@@ -1,5 +1,6 @@
 
 
+
 import React, { useState, useEffect, useRef } from 'react';
 import type { ConnectionStatus, Platform } from '../types';
 import { Platform as PlatformEnum } from '../types';
@@ -78,32 +79,44 @@ export const ConnectionsView: React.FC<ConnectionsViewProps> = ({ connections, s
             setError(null);
             setShowFbTroubleshooter(false);
     
-            // Define the callback to handle the login response
+            // Define the callback to handle the login response, based on the user's suggestion.
             function loginCallback(response: any) {
-                console.log('Facebook Login SDK response received:', response);
+                console.log('FB.login callback triggered. Full response:', response);
 
-                if (response.status === 'connected' && response.authResponse) {
-                    console.log('Login successful. User is connected and has provided an authResponse.');
-                    const accessToken = response.authResponse.accessToken;
-                    console.log('Access Token obtained (first 15 chars):', accessToken.substring(0, 15) + '...');
+                if (response.status === 'connected') {
+                    console.log('Facebook status is "connected". Proceeding to connect backend.');
 
-                    // Send token to our backend to verify, find the target page, and store its token.
-                    connectFacebook(accessToken)
-                        .then(updatedConnections => {
-                            setConnections(updatedConnections);
-                            setError(null); // Clear previous errors on success
-                            setShowFbTroubleshooter(false);
-                        })
-                        .catch((err: any) => {
-                             console.error(`Backend connection failed after successful FB login:`, err);
-                             setError(`Facebook login was successful, but the backend couldn't connect to the 'Nadanaloga-chennai' page. Error: ${err.message}. Please ensure you are an admin of that specific page.`);
-                             setShowFbTroubleshooter(true);
-                        })
-                        .finally(() => {
-                            setLoadingPlatform(null);
-                        });
+                    // The user is logged in and has authenticated the app.
+                    // We can now get the access token.
+                    if (response.authResponse) {
+                        const accessToken = response.authResponse.accessToken;
+                        console.log('Access Token found:', accessToken.substring(0,15) + '...');
+
+                        // Send token to our backend to verify, find the target page, and store its token.
+                        connectFacebook(accessToken)
+                            .then(updatedConnections => {
+                                setConnections(updatedConnections);
+                                setError(null); // Clear previous errors on success
+                                setShowFbTroubleshooter(false);
+                            })
+                            .catch((err: any) => {
+                                 console.error(`Backend connection failed after successful FB login:`, err);
+                                 setError(`Facebook login was successful, but the backend couldn't connect to the 'Nadanaloga-chennai' page. Error: ${err.message}. Please ensure you are an admin of that specific page.`);
+                                 setShowFbTroubleshooter(true);
+                            })
+                            .finally(() => {
+                                setLoadingPlatform(null);
+                            });
+                    } else {
+                        // This is an edge case, but good to handle. `status` is connected but no `authResponse`.
+                        console.error('Facebook login status is "connected" but no authResponse was found.', response);
+                        setError('Facebook login returned an inconsistent state. Please try again.');
+                        setShowFbTroubleshooter(true);
+                        setLoadingPlatform(null);
+                    }
                 } else {
-                    console.error('Facebook login failed. The user either cancelled the login, or did not authorize the app.', response);
+                    // The user isn't connected to the app. They may have cancelled the login or denied permissions.
+                    console.error('Facebook login failed or was cancelled by the user. Status:', response.status);
                     let failureReason = "The user cancelled the login or did not fully authorize the application.";
                     if (response.status === 'not_authorized') {
                         failureReason = "The user is logged into Facebook, but has not authorized our app or has denied required permissions.";
@@ -116,7 +129,7 @@ export const ConnectionsView: React.FC<ConnectionsViewProps> = ({ connections, s
                 }
             }
 
-            // `pages_manage_posts` and `pages_read_engagement` are essential for the app to function.
+            // These permissions are essential for the app to function (publish posts, show analytics).
             const required_scope = 'public_profile,email,pages_show_list,pages_manage_posts,pages_read_engagement';
             console.log(`Requesting Facebook permissions with scope: ${required_scope}`);
 
