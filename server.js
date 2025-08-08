@@ -1,6 +1,4 @@
 
-
-
 import express from 'express';
 import 'dotenv/config';
 import { GoogleGenAI, Type } from '@google/genai';
@@ -13,9 +11,8 @@ const port = process.env.PORT || 3001;
 
 // Middleware
 app.use(cors());
-app.use(express.json());
-// This is for parsing the form data from the mock OAuth consent screen
-app.use(express.urlencoded({ extended: true }));
+app.use(express.json({ limit: '10mb' })); // Increase limit for base64 images
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 
 const __filename = fileURLToPath(import.meta.url);
@@ -335,22 +332,13 @@ app.post('/api/publish-post', async (req, res) => {
 
                     const postUrl = `https://graph.facebook.com/v23.0/${connections.Facebook.pageId}/photos`;
                     
-                    // NOTE: Facebook Graph API requires a publicly accessible URL.
-                    // The client-side `imageUrl` is a temporary `blob:` URL and cannot be accessed by Facebook's servers.
-                    // For this demonstration, we use a dynamic placeholder image from picsum.photos.
-                    // We fetch it first on the server to resolve any redirects, which can be problematic for the Graph API crawler.
-                    const placeholderSeed = prompt.slice(0, 20).trim() || `post-${Date.now()}`;
-                    const placeholderSeedUrl = `https://picsum.photos/seed/${encodeURIComponent(placeholderSeed)}/800/600`;
-                    
-                    console.log(`[REAL FB] Fetching placeholder image from: ${placeholderSeedUrl}`);
-                    const placeholderResponse = await fetch(placeholderSeedUrl);
-
-                    if (!placeholderResponse.ok) {
-                        throw new Error(`Failed to fetch placeholder image from picsum.photos (status: ${placeholderResponse.status}).`);
+                    // The client now sends a base64 data URL. We can use it directly.
+                    // This replaces the previous logic that generated a random image from picsum.photos.
+                    const publicImageUrl = imageUrl;
+                    if (!publicImageUrl || !(publicImageUrl.startsWith('data:image') || publicImageUrl.startsWith('data:video'))) {
+                         throw new Error('A valid image or video data URL was not provided for the Facebook post.');
                     }
-
-                    const publicImageUrl = placeholderResponse.url; // This gives the final, direct image URL
-                    console.log(`[REAL FB] Using resolved image URL: ${publicImageUrl}`);
+                    console.log(`[REAL FB] Using data URL provided by client for the image.`);
 
                     const fbResponse = await fetch(postUrl, {
                         method: 'POST',
@@ -398,7 +386,7 @@ app.post('/api/publish-post', async (req, res) => {
         id: facebookPostId || `post_${Date.now()}`,
         platforms: publishedTo,
         audience,
-        imageUrl,
+        imageUrl, // This is now the data: URL which is fine for the client to display
         prompt,
         generatedContent,
         postedAt: new Date().toISOString(),

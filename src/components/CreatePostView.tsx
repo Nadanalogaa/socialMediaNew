@@ -1,3 +1,4 @@
+
 import React, { useState, useCallback, useRef } from 'react';
 import type { Platform, Audience, Post, ConnectionStatus, MediaAsset } from '../types';
 import { Platform as PlatformEnum, Audience as AudienceEnum } from '../types';
@@ -5,6 +6,13 @@ import { publishPost, generateAssetContent } from '../services/geminiService';
 import { FacebookIcon } from './icons/FacebookIcon';
 import { InstagramIcon } from './icons/InstagramIcon';
 import { YoutubeIcon } from './icons/YoutubeIcon';
+
+const toBase64 = (file: File): Promise<string> => new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.readAsDataURL(file);
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = error => reject(error);
+});
 
 interface CreatePostViewProps {
     connections: ConnectionStatus;
@@ -23,9 +31,9 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, onP
     const [audience, setAudience] = useState<Audience>(AudienceEnum.Global);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
-    const updateAsset = (id: string, updates: Partial<MediaAsset>) => {
+    const updateAsset = useCallback((id: string, updates: Partial<MediaAsset>) => {
         setAssets(prev => prev.map(a => a.id === id ? { ...a, ...updates } : a));
-    };
+    }, []);
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const files = e.target.files;
@@ -67,7 +75,7 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, onP
         } catch (err: any) {
             updateAsset(assetId, { status: 'error', errorMessage: err.message || 'Failed to generate content.' });
         }
-    }, [assets]);
+    }, [assets, updateAsset]);
 
     const handlePublish = async (assetId: string) => {
         const asset = assets.find(a => a.id === assetId);
@@ -80,11 +88,21 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, onP
         }
 
         updateAsset(assetId, { status: 'publishing', errorMessage: undefined });
+        
+        let imageUrlData: string;
+        try {
+            // Convert file to base64 data URL for publishing
+            imageUrlData = await toBase64(asset.file);
+        } catch (error) {
+            console.error("Error converting file to base64:", error);
+            updateAsset(assetId, { status: 'error', errorMessage: 'Could not read the image file for upload.' });
+            return;
+        }
 
         const postToCreate: Omit<Post, 'id' | 'engagement' | 'postedAt'> = {
             platforms: asset.platforms,
             audience,
-            imageUrl: asset.previewUrl, // In a real app, this would be an uploaded URL
+            imageUrl: imageUrlData, // Send the base64 data URL
             prompt: asset.prompt,
             generatedContent: {
                 facebook: asset.description,
