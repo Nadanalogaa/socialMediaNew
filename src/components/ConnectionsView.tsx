@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect, useRef } from 'react';
 import type { ConnectionStatus, Platform } from '../types';
 import { Platform as PlatformEnum } from '../types';
@@ -53,8 +54,8 @@ export const ConnectionsView: React.FC<ConnectionsViewProps> = ({ connections, s
                             setLoadingPlatform(null);
                         });
                 } else {
-                    console.log('User cancelled login or did not fully authorize.');
-                    const detailedError = "Facebook login failed or was cancelled. Ensure you have granted all requested permissions. A common issue is not having admin rights to the 'Nadanaloga-chennai' page. If the problem persists, try disconnecting and reconnecting.";
+                    console.error('Facebook login failed. Full response object:', response); // Log the full object for debugging.
+                    const detailedError = "Facebook login failed. This is often due to Facebook App configuration. Please check the following in your Facebook Developer Dashboard: (1) The app is in 'Live' mode. (2) You are a registered Tester if the app is in 'Development' mode. (3) The domain of this web app is listed under 'Allowed Domains for the JavaScript SDK'. (4) You have Admin rights to the 'Nadanaloga-chennai' page.";
                     setError(detailedError);
                     setLoadingPlatform(null);
                 }
@@ -101,21 +102,14 @@ export const ConnectionsView: React.FC<ConnectionsViewProps> = ({ connections, s
         setError(null);
         try {
             // For Facebook, explicitly log the user out of the app via the SDK.
-            // This clears the session and permissions on the client, allowing for a clean reconnect.
+            // This is more robust than checking getLoginStatus first, as it clears any
+            // lingering or corrupted session on Facebook's side, which can prevent a clean reconnect.
             if (platform === PlatformEnum.Facebook && isFbSdkInitialized && window.FB) {
-                console.log("Attempting to log user out from Facebook app...");
+                console.log("Forcing logout from Facebook to ensure a clean session...");
                 await new Promise<void>(resolve => {
-                    // First check login status to avoid calling logout on a non-connected user.
-                    window.FB.getLoginStatus((response: any) => {
-                        if (response.status === 'connected') {
-                            window.FB.logout(() => {
-                                console.log('FB.logout() callback executed. User logged out.');
-                                resolve();
-                            });
-                        } else {
-                            console.log('User was not connected to the app, no need to call FB.logout().');
-                            resolve();
-                        }
+                    window.FB.logout(() => {
+                        console.log('FB.logout() callback executed. Any cached session has been cleared.');
+                        resolve();
                     });
                 });
             }
@@ -175,7 +169,7 @@ export const ConnectionsView: React.FC<ConnectionsViewProps> = ({ connections, s
             {error && (
                  <div className="bg-red-900/50 border border-red-700 text-red-300 px-4 py-3 rounded-lg relative mb-6" role="alert">
                     <strong className="font-bold">Error: </strong>
-                    <span className="block sm:inline">{error}</span>
+                    <span className="block sm:inline whitespace-pre-wrap">{error}</span>
                 </div>
             )}
 
