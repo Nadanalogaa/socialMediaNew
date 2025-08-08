@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import type { ConnectionStatus, Platform } from '../types';
 import { Platform as PlatformEnum } from '../types';
@@ -53,7 +54,7 @@ export const ConnectionsView: React.FC<ConnectionsViewProps> = ({ connections, s
                         });
                 } else {
                     console.log('User cancelled login or did not fully authorize.');
-                    const detailedError = "Facebook login failed or was cancelled. Ensure you have granted all requested permissions. A common issue is not having admin rights to the 'Nadanaloga-chennai' page.";
+                    const detailedError = "Facebook login failed or was cancelled. Please ensure you grant all requested permissions. If the problem persists, try disconnecting and reconnecting.";
                     setError(detailedError);
                     setLoadingPlatform(null);
                 }
@@ -98,8 +99,30 @@ export const ConnectionsView: React.FC<ConnectionsViewProps> = ({ connections, s
         setLoadingPlatform(platform);
         setError(null);
         try {
+            // For Facebook, explicitly log the user out of the app via the SDK.
+            // This clears the session and permissions on the client, allowing for a clean reconnect.
+            if (platform === PlatformEnum.Facebook && isFbSdkInitialized && window.FB) {
+                console.log("Attempting to log user out from Facebook app...");
+                await new Promise<void>(resolve => {
+                    // First check login status to avoid calling logout on a non-connected user.
+                    window.FB.getLoginStatus((response: any) => {
+                        if (response.status === 'connected') {
+                            window.FB.logout(() => {
+                                console.log('FB.logout() callback executed. User logged out.');
+                                resolve();
+                            });
+                        } else {
+                            console.log('User was not connected to the app, no need to call FB.logout().');
+                            resolve();
+                        }
+                    });
+                });
+            }
+
+            // After client-side logout (if applicable), update the backend state.
             const updatedConnections = await disconnectPlatform(platform);
             setConnections(updatedConnections);
+
         } catch (err: any) {
             setError(`Failed to disconnect ${platform}: ${err.message}`);
         } finally {
