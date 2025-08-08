@@ -49,9 +49,8 @@ const FacebookTroubleshooter: React.FC = () => (
                 <strong>Examine Browser Console for Clues:</strong>
                  <ul className="list-disc list-inside pl-5 mt-2 space-y-1 text-blue-200">
                     <li>Open your browser's developer console (usually with the F12 key).</li>
-                    <li>Click "Connect" again and watch the console.</li>
-                    <li>Find the error log starting with: <code className="bg-dark-bg px-1 py-0.5 rounded text-white">Facebook login failed. IMPORTANT...</code></li>
-                    <li>Click the small triangle next to the `Object` to expand it. It might contain a more specific error like "URL Blocked" or "App Not Set Up".</li>
+                    <li>Click "Connect" again and watch the console for messages from this app.</li>
+                    <li>The console will now log the full response from Facebook, which may contain a specific error like "URL Blocked" or "App Not Set Up".</li>
                 </ul>
             </li>
         </ol>
@@ -79,34 +78,51 @@ export const ConnectionsView: React.FC<ConnectionsViewProps> = ({ connections, s
             setError(null);
             setShowFbTroubleshooter(false);
     
-            // Define the callback as a standard function to ensure compatibility with the FB SDK
+            // Define the callback to handle the login response
             function loginCallback(response: any) {
-                if (response.authResponse) {
-                    console.log('Facebook login successful. Received authResponse.');
+                console.log('Facebook Login SDK response received:', response);
+
+                if (response.status === 'connected' && response.authResponse) {
+                    console.log('Login successful. User is connected and has provided an authResponse.');
                     const accessToken = response.authResponse.accessToken;
+                    console.log('Access Token obtained (first 15 chars):', accessToken.substring(0, 15) + '...');
+
                     // Send token to our backend to verify, find the target page, and store its token.
                     connectFacebook(accessToken)
                         .then(updatedConnections => {
                             setConnections(updatedConnections);
+                            setError(null); // Clear previous errors on success
+                            setShowFbTroubleshooter(false);
                         })
                         .catch((err: any) => {
-                             setError(`Failed to connect ${platform} on backend: ${err.message}`);
+                             console.error(`Backend connection failed after successful FB login:`, err);
+                             setError(`Facebook login was successful, but the backend couldn't connect to the 'Nadanaloga-chennai' page. Error: ${err.message}. Please ensure you are an admin of that specific page.`);
                              setShowFbTroubleshooter(true);
                         })
                         .finally(() => {
                             setLoadingPlatform(null);
                         });
                 } else {
-                    console.error('Facebook login failed. IMPORTANT: Please expand the object below for details from the SDK:', response);
-                    setError("Facebook login failed. Please see the troubleshooter below for likely solutions.");
+                    console.error('Facebook login failed. The user either cancelled the login, or did not authorize the app.', response);
+                    let failureReason = "The user cancelled the login or did not fully authorize the application.";
+                    if (response.status === 'not_authorized') {
+                        failureReason = "The user is logged into Facebook, but has not authorized our app or has denied required permissions.";
+                    } else if (response.status) {
+                        failureReason = `Facebook status: ${response.status}. The login could not be completed.`;
+                    }
+                    setError(`Facebook login failed. Reason: ${failureReason} Please see the troubleshooter below for likely solutions.`);
                     setShowFbTroubleshooter(true);
                     setLoadingPlatform(null);
                 }
             }
 
+            // `pages_manage_posts` and `pages_read_engagement` are essential for the app to function.
+            const required_scope = 'public_profile,email,pages_show_list,pages_manage_posts,pages_read_engagement';
+            console.log(`Requesting Facebook permissions with scope: ${required_scope}`);
+
             // Trigger the Facebook Login dialog with required permissions for page management
             window.FB.login(loginCallback, {
-                scope: 'public_profile,pages_show_list,pages_manage_posts,pages_read_engagement',
+                scope: required_scope,
                 enable_profile_selector: true, // Allows user to confirm which Facebook profile to use
                 auth_type: 'rerequest' // Force re-prompting for permissions to fix stale auth states
             });
@@ -274,13 +290,13 @@ export const ConnectionsView: React.FC<ConnectionsViewProps> = ({ connections, s
                             <strong>Click Connect:</strong> Use the "Connect" button for Facebook. A popup will ask you to log in to Facebook.
                         </li>
                         <li>
-                            <strong>Grant Permissions:</strong> The application will request permissions to see your pages (`pages_show_list`) and publish posts (`pages_manage_posts`). You must approve these to continue.
+                            <strong>Grant Permissions:</strong> The application will request permissions to see your pages (`pages_show_list`), publish posts (`pages_manage_posts`), and view engagement (`pages_read_engagement`). You must approve these to continue.
                         </li>
                         <li>
                             <strong>Automatic Page Detection:</strong> The backend will automatically look for the "Nadanaloga-chennai" page among the pages you manage and connect to it.
                         </li>
                         <li>
-                            <strong>Troubleshooting:</strong> If the connection fails, ensure (1) you are an admin of the "Nadanaloga-chennai" page on Facebook, and (2) this app's URL is listed in the "Allowed Domains for the JavaScript SDK" in your Facebook App's settings.
+                            <strong>Troubleshooting:</strong> If the connection fails, the troubleshooter guide will appear above with detailed steps to resolve common issues.
                         </li>
                     </ol>
                 </div>
