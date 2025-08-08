@@ -4,6 +4,7 @@
   import { CreatePostIcon } from './icons/CreatePostIcon';
   import { SeoIcon } from './icons/SeoIcon';
   import { ConnectIcon } from './icons/ConnectIcon';
+  import { PrivacyIcon } from './icons/PrivacyIcon';
   import type { View } from '../types';
   import { View as ViewEnum } from '../types';
 
@@ -66,20 +67,24 @@
             isActive={activeView === ViewEnum.CONNECTIONS}
             onClick={() => setActiveView(ViewEnum.CONNECTIONS)}
           />
+          <NavItem
+            icon={<PrivacyIcon className="w-5 h-5" />}
+            label="Privacy Policy"
+            isActive={activeView === ViewEnum.PRIVACY_POLICY}
+            onClick={() => setActiveView(ViewEnum.PRIVACY_POLICY)}
+          />
         </nav>
         <div className="mt-auto text-center text-dark-text-secondary text-xs space-y-1">
           <p>Powered by Gemini API</p>
           <div>
             <span>&copy; 2024 Nadanaloga</span>
             <span className="mx-1">·</span>
-            <a
-              href="/privacy-policy.html"
-              target="_blank"
-              rel="noopener noreferrer"
+            <button
+              onClick={() => setActiveView(ViewEnum.PRIVACY_POLICY)}
               className="hover:text-dark-text underline"
             >
               Privacy Policy
-            </a>
+            </button>
           </div>
         </div>
       </aside>

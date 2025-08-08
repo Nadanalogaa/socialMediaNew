@@ -21,8 +21,15 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 // --- In-memory store for demo purposes ---
+const TARGET_PAGE_NAME = 'Nadanaloga-chennai'; // The specific page we want to connect to
+
 let connections = {
-    Facebook: false,
+    Facebook: {
+        connected: false,
+        pageId: null,
+        pageAccessToken: null,
+        pageName: null,
+    },
     Instagram: false,
     YouTube: false,
 };
@@ -188,30 +195,59 @@ app.post('/api/generate-asset-content', async (req, res) => {
 
 // --- Connection and Publishing Endpoints ---
 app.get('/api/connections', (req, res) => {
-    res.json(connections);
+    // Return a simplified view for the client, hiding sensitive tokens
+    res.json({
+        Facebook: connections.Facebook.connected,
+        Instagram: connections.Instagram,
+        YouTube: connections.YouTube,
+    });
 });
 
 // Real OAuth Step 2: Handle access token from client
-app.post('/api/connect/facebook', (req, res) => {
-    const { accessToken } = req.body;
+app.post('/api/connect/facebook', async (req, res) => {
+    const { accessToken } = req.body; // This is the User Access Token from the client
     if (!accessToken) {
-        return res.status(400).json({ message: 'Access Token is required.' });
+        return res.status(400).json({ message: 'User Access Token is required.' });
     }
 
-    // --- REAL-WORLD SCENARIO ---
-    // In a production app, you would:
-    // 1. Send this accessToken to Facebook's debug_token endpoint to verify it's valid
-    //    and belongs to the correct user and your app.
-    // 2. Exchange the short-lived token for a long-lived one.
-    // 3. Encrypt and store the long-lived access token in your database, associated with the user.
-    // For this demo, we'll just log it and assume it's valid.
+    try {
+        // 1. Use the User Access Token to get a list of pages the user manages
+        const pagesResponse = await fetch(`https://graph.facebook.com/v23.0/me/accounts?access_token=${accessToken}`);
+        const pagesData = await pagesResponse.json();
 
-    console.log(`[REAL AUTH] Received Facebook Access Token: ${accessToken.substring(0, 15)}...`);
-    connections.Facebook = true; // Mark as connected
-    console.log(`[REAL AUTH] Successfully connected Facebook.`);
-    
-    // Send back the updated connection status
-    res.status(200).json(connections);
+        if (pagesData.error) {
+            throw new Error(`Graph API error (me/accounts): ${pagesData.error.message}`);
+        }
+
+        // 2. Find the specific page we want to connect to
+        const targetPage = pagesData.data?.find(page => page.name === TARGET_PAGE_NAME);
+
+        if (!targetPage) {
+            return res.status(404).json({ message: `Could not find a page named '${TARGET_PAGE_NAME}'. Please ensure you have admin rights to this page and have granted the 'pages_show_list' permission.` });
+        }
+
+        // 3. We found the page. Store its ID and its own Page Access Token.
+        connections.Facebook = {
+            connected: true,
+            pageId: targetPage.id,
+            pageAccessToken: targetPage.access_token,
+            pageName: targetPage.name
+        };
+
+        console.log(`[REAL AUTH] Successfully connected to Facebook Page: ${targetPage.name} (ID: ${targetPage.id})`);
+
+        // 4. Send back the simplified connection status
+        res.status(200).json({
+            Facebook: connections.Facebook.connected,
+            Instagram: connections.Instagram,
+            YouTube: connections.YouTube,
+        });
+
+    } catch (error) {
+        console.error('[REAL AUTH] Failed to connect Facebook page:', error);
+        connections.Facebook = { connected: false, pageId: null, pageAccessToken: null, pageName: null };
+        res.status(500).json({ message: `Failed to connect Facebook page: ${error.message}` });
+    }
 });
 
 
@@ -251,16 +287,29 @@ app.post('/auth/:platform/callback', (req, res) => {
 
 app.delete('/api/connections/:platform', (req, res) => {
     const { platform } = req.params;
-    if (platform in connections) {
+    const simplifiedConnections = {
+        Facebook: connections.Facebook.connected,
+        Instagram: connections.Instagram,
+        YouTube: connections.YouTube,
+    };
+
+    if (platform === 'Facebook') {
+        const pageName = connections.Facebook.pageName;
+        connections.Facebook = { connected: false, pageId: null, pageAccessToken: null, pageName: null };
+        console.log(`[REAL AUTH] Facebook Page '${pageName || 'Facebook'}' disconnected.`);
+        simplifiedConnections.Facebook = false;
+        res.json(simplifiedConnections);
+    } else if (platform in connections) {
         connections[platform] = false;
         console.log(`[MOCK] ${platform} disconnected.`);
-        res.json(connections);
+        simplifiedConnections[platform] = false;
+        res.json(simplifiedConnections);
     } else {
         res.status(400).json({ message: "Invalid platform" });
     }
 });
 
-app.post('/api/publish-post', (req, res) => {
+app.post('/api/publish-post', async (req, res) => {
     const { platforms, generatedContent, imageUrl, audience, prompt } = req.body;
     
     if (!platforms || !generatedContent || !prompt) {
@@ -268,48 +317,80 @@ app.post('/api/publish-post', (req, res) => {
     }
     
     console.log("Received publish request for platforms:", platforms);
-    console.log("Target Audience:", audience);
-
     const publishedTo = [];
     const failedToPublish = [];
+    let facebookPostId = null;
 
-    platforms.forEach(platform => {
-        if (connections[platform]) {
-            console.log(`[MOCK] Publishing to ${platform}...`);
-            // In a real app, you'd use the platform's SDK here
-            console.log(`[MOCK] Content for ${platform}:`, generatedContent);
-            publishedTo.push(platform);
-        } else {
-            console.log(`[MOCK] Cannot publish to ${platform}, not connected.`);
-            failedToPublish.push(platform);
+    // Use a for...of loop to handle async operations sequentially if needed
+    for (const platform of platforms) {
+        if (platform === 'Facebook') {
+            if (connections.Facebook.connected && connections.Facebook.pageId && connections.Facebook.pageAccessToken) {
+                try {
+                    console.log(`[REAL FB] Publishing to Facebook page: ${connections.Facebook.pageName}`);
+                    const caption = generatedContent.facebook + '\n\n' + generatedContent.hashtags.map(h => `#${h}`).join(' ');
+                    const postUrl = `https://graph.facebook.com/v23.0/${connections.Facebook.pageId}/photos`;
+                    
+                    const fbResponse = await fetch(postUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                        body: new URLSearchParams({
+                            url: imageUrl,
+                            caption: caption,
+                            access_token: connections.Facebook.pageAccessToken
+                        })
+                    });
+
+                    const fbData = await fbResponse.json();
+
+                    if (fbData.error) {
+                        throw new Error(`Graph API post error: ${fbData.error.message}`);
+                    }
+                    
+                    console.log('[REAL FB] Successfully posted to Facebook. Post ID:', fbData.post_id);
+                    facebookPostId = fbData.post_id;
+                    publishedTo.push(platform);
+
+                } catch (error) {
+                    console.error('[REAL FB] Failed to publish to Facebook:', error);
+                    failedToPublish.push({ platform, reason: error.message });
+                }
+            } else {
+                failedToPublish.push({ platform, reason: 'Not connected.' });
+            }
+        } else { // Mock logic for other platforms
+            if (connections[platform]) {
+                console.log(`[MOCK] Publishing to ${platform}...`);
+                publishedTo.push(platform);
+            } else {
+                failedToPublish.push({ platform, reason: 'Not connected.' });
+            }
         }
-    });
+    }
     
-    if(failedToPublish.length > 0) {
-        return res.status(400).json({ message: `Cannot publish. Please connect your ${failedToPublish.join(', ')} account(s).`})
+    if (failedToPublish.length > 0) {
+        const errorDetails = failedToPublish.map(p => `${p.platform} (${p.reason})`).join(', ');
+        return res.status(400).json({ message: `Cannot publish to some platforms. Please check connections or permissions: ${errorDetails}` });
     }
     
     const newPost = {
-        id: `post_${Date.now()}`,
-        platforms,
+        id: facebookPostId || `post_${Date.now()}`,
+        platforms: publishedTo,
         audience,
         imageUrl,
         prompt,
         generatedContent,
         postedAt: new Date().toISOString(),
-        engagement: {
-            likes: Math.floor(Math.random() * 5),
-            comments: Math.floor(Math.random() * 3),
-            shares: Math.floor(Math.random() * 2),
-        },
+        engagement: { likes: 0, comments: 0, shares: 0 }, // Real engagement would be fetched later
     };
 
-    // Simulate network delay
+    // Simulate network delay for mock platforms if they were part of the request
+    const hasMockPlatform = platforms.some(p => p !== 'Facebook');
     setTimeout(() => {
-        console.log(`[MOCK] Created new post with ID: ${newPost.id}`);
+        console.log(`Created new post with ID: ${newPost.id}`);
         res.status(200).json(newPost);
-    }, 1500);
+    }, hasMockPlatform ? 1500 : 0);
 });
+
 
 // --- SEO Assistant Endpoint ---
 app.post('/api/generate-seo', async (req, res) => {

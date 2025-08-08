@@ -37,10 +37,10 @@ export const ConnectionsView: React.FC<ConnectionsViewProps> = ({ connections, s
     
             // Define the callback as a standard function to ensure compatibility with the FB SDK
             function loginCallback(response: any) {
-                if (response.status === 'connected') {
+                if (response.authResponse) {
                     console.log('Facebook login successful. Received authResponse.');
                     const accessToken = response.authResponse.accessToken;
-                    // Send token to our backend to verify, store, and confirm connection
+                    // Send token to our backend to verify, find the target page, and store its token.
                     connectFacebook(accessToken)
                         .then(updatedConnections => {
                             setConnections(updatedConnections);
@@ -51,22 +51,19 @@ export const ConnectionsView: React.FC<ConnectionsViewProps> = ({ connections, s
                         .finally(() => {
                             setLoadingPlatform(null);
                         });
-                } else if (response.status === 'not_authorized') {
-                    console.log('User cancelled login or did not fully authorize.');
-                    setError('Connection cancelled. Please try again and authorize the application to proceed.');
-                    setLoadingPlatform(null);
                 } else {
-                    console.log('Facebook login failed with status:', response.status);
-                    const detailedError = "Facebook login failed. This might be due to a configuration issue. A common problem for developers is that the app's domain is not whitelisted. Please check your browser's console for a 'JSSDK Unknown Host domain' error and, if present, add your app's URL to the 'Allowed Domains for the JavaScript SDK' list in your Facebook App dashboard.";
+                    console.log('User cancelled login or did not fully authorize.');
+                    const detailedError = "Facebook login failed or was cancelled. Ensure you have granted all requested permissions. A common issue is not having admin rights to the 'Nadanaloga-chennai' page.";
                     setError(detailedError);
                     setLoadingPlatform(null);
                 }
             }
 
-            // Trigger the Facebook Login dialog
-            // Reduced scope to fix "Invalid Scopes" error. 
-            // 'public_profile' is a standard permission that doesn't require App Review.
-            window.FB.login(loginCallback, { scope: 'public_profile' });
+            // Trigger the Facebook Login dialog with required permissions for page management
+            window.FB.login(loginCallback, {
+                scope: 'public_profile,pages_show_list,pages_manage_posts,pages_read_engagement',
+                enable_profile_selector: true // Allows user to confirm which Facebook profile to use
+            });
 
         } else {
             // --- MOCK OAuth Flow for other platforms ---
@@ -190,8 +187,8 @@ export const ConnectionsView: React.FC<ConnectionsViewProps> = ({ connections, s
                                 >
                                     {isLoading ? (
                                         <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
-                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                                         </svg>
                                     ) : (isConnected ? 'Disconnect' : 'Connect')}
                                 </button>
@@ -202,22 +199,22 @@ export const ConnectionsView: React.FC<ConnectionsViewProps> = ({ connections, s
             </div>
 
             <div className="mt-8 p-6 bg-dark-bg/50 rounded-lg border border-dark-border text-sm text-dark-text-secondary">
-                <h3 className="font-bold text-dark-text mb-2">Integrating a Real OAuth Connection</h3>
+                <h3 className="font-bold text-dark-text mb-2">Connecting to Facebook</h3>
                 <p className="mb-3">
-                    This application now uses the official Facebook SDK for real authentication. The mock flow is still active for Instagram and YouTube for demonstration. To complete the real integration, follow these steps:
+                    This application now uses the official Facebook SDK to connect to the <strong className="text-white">"Nadanaloga-chennai"</strong> page. The mock flow is still active for Instagram and YouTube for demonstration.
                 </p>
                 <ol className="list-decimal list-inside space-y-2 text-xs">
                     <li>
-                        <strong>Create Developer Applications:</strong> For other platforms (Instagram, YouTube), you must register your application on their respective developer portals (e.g., Google Cloud Console).
+                        <strong>Click Connect:</strong> Use the "Connect" button for Facebook. A popup will ask you to log in to Facebook.
                     </li>
                     <li>
-                        <strong>Obtain Credentials:</strong> After registration, the platform will provide a unique Client ID and Client Secret. These are sensitive credentials used to identify your application.
+                        <strong>Grant Permissions:</strong> The application will request permissions to see your pages (`pages_show_list`) and publish posts (`pages_manage_posts`). You must approve these to continue.
                     </li>
                     <li>
-                        <strong>Configure Redirect URIs:</strong> In your developer dashboard, you must specify the exact URL on your server (e.g., `https://your-app.com/auth/youtube/callback`) where the platform should send users after they authorize your app.
+                        <strong>Automatic Page Detection:</strong> The backend will automatically look for the "Nadanaloga-chennai" page among the pages you manage and connect to it.
                     </li>
                     <li>
-                        <strong>Implement Secure Backend Flow:</strong> Your server needs to handle the full OAuth 2.0 grant flow for each service. This involves redirecting the user to the platform's login page and handling the callback to securely exchange an authorization code for a permanent access token, which should be encrypted and stored in a database.
+                        <strong>Troubleshooting:</strong> If the connection fails, ensure (1) you are an admin of the "Nadanaloga-chennai" page on Facebook, and (2) this app's URL is listed in the "Allowed Domains for the JavaScript SDK" in your Facebook App's settings.
                     </li>
                 </ol>
             </div>

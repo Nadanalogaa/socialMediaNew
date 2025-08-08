@@ -18,7 +18,10 @@ export const PrivacyPolicyView: React.FC = () => {
                     <p>We may collect information about you in a variety of ways. The information we may collect via the Service includes:</p>
                     <ul className="list-disc list-inside mt-2 space-y-1">
                         <li>
-                            <strong>Personal Data from Social Media:</strong> When you connect your social media accounts (e.g., Facebook, Instagram, YouTube), we may collect information from those services, including your name, profile picture, and an authentication token to allow us to act on your behalf. We only request permissions necessary to provide the Service's features, such as publishing posts. We do not store your passwords for these accounts.
+                            <strong>Personal Data from Social Media:</strong> When you connect your social media accounts (e.g., Facebook, Instagram, YouTube), we may collect information from those services, including your name, profile picture, and an authentication token to allow us to act on your behalf. We do not store your passwords for these accounts.
+                        </li>
+                        <li>
+                            <strong>Page Management Permissions:</strong> To enable posting on your behalf, we request permissions to view a list of your Facebook Pages (`pages_show_list`), create posts on those pages (`pages_manage_posts`), and view post engagement (`pages_read_engagement`). We only store the Page ID and an access token for the specific page you authorize.
                         </li>
                         <li>
                             <strong>Content You Provide:</strong> We collect the prompts, text, images, and videos you upload or provide to our Service for the purpose of generating content and publishing posts.
