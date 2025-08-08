@@ -327,14 +327,24 @@ app.post('/api/publish-post', async (req, res) => {
             if (connections.Facebook.connected && connections.Facebook.pageId && connections.Facebook.pageAccessToken) {
                 try {
                     console.log(`[REAL FB] Publishing to Facebook page: ${connections.Facebook.pageName}`);
-                    const caption = generatedContent.facebook + '\n\n' + generatedContent.hashtags.map(h => `#${h}`).join(' ');
+
+                    const description = generatedContent.facebook || '';
+                    const hashtags = (generatedContent.hashtags || []).map(h => `#${h}`).join(' ');
+                    const caption = `${description}\n\n${hashtags}`.trim();
+
                     const postUrl = `https://graph.facebook.com/v23.0/${connections.Facebook.pageId}/photos`;
                     
+                    // NOTE: Facebook Graph API requires a publicly accessible URL.
+                    // The client-side `imageUrl` is a temporary `blob:` URL and cannot be accessed by Facebook's servers.
+                    // For this demonstration, we will use a dynamic placeholder image from picsum.photos.
+                    // The original blob URL will still be returned to the client to be displayed in the post history.
+                    const publicImageUrl = `https://picsum.photos/seed/${encodeURIComponent(prompt.slice(0, 20))}/800/600`;
+
                     const fbResponse = await fetch(postUrl, {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
                         body: new URLSearchParams({
-                            url: imageUrl,
+                            url: publicImageUrl,
                             caption: caption,
                             access_token: connections.Facebook.pageAccessToken
                         })
