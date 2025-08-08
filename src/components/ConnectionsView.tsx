@@ -20,9 +20,49 @@ const platformConfig = {
     [PlatformEnum.YouTube]: { icon: <YoutubeIcon className="w-8 h-8" />, color: "text-red-600" },
 };
 
+const FacebookTroubleshooter: React.FC = () => (
+    <div className="mt-8 p-6 bg-blue-900/30 rounded-lg border border-blue-600 text-sm text-blue-100 animate-fade-in">
+        <h3 className="font-bold text-lg text-white mb-3">Facebook Connection Troubleshooter</h3>
+        <p className="mb-4">
+            We're sorry you're having trouble. This issue is almost always caused by a misconfiguration in your Facebook Developer account. Please carefully check the following settings for your app.
+        </p>
+        <ol className="list-decimal list-inside space-y-4">
+            <li>
+                <strong>Check Allowed Domains:</strong>
+                <ul className="list-disc list-inside pl-5 mt-2 space-y-1 text-blue-200">
+                    <li>Go to your Facebook App Dashboard at <a href="https://developers.facebook.com/apps/" target="_blank" rel="noopener noreferrer" className="underline hover:text-white">developers.facebook.com/apps/</a>.</li>
+                    <li>Navigate to <strong>Settings → Basic</strong>.</li>
+                    <li>In the <strong>App Domains</strong> field, make sure <code className="bg-dark-bg px-1 py-0.5 rounded text-white">social-media-new-omega.vercel.app</code> is listed.</li>
+                    <li>Navigate to <strong>Facebook Login → Settings</strong> (under "Products" in the left sidebar).</li>
+                    <li>In <strong>Allowed Domains for the JavaScript SDK</strong>, ensure <code className="bg-dark-bg px-1 py-0.5 rounded text-white">https://social-media-new-omega.vercel.app</code> is listed. Note the required <strong>https://</strong> prefix.</li>
+                </ul>
+            </li>
+            <li>
+                <strong>Check App Mode:</strong>
+                 <ul className="list-disc list-inside pl-5 mt-2 space-y-1 text-blue-200">
+                    <li>At the top of your App Dashboard, check the app's status toggle.</li>
+                    <li>If it shows <strong>In Development</strong>, only App Admins, Developers, or Testers can connect. Ensure your Facebook account has one of these roles under the <strong>Roles → Roles</strong> section.</li>
+                    <li>If it shows <strong>Live</strong>, the app is public, but the domain check (Step 1) is still mandatory.</li>
+                </ul>
+            </li>
+             <li>
+                <strong>Examine Browser Console for Clues:</strong>
+                 <ul className="list-disc list-inside pl-5 mt-2 space-y-1 text-blue-200">
+                    <li>Open your browser's developer console (usually with the F12 key).</li>
+                    <li>Click "Connect" again and watch the console.</li>
+                    <li>Find the error log starting with: <code className="bg-dark-bg px-1 py-0.5 rounded text-white">Facebook login failed. IMPORTANT...</code></li>
+                    <li>Click the small triangle next to the `Object` to expand it. It might contain a more specific error like "URL Blocked" or "App Not Set Up".</li>
+                </ul>
+            </li>
+        </ol>
+    </div>
+);
+
+
 export const ConnectionsView: React.FC<ConnectionsViewProps> = ({ connections, setConnections, isFbSdkInitialized }) => {
     const [loadingPlatform, setLoadingPlatform] = useState<Platform | null>(null);
     const [error, setError] = useState<string | null>(null);
+    const [showFbTroubleshooter, setShowFbTroubleshooter] = useState(false);
     const popupRef = useRef<Window | null>(null);
     const intervalRef = useRef<number | null>(null);
 
@@ -31,11 +71,13 @@ export const ConnectionsView: React.FC<ConnectionsViewProps> = ({ connections, s
             // --- REAL Facebook Login using SDK ---
             if (!isFbSdkInitialized || !window.FB) {
                 setError('Facebook integration is not available. Please ensure the VITE_FACEBOOK_APP_ID is correctly configured in your environment variables.');
+                setShowFbTroubleshooter(true);
                 return;
             }
     
             setLoadingPlatform(platform);
             setError(null);
+            setShowFbTroubleshooter(false);
     
             // Define the callback as a standard function to ensure compatibility with the FB SDK
             function loginCallback(response: any) {
@@ -49,14 +91,15 @@ export const ConnectionsView: React.FC<ConnectionsViewProps> = ({ connections, s
                         })
                         .catch((err: any) => {
                              setError(`Failed to connect ${platform} on backend: ${err.message}`);
+                             setShowFbTroubleshooter(true);
                         })
                         .finally(() => {
                             setLoadingPlatform(null);
                         });
                 } else {
-                    console.error('Facebook login failed. Full response object:', response); // Log the full object for debugging.
-                    const detailedError = "Facebook login failed. This is often due to Facebook App configuration. Please check the following in your Facebook Developer Dashboard: (1) The app is in 'Live' mode. (2) You are a registered Tester if the app is in 'Development' mode. (3) The domain of this web app is listed under 'Allowed Domains for the JavaScript SDK'. (4) You have Admin rights to the 'Nadanaloga-chennai' page.";
-                    setError(detailedError);
+                    console.error('Facebook login failed. IMPORTANT: Please expand the object below for details from the SDK:', response);
+                    setError("Facebook login failed. Please see the troubleshooter below for likely solutions.");
+                    setShowFbTroubleshooter(true);
                     setLoadingPlatform(null);
                 }
             }
@@ -71,6 +114,7 @@ export const ConnectionsView: React.FC<ConnectionsViewProps> = ({ connections, s
         } else {
             // --- MOCK OAuth Flow for other platforms ---
             setError(null);
+            setShowFbTroubleshooter(false);
             setLoadingPlatform(platform);
     
             const width = 600;
@@ -100,6 +144,7 @@ export const ConnectionsView: React.FC<ConnectionsViewProps> = ({ connections, s
     const handleDisconnect = async (platform: Platform) => {
         setLoadingPlatform(platform);
         setError(null);
+        setShowFbTroubleshooter(false);
         try {
             // For Facebook, explicitly log the user out of the app via the SDK.
             // This is more robust than checking getLoginStatus first, as it clears any
@@ -216,26 +261,30 @@ export const ConnectionsView: React.FC<ConnectionsViewProps> = ({ connections, s
                 </ul>
             </div>
 
-            <div className="mt-8 p-6 bg-dark-bg/50 rounded-lg border border-dark-border text-sm text-dark-text-secondary">
-                <h3 className="font-bold text-dark-text mb-2">Connecting to Facebook</h3>
-                <p className="mb-3">
-                    This application now uses the official Facebook SDK to connect to the <strong className="text-white">"Nadanaloga-chennai"</strong> page. The mock flow is still active for Instagram and YouTube for demonstration.
-                </p>
-                <ol className="list-decimal list-inside space-y-2 text-xs">
-                    <li>
-                        <strong>Click Connect:</strong> Use the "Connect" button for Facebook. A popup will ask you to log in to Facebook.
-                    </li>
-                    <li>
-                        <strong>Grant Permissions:</strong> The application will request permissions to see your pages (`pages_show_list`) and publish posts (`pages_manage_posts`). You must approve these to continue.
-                    </li>
-                    <li>
-                        <strong>Automatic Page Detection:</strong> The backend will automatically look for the "Nadanaloga-chennai" page among the pages you manage and connect to it.
-                    </li>
-                    <li>
-                        <strong>Troubleshooting:</strong> If the connection fails, ensure (1) you are an admin of the "Nadanaloga-chennai" page on Facebook, and (2) this app's URL is listed in the "Allowed Domains for the JavaScript SDK" in your Facebook App's settings.
-                    </li>
-                </ol>
-            </div>
+            {showFbTroubleshooter ? (
+                <FacebookTroubleshooter />
+            ) : (
+                <div className="mt-8 p-6 bg-dark-bg/50 rounded-lg border border-dark-border text-sm text-dark-text-secondary">
+                    <h3 className="font-bold text-dark-text mb-2">Connecting to Facebook</h3>
+                    <p className="mb-3">
+                        This application now uses the official Facebook SDK to connect to the <strong className="text-white">"Nadanaloga-chennai"</strong> page. The mock flow is still active for Instagram and YouTube for demonstration.
+                    </p>
+                    <ol className="list-decimal list-inside space-y-2 text-xs">
+                        <li>
+                            <strong>Click Connect:</strong> Use the "Connect" button for Facebook. A popup will ask you to log in to Facebook.
+                        </li>
+                        <li>
+                            <strong>Grant Permissions:</strong> The application will request permissions to see your pages (`pages_show_list`) and publish posts (`pages_manage_posts`). You must approve these to continue.
+                        </li>
+                        <li>
+                            <strong>Automatic Page Detection:</strong> The backend will automatically look for the "Nadanaloga-chennai" page among the pages you manage and connect to it.
+                        </li>
+                        <li>
+                            <strong>Troubleshooting:</strong> If the connection fails, ensure (1) you are an admin of the "Nadanaloga-chennai" page on Facebook, and (2) this app's URL is listed in the "Allowed Domains for the JavaScript SDK" in your Facebook App's settings.
+                        </li>
+                    </ol>
+                </div>
+            )}
         </div>
     );
 };
