@@ -2,6 +2,7 @@
 
 
 
+
 import React, { useState, useCallback, useEffect } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { DashboardView } from './components/DashboardView';
@@ -23,13 +24,17 @@ declare global {
 
 const App: React.FC = () => {
   const [activeView, setActiveView] = useState<View>(View.CREATE_POST);
-  const [posts] = useState<Post[]>(MOCK_POSTS); // Dashboard can still use mock posts for now
+  const [posts, setPosts] = useState<Post[]>(MOCK_POSTS);
   const [connections, setConnections] = useState<ConnectionStatus>({
     [Platform.Facebook]: false,
     [Platform.Instagram]: false,
     [Platform.YouTube]: false,
   });
   const [isFbSdkInitialized, setIsFbSdkInitialized] = useState(false);
+
+  const addPost = (post: Post) => {
+    setPosts(prevPosts => [post, ...prevPosts]);
+  };
 
   // Fetch initial connection state from our own backend on app load.
   useEffect(() => {
@@ -132,7 +137,7 @@ const App: React.FC = () => {
   const renderView = () => {
     switch (activeView) {
       case View.CREATE_POST:
-        return <CreatePostView connections={connections} />;
+        return <CreatePostView connections={connections} onPostPublished={addPost} />;
       case View.SEO_ASSISTANT:
         return <SeoAssistantView />;
       case View.CONNECTIONS:

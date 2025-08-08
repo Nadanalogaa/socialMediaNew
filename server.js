@@ -261,9 +261,9 @@ app.delete('/api/connections/:platform', (req, res) => {
 });
 
 app.post('/api/publish-post', (req, res) => {
-    const { platforms, generatedContent, imageUrl, audience } = req.body;
+    const { platforms, generatedContent, imageUrl, audience, prompt } = req.body;
     
-    if (!platforms || !generatedContent) {
+    if (!platforms || !generatedContent || !prompt) {
         return res.status(400).json({ message: 'Missing required fields for publishing.' });
     }
     
@@ -289,9 +289,25 @@ app.post('/api/publish-post', (req, res) => {
         return res.status(400).json({ message: `Cannot publish. Please connect your ${failedToPublish.join(', ')} account(s).`})
     }
     
+    const newPost = {
+        id: `post_${Date.now()}`,
+        platforms,
+        audience,
+        imageUrl,
+        prompt,
+        generatedContent,
+        postedAt: new Date().toISOString(),
+        engagement: {
+            likes: Math.floor(Math.random() * 5),
+            comments: Math.floor(Math.random() * 3),
+            shares: Math.floor(Math.random() * 2),
+        },
+    };
+
     // Simulate network delay
     setTimeout(() => {
-        res.status(200).json({ message: `Successfully published to ${publishedTo.join(', ')}.` });
+        console.log(`[MOCK] Created new post with ID: ${newPost.id}`);
+        res.status(200).json(newPost);
     }, 1500);
 });
 

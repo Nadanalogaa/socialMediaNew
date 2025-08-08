@@ -1,5 +1,4 @@
 
-
 import type { Platform, SeoSuggestions, Post, ConnectionStatus, GeneratedAssetContent } from '../types';
 
 const handleResponse = async (response: Response) => {
@@ -53,7 +52,7 @@ export const disconnectPlatform = async (platform: Platform): Promise<Connection
     return handleResponse(response);
 }
 
-export const publishPost = async (post: Omit<Post, 'id' | 'engagement' | 'postedAt'>): Promise<any> => {
+export const publishPost = async (post: Omit<Post, 'id' | 'engagement' | 'postedAt'>): Promise<Post> => {
      const response = await fetch('/api/publish-post', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

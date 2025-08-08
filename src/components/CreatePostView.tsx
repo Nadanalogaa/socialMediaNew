@@ -8,6 +8,7 @@ import { YoutubeIcon } from './icons/YoutubeIcon';
 
 interface CreatePostViewProps {
     connections: ConnectionStatus;
+    onPostPublished: (post: Post) => void;
 }
 
 const LoadingSpinner: React.FC<{ size?: string }> = ({ size = 'h-5 w-5' }) => (
@@ -17,7 +18,7 @@ const LoadingSpinner: React.FC<{ size?: string }> = ({ size = 'h-5 w-5' }) => (
     </svg>
 );
 
-export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections }) => {
+export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, onPostPublished }) => {
     const [assets, setAssets] = useState<MediaAsset[]>([]);
     const [audience, setAudience] = useState<Audience>(AudienceEnum.Global);
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -95,7 +96,8 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections }) =
         };
 
         try {
-            await publishPost(postToCreate);
+            const newPost = await publishPost(postToCreate);
+            onPostPublished(newPost);
             updateAsset(assetId, { status: 'published' });
             setTimeout(() => {
                 setAssets(prev => prev.filter(a => a.id !== assetId));
