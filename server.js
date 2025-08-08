@@ -1,4 +1,5 @@
 
+
 import express from 'express';
 import 'dotenv/config';
 import { GoogleGenAI, Type } from '@google/genai';
@@ -332,27 +333,43 @@ app.post('/api/publish-post', async (req, res) => {
 
                     const postUrl = `https://graph.facebook.com/v23.0/${connections.Facebook.pageId}/photos`;
                     
-                    // The client now sends a base64 data URL. We can use it directly.
-                    // This replaces the previous logic that generated a random image from picsum.photos.
                     const publicImageUrl = imageUrl;
                     if (!publicImageUrl || !(publicImageUrl.startsWith('data:image') || publicImageUrl.startsWith('data:video'))) {
                          throw new Error('A valid image or video data URL was not provided for the Facebook post.');
                     }
-                    console.log(`[REAL FB] Using data URL provided by client for the image.`);
+                    console.log(`[REAL FB] Preparing multipart/form-data upload from data URL.`);
 
+                    // The Facebook Graph API's 'url' parameter requires a public URL.
+                    // To upload from data, we must use a multipart/form-data request with the 'source' parameter.
+                    
+                    // 1. Parse the base64 data URL
+                    const parts = publicImageUrl.split(',');
+                    const meta = parts[0].split(';');
+                    const mimeType = meta[0].split(':')[1];
+                    const base64Data = parts[1];
+                    
+                    // 2. Convert base64 to a Buffer
+                    const imageBuffer = Buffer.from(base64Data, 'base64');
+                    
+                    // 3. Create FormData object for the multipart request
+                    const formData = new FormData();
+                    formData.append('access_token', connections.Facebook.pageAccessToken);
+                    formData.append('caption', caption);
+                    // The 'source' field contains the image data. We create a Blob from the Buffer.
+                    formData.append('source', new Blob([imageBuffer], { type: mimeType }), 'upload.jpg'); // Filename is good practice
+
+                    // 4. Make the fetch request. 'fetch' will automatically set the Content-Type header
+                    // to 'multipart/form-data' with the correct boundary when the body is a FormData instance.
                     const fbResponse = await fetch(postUrl, {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                        body: new URLSearchParams({
-                            url: publicImageUrl,
-                            caption: caption,
-                            access_token: connections.Facebook.pageAccessToken
-                        })
+                        body: formData,
                     });
 
                     const fbData = await fbResponse.json();
 
                     if (fbData.error) {
+                        // Log the full error for better debugging
+                        console.error('[REAL FB] Graph API Error Response:', JSON.stringify(fbData.error, null, 2));
                         throw new Error(`Graph API post error: ${fbData.error.message}`);
                     }
                     
