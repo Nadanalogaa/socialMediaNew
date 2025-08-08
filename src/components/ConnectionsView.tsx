@@ -54,7 +54,7 @@ export const ConnectionsView: React.FC<ConnectionsViewProps> = ({ connections, s
                         });
                 } else {
                     console.log('User cancelled login or did not fully authorize.');
-                    const detailedError = "Facebook login failed or was cancelled. Please ensure you grant all requested permissions. If the problem persists, try disconnecting and reconnecting.";
+                    const detailedError = "Facebook login failed or was cancelled. Ensure you have granted all requested permissions. A common issue is not having admin rights to the 'Nadanaloga-chennai' page. If the problem persists, try disconnecting and reconnecting.";
                     setError(detailedError);
                     setLoadingPlatform(null);
                 }
@@ -63,7 +63,8 @@ export const ConnectionsView: React.FC<ConnectionsViewProps> = ({ connections, s
             // Trigger the Facebook Login dialog with required permissions for page management
             window.FB.login(loginCallback, {
                 scope: 'public_profile,pages_show_list,pages_manage_posts,pages_read_engagement',
-                enable_profile_selector: true // Allows user to confirm which Facebook profile to use
+                enable_profile_selector: true, // Allows user to confirm which Facebook profile to use
+                auth_type: 'rerequest' // Force re-prompting for permissions to fix stale auth states
             });
 
         } else {
