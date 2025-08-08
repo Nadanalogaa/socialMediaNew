@@ -1,11 +1,11 @@
 
+
 import React, { useState, useCallback, useEffect } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { DashboardView } from './components/DashboardView';
 import { CreatePostView } from './components/CreatePostView';
 import { SeoAssistantView } from './components/SeoAssistantView';
 import { ConnectionsView } from './components/ConnectionsView';
-import { PrivacyPolicyView } from './components/PrivacyPolicyView';
 import type { Post, ConnectionStatus } from './types';
 import { View, Platform } from './types';
 import { MOCK_POSTS } from './constants';
@@ -139,8 +139,6 @@ const App: React.FC = () => {
         return <SeoAssistantView />;
       case View.CONNECTIONS:
         return <ConnectionsView connections={connections} setConnections={setConnections} isFbSdkInitialized={isFbSdkInitialized} />;
-      case View.PRIVACY_POLICY:
-        return <PrivacyPolicyView />;
       case View.DASHBOARD:
       default:
         return <DashboardView posts={posts} />;

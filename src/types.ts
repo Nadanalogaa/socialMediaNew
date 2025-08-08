@@ -1,4 +1,5 @@
 
+
 export enum Platform {
   Facebook = 'Facebook',
   Instagram = 'Instagram',
@@ -18,7 +19,6 @@ export enum View {
   CREATE_POST = 'CREATE_POST',
   SEO_ASSISTANT = 'SEO_ASSISTANT',
   CONNECTIONS = 'CONNECTIONS',
-  PRIVACY_POLICY = 'PRIVACY_POLICY',
 }
 
 
