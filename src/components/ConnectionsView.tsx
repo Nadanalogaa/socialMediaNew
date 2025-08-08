@@ -1,7 +1,5 @@
 
-
-
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import type { ConnectionStatus, Platform } from '../types';
 import { Platform as PlatformEnum } from '../types';
 import { getConnections, disconnectPlatform, connectFacebook } from '../services/geminiService';
@@ -25,7 +23,7 @@ const FacebookTroubleshooter: React.FC = () => (
     <div className="mt-8 p-6 bg-blue-900/30 rounded-lg border border-blue-600 text-sm text-blue-100 animate-fade-in">
         <h3 className="font-bold text-lg text-white mb-3">Facebook Connection Troubleshooter</h3>
         <p className="mb-4">
-            We're sorry you're having trouble. This issue is almost always caused by a misconfiguration in your Facebook Developer account. Please carefully check the following settings for your app.
+            The "Invalid Scopes" error indicates a misconfiguration in your Facebook Developer account. Please carefully check the following settings for your app.
         </p>
         <ol className="list-decimal list-inside space-y-4">
             <li>
@@ -33,25 +31,33 @@ const FacebookTroubleshooter: React.FC = () => (
                 <ul className="list-disc list-inside pl-5 mt-2 space-y-1 text-blue-200">
                     <li>Go to your Facebook App Dashboard at <a href="https://developers.facebook.com/apps/" target="_blank" rel="noopener noreferrer" className="underline hover:text-white">developers.facebook.com/apps/</a>.</li>
                     <li>Navigate to <strong>Settings → Basic</strong>.</li>
-                    <li>In the <strong>App Domains</strong> field, make sure <code className="bg-dark-bg px-1 py-0.5 rounded text-white">social-media-new-omega.vercel.app</code> is listed.</li>
+                    <li>In the <strong>App Domains</strong> field, make sure your app's domain is listed (e.g., <code className="bg-dark-bg px-1 py-0.5 rounded text-white">social-media-new-omega.vercel.app</code>).</li>
                     <li>Navigate to <strong>Facebook Login → Settings</strong> (under "Products" in the left sidebar).</li>
-                    <li>In <strong>Allowed Domains for the JavaScript SDK</strong>, ensure <code className="bg-dark-bg px-1 py-0.5 rounded text-white">https://social-media-new-omega.vercel.app</code> is listed. Note the required <strong>https://</strong> prefix.</li>
+                    <li>In <strong>Allowed Domains for the JavaScript SDK</strong>, ensure your full app URL is listed (e.g., <code className="bg-dark-bg px-1 py-0.5 rounded text-white">https://social-media-new-omega.vercel.app</code>). Note the required <strong>https://</strong> prefix.</li>
                 </ul>
+            </li>
+            <li>
+                <strong>Verify Permissions & App Type:</strong>
+                 <ul className="list-disc list-inside pl-5 mt-2 space-y-1 text-blue-200">
+                    <li>Ensure your app is of type <strong>Business</strong>. You can check this under <strong>App Settings → Basic → App Type</strong>. Other types may not support page management permissions.</li>
+                    <li>This app requests the following permissions: <code className="bg-dark-bg px-1 py-0.5 rounded text-white">pages_show_list</code>, <code className="bg-dark-bg px-1 py-0.5 rounded text-white">pages_manage_posts</code>, and <code className="bg-dark-bg px-1 py-0.5 rounded text-white">pages_read_engagement</code>.</li>
+                    <li>Go to <strong>App Review → Permissions and Features</strong>. Search for these permissions. They should be available to your app. For an app "In Development", your account (as an Admin/Developer/Tester) should be able to grant them without a formal review.</li>
+                 </ul>
             </li>
             <li>
                 <strong>Check App Mode:</strong>
                  <ul className="list-disc list-inside pl-5 mt-2 space-y-1 text-blue-200">
                     <li>At the top of your App Dashboard, check the app's status toggle.</li>
                     <li>If it shows <strong>In Development</strong>, only App Admins, Developers, or Testers can connect. Ensure your Facebook account has one of these roles under the <strong>Roles → Roles</strong> section.</li>
-                    <li>If it shows <strong>Live</strong>, the app is public, but the domain check (Step 1) is still mandatory.</li>
+                    <li>If it shows <strong>Live</strong>, the permissions mentioned above will require "Advanced Access", which must be granted through Facebook's App Review process.</li>
                 </ul>
             </li>
              <li>
                 <strong>Examine Browser Console for Clues:</strong>
                  <ul className="list-disc list-inside pl-5 mt-2 space-y-1 text-blue-200">
                     <li>Open your browser's developer console (usually with the F12 key).</li>
-                    <li>Click "Connect" again and watch the console for messages from this app.</li>
-                    <li>The console will now log the full response from Facebook, which may contain a specific error like "URL Blocked" or "App Not Set Up".</li>
+                    <li>Click "Connect" again and watch the console for messages.</li>
+                    <li>The console will log the full response from Facebook, which may contain a specific error like "URL Blocked" or details about the permission failure.</li>
                 </ul>
             </li>
         </ol>
@@ -65,6 +71,46 @@ export const ConnectionsView: React.FC<ConnectionsViewProps> = ({ connections, s
     const [showFbTroubleshooter, setShowFbTroubleshooter] = useState(false);
     const popupRef = useRef<Window | null>(null);
     const intervalRef = useRef<number | null>(null);
+
+    const handleAuthMessage = useCallback(async (event: MessageEvent) => {
+        // Basic security check for mock flow
+        if (event.origin !== window.location.origin) return;
+
+        const { type, success, platform } = event.data;
+
+        if (type === 'oauth-complete') {
+            if (intervalRef.current) {
+                clearInterval(intervalRef.current);
+            }
+            if (popupRef.current) {
+                popupRef.current.close();
+            }
+            
+            if (success) {
+                try {
+                    const updatedConnections = await getConnections();
+                    setConnections(updatedConnections);
+                } catch (err: any) {
+                    setError(`Failed to refresh connections after auth for ${platform}. Details: ${err.message}`);
+                }
+            } else {
+                setError(`Authentication for ${platform} failed or was cancelled.`);
+            }
+            setLoadingPlatform(null);
+        }
+    }, [setConnections, setError, setLoadingPlatform]);
+
+    useEffect(() => {
+        // This listener handles the message from the MOCK auth popup window.
+        window.addEventListener('message', handleAuthMessage);
+
+        return () => {
+            window.removeEventListener('message', handleAuthMessage);
+            if (intervalRef.current) {
+                clearInterval(intervalRef.current);
+            }
+        };
+    }, [handleAuthMessage]);
 
     const handleConnect = (platform: Platform) => {
         if (platform === PlatformEnum.Facebook) {
@@ -130,7 +176,8 @@ export const ConnectionsView: React.FC<ConnectionsViewProps> = ({ connections, s
             }
 
             // These permissions are essential for the app to function (publish posts, show analytics).
-            const required_scope = 'public_profile,email,pages_show_list,pages_manage_posts,pages_read_engagement';
+            // We removed 'email' as it was reported in the "Invalid Scopes" error and is not essential for posting.
+            const required_scope = 'public_profile,pages_show_list,pages_manage_posts,pages_read_engagement';
             console.log(`Requesting Facebook permissions with scope: ${required_scope}`);
 
             // Trigger the Facebook Login dialog with required permissions for page management
@@ -198,40 +245,6 @@ export const ConnectionsView: React.FC<ConnectionsViewProps> = ({ connections, s
             setLoadingPlatform(null);
         }
     };
-
-    useEffect(() => {
-        // This listener handles the message from the MOCK auth popup window.
-        const handleAuthMessage = async (event: MessageEvent) => {
-            // Basic security check for mock flow
-            if (event.origin !== window.location.origin) return;
-
-            const { type, success, platform } = event.data;
-
-            if (type === 'oauth-complete') {
-                if (intervalRef.current) clearInterval(intervalRef.current);
-                if (popupRef.current) popupRef.current.close();
-                
-                if (success) {
-                    try {
-                        const updatedConnections = await getConnections();
-                        setConnections(updatedConnections);
-                    } catch (err: any) {
-                        setError(`Failed to refresh connections after auth for ${platform}. Details: ${err.message}`);
-                    }
-                } else {
-                    setError(`Authentication for ${platform} failed or was cancelled.`);
-                }
-                setLoadingPlatform(null);
-            }
-        };
-
-        window.addEventListener('message', handleAuthMessage);
-
-        return () => {
-            window.removeEventListener('message', handleAuthMessage);
-            if (intervalRef.current) clearInterval(intervalRef.current);
-        };
-    }, [setConnections]);
 
     return (
         <div className="max-w-4xl mx-auto animate-fade-in">
