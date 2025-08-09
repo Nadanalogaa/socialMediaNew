@@ -1,6 +1,5 @@
 
-
-import React, { useState, useCallback, useRef, useEffect } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import type { Platform, Audience, Post, ConnectionStatus, MediaAsset } from '../types';
 import { Platform as PlatformEnum, Audience as AudienceEnum } from '../types';
 import { publishPost, generateAssetContent } from '../services/geminiService';
@@ -27,6 +26,13 @@ const LoadingSpinner: React.FC<{ size?: string }> = ({ size = 'h-5 w-5' }) => (
     </svg>
 );
 
+const ChevronIcon: React.FC<{ className?: string }> = ({ className }) => (
+    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+    </svg>
+);
+
+
 export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, onPostPublished }) => {
     const [assets, setAssets] = useState<MediaAsset[]>([]);
     const [audience, setAudience] = useState<Audience>(AudienceEnum.Global);
@@ -38,6 +44,7 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, onP
         action: 'generating' | 'publishing' | null;
         errorCount: number;
     }>({ total: 0, completed: 0, action: null, errorCount: 0 });
+    const [expandedAssetId, setExpandedAssetId] = useState<string | null>(null);
 
     const updateAsset = useCallback((id: string, updates: Partial<MediaAsset>) => {
         setAssets(prev => prev.map(a => a.id === id ? { ...a, ...updates } : a));
@@ -111,7 +118,6 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, onP
             throw new Error(errorMsg);
         }
         
-        // Add client-side validation for Instagram dependency
         if (asset.platforms.includes(PlatformEnum.Instagram) && !asset.platforms.includes(PlatformEnum.Facebook)) {
             const errorMsg = 'To post on Instagram, Facebook must also be selected due to API requirements.';
             updateAsset(assetId, { status: 'error', errorMessage: errorMsg });
@@ -151,7 +157,6 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, onP
         }
     };
     
-    // --- Selection and Bulk Action Handlers ---
     const handleToggleSelection = (assetId: string) => {
         setSelectedAssetIds(prev => {
             const newSet = new Set(prev);
@@ -211,7 +216,6 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, onP
         
         setTimeout(() => {
             setBulkProgress({ total: 0, completed: 0, action: null, errorCount: 0 });
-            // Cleanup: remove published assets and clear selection
             setAssets(prev => prev.filter(a => a.status !== 'published'));
             setSelectedAssetIds(new Set());
         }, 3000);
@@ -229,6 +233,12 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, onP
             currentPlatforms.add(platform);
         }
         updateAsset(assetId, { platforms: Array.from(currentPlatforms), status: 'idle', errorMessage: undefined });
+    };
+
+    const handleCardClick = (assetId: string, isExpanded: boolean) => {
+        if (window.innerWidth < 768) { // md breakpoint
+            setExpandedAssetId(isExpanded ? null : assetId);
+        }
     };
     
     return (
@@ -249,9 +259,9 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, onP
             </div>
 
             {assets.length > 0 && (
-                <div className="bg-dark-card p-4 rounded-lg border border-dark-border space-y-4">
-                    <div className="flex flex-wrap items-center justify-between gap-4">
-                        <div className="flex items-center space-x-3">
+                 <div className="bg-dark-card p-4 rounded-lg border border-dark-border space-y-4">
+                    <div className="hidden md:flex flex-wrap items-center justify-between gap-4">
+                         <div className="flex items-center space-x-3">
                             <input 
                                 type="checkbox"
                                 onChange={handleSelectAll}
@@ -263,16 +273,16 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, onP
                                 {selectedAssetIds.size} / {assets.length} selected
                             </label>
                         </div>
-                        <div className="flex items-center gap-2 w-full sm:w-auto">
-                            <button onClick={handleBulkGenerate} disabled={selectedAssetIds.size === 0 || bulkProgress.action !== null} className="w-full sm:w-auto flex-1 flex justify-center items-center gap-2 py-2 px-3 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-brand-primary hover:bg-brand-secondary disabled:bg-gray-500 disabled:cursor-not-allowed">
+                        <div className="flex items-center gap-2">
+                            <button onClick={handleBulkGenerate} disabled={selectedAssetIds.size === 0 || bulkProgress.action !== null} className="flex justify-center items-center gap-2 py-2 px-3 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-brand-primary hover:bg-brand-secondary disabled:bg-gray-500 disabled:cursor-not-allowed">
                                 ✨ Generate Selected
                             </button>
-                            <button onClick={handleBulkPublish} disabled={selectedAssetIds.size === 0 || bulkProgress.action !== null} className="w-full sm:w-auto flex-1 flex justify-center items-center gap-2 py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 disabled:bg-gray-500 disabled:cursor-not-allowed">
+                            <button onClick={handleBulkPublish} disabled={selectedAssetIds.size === 0 || bulkProgress.action !== null} className="flex justify-center items-center gap-2 py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 disabled:bg-gray-500 disabled:cursor-not-allowed">
                                 🚀 Publish Selected
                             </button>
                         </div>
                     </div>
-                    
+                     
                     {bulkProgress.action && (
                         <div className="pt-2 space-y-2" aria-live="polite">
                             <div className="flex justify-between text-sm font-medium text-dark-text-secondary">
@@ -297,23 +307,43 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, onP
             
             <div className="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-6">
                 {assets.map((asset) => {
-                     const isWorking = asset.status === 'generating' || asset.status === 'publishing';
-                     const isDone = asset.status === 'published';
-                     return (
-                        <div key={asset.id} className="relative">
-                            {!isDone && (
-                                <div className="absolute top-3 left-3 z-10">
+                    const isExpanded = expandedAssetId === asset.id;
+                    const isWorking = asset.status === 'generating' || asset.status === 'publishing';
+                    const isDone = asset.status === 'published';
+                    
+                    return (
+                        <div key={asset.id} className={`bg-dark-card rounded-lg border flex flex-col transition-all duration-500 ${isDone ? 'border-green-500 opacity-60' : 'border-dark-border'} ${selectedAssetIds.has(asset.id) ? 'border-brand-primary ring-2 ring-brand-primary' : ''}`}>
+                            {/* Card Header (for mobile collapse/expand) */}
+                            <div className="flex items-center p-3 gap-3 cursor-pointer md:cursor-auto" onClick={() => handleCardClick(asset.id, isExpanded)}>
+                                {!isDone && (
                                     <input 
-                                    type="checkbox"
-                                    checked={selectedAssetIds.has(asset.id)}
-                                    onChange={() => handleToggleSelection(asset.id)}
-                                    className="h-6 w-6 rounded bg-dark-bg border-dark-border text-brand-primary focus:ring-brand-primary ring-offset-dark-card"
+                                        type="checkbox"
+                                        checked={selectedAssetIds.has(asset.id)}
+                                        onChange={() => handleToggleSelection(asset.id)}
+                                        onClick={(e) => e.stopPropagation()}
+                                        className="h-5 w-5 rounded bg-dark-bg border-dark-border text-brand-primary focus:ring-brand-primary ring-offset-dark-card flex-shrink-0"
                                     />
+                                )}
+                                {asset.file.type.startsWith('image/') ? (
+                                    <img src={asset.previewUrl} alt="Preview" className="w-12 h-12 object-cover rounded-md bg-dark-bg flex-shrink-0" />
+                                ) : (
+                                    <div className="w-12 h-12 bg-black flex items-center justify-center rounded-md flex-shrink-0">
+                                        <YoutubeIcon className="w-6 h-6 text-white" />
+                                    </div>
+                                )}
+                                <div className="flex-1 overflow-hidden">
+                                    <p className="font-semibold text-white truncate" title={asset.name}>{asset.name}</p>
+                                    <p className="text-xs text-dark-text-secondary capitalize">{asset.status}</p>
                                 </div>
-                            )}
-                            <div className={`bg-dark-card rounded-lg border flex flex-col transition-all duration-500 ${isDone ? 'border-green-500 opacity-60 scale-95' : 'border-dark-border'} ${selectedAssetIds.has(asset.id) ? 'border-brand-primary ring-2 ring-brand-primary' : ''}`}>
+                                <button className="p-1 rounded-full text-dark-text-secondary hover:bg-dark-bg md:hidden" aria-label="Expand">
+                                    <ChevronIcon className={`w-6 h-6 transition-transform ${isExpanded ? 'rotate-180' : 'rotate-0'}`} />
+                                </button>
+                            </div>
+
+                            {/* Collapsible Card Body */}
+                            <div className={`border-t border-dark-border ${isExpanded ? 'block' : 'hidden'} md:block`}>
                                 <div className="p-4 flex-grow space-y-4">
-                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                                         <div className="space-y-3">
                                             {asset.file.type.startsWith('image/') ? <img src={asset.previewUrl} alt="Preview" className="rounded-lg w-full object-cover aspect-video bg-dark-bg" /> : <video src={asset.previewUrl} controls className="rounded-lg w-full aspect-video bg-black"></video>}
                                             <textarea value={asset.prompt} onChange={e => updateAsset(asset.id, { prompt: e.target.value, status: 'idle' })} placeholder="e.g., A dancer in a dramatic pose" className="w-full bg-dark-bg border border-dark-border rounded-md p-2 text-sm focus:ring-brand-primary focus:border-brand-primary" rows={2}/>
@@ -347,7 +377,7 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, onP
                                 {asset.status === 'error' && <div className="text-sm text-red-400 text-center bg-red-900/30 p-2">{asset.errorMessage}</div>}
                             </div>
                         </div>
-                     );
+                    );
                 })}
             </div>
             {assets.length === 0 && (
