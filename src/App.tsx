@@ -10,6 +10,7 @@ import type { Post, ConnectionStatus } from './types';
 import { View, Platform } from './types';
 import { MOCK_POSTS } from './constants';
 import { getConnections, connectFacebook } from './services/geminiService';
+import { BottomNavBar } from './components/BottomNavBar';
 
 // Extend the Window interface to include FB
 declare global {
@@ -148,9 +149,10 @@ const App: React.FC = () => {
   return (
     <div className="flex min-h-screen bg-dark-bg font-sans">
       <Sidebar activeView={activeView} setActiveView={setActiveView} />
-      <main className="flex-1 p-4 sm:p-6 lg:p-8">
+      <main className="flex-1 p-4 sm:p-6 lg:p-8 pb-24 md:pb-8">
         {renderView()}
       </main>
+      <BottomNavBar activeView={activeView} setActiveView={setActiveView} />
     </div>
   );
 };

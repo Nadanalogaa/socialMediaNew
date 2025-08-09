@@ -35,7 +35,7 @@
 
   export const Sidebar: React.FC<SidebarProps> = ({ activeView, setActiveView }) => {
     return (
-      <aside className="w-64 bg-gray-900 text-white p-4 flex flex-col sticky top-0 h-screen border-r border-dark-border">
+      <aside className="w-64 bg-gray-900 text-white p-4 hidden md:flex flex-col sticky top-0 h-screen border-r border-dark-border">
         <div className="flex items-center mb-10">
           <div className="p-2 bg-gradient-to-r from-brand-primary to-brand-secondary rounded-lg">
             <CreatePostIcon className="w-6 h-6 text-white" />

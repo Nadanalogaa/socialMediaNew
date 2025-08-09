@@ -110,6 +110,13 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, onP
             updateAsset(assetId, { status: 'error', errorMessage: errorMsg });
             throw new Error(errorMsg);
         }
+        
+        // Add client-side validation for Instagram dependency
+        if (asset.platforms.includes(PlatformEnum.Instagram) && !asset.platforms.includes(PlatformEnum.Facebook)) {
+            const errorMsg = 'To post on Instagram, Facebook must also be selected due to API requirements.';
+            updateAsset(assetId, { status: 'error', errorMessage: errorMsg });
+            throw new Error(errorMsg);
+        }
 
         const unconnected = asset.platforms.filter(p => !connections[p]);
         if (unconnected.length > 0) {
@@ -218,12 +225,10 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, onP
         const currentPlatforms = new Set(asset.platforms);
         if (currentPlatforms.has(platform)) {
             currentPlatforms.delete(platform);
-            if (platform === PlatformEnum.Facebook) currentPlatforms.delete(PlatformEnum.Instagram);
         } else {
             currentPlatforms.add(platform);
-            if (platform === PlatformEnum.Instagram) currentPlatforms.add(PlatformEnum.Facebook);
         }
-        updateAsset(assetId, { platforms: Array.from(currentPlatforms), status: 'idle' });
+        updateAsset(assetId, { platforms: Array.from(currentPlatforms), status: 'idle', errorMessage: undefined });
     };
     
     return (
