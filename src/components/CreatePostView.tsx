@@ -1,4 +1,5 @@
 
+
 import React, { useState, useCallback, useRef } from 'react';
 import type { Platform, Audience, Post, ConnectionStatus, MediaAsset } from '../types';
 import { Platform as PlatformEnum, Audience as AudienceEnum } from '../types';
@@ -124,6 +125,30 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, onP
             updateAsset(assetId, { status: 'error', errorMessage: err.message || 'Failed to publish.' });
         }
     };
+
+    const togglePlatform = (assetId: string, platform: Platform) => {
+        const asset = assets.find(a => a.id === assetId);
+        if (!asset) return;
+        
+        const currentPlatforms = new Set(asset.platforms);
+
+        if (currentPlatforms.has(platform)) {
+            // UNSELECTING
+            currentPlatforms.delete(platform);
+            // If unselecting Facebook, also unselect Instagram
+            if (platform === PlatformEnum.Facebook) {
+                currentPlatforms.delete(PlatformEnum.Instagram);
+            }
+        } else {
+            // SELECTING
+            currentPlatforms.add(platform);
+            // If selecting Instagram, also select Facebook
+            if (platform === PlatformEnum.Instagram) {
+                currentPlatforms.add(PlatformEnum.Facebook);
+            }
+        }
+        updateAsset(assetId, { platforms: Array.from(currentPlatforms), status: 'idle' });
+    };
     
     return (
         <div className="max-w-7xl mx-auto animate-fade-in space-y-8">
@@ -192,10 +217,7 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, onP
                                 <div className="flex flex-wrap gap-2">
                                     {Object.values(PlatformEnum).map(p => (
                                         <button key={p}
-                                            onClick={() => {
-                                                const newPlatforms = asset.platforms.includes(p) ? asset.platforms.filter(pf => pf !== p) : [...asset.platforms, p];
-                                                updateAsset(asset.id, { platforms: newPlatforms, status: 'idle' });
-                                            }}
+                                            onClick={() => togglePlatform(asset.id, p)}
                                             className={`flex items-center space-x-2 px-3 py-1.5 rounded-md border text-xs transition-all ${asset.platforms.includes(p) ? 'bg-brand-secondary border-brand-secondary text-white' : 'bg-dark-bg border-dark-border hover:border-brand-secondary'}`}>
                                             {p === PlatformEnum.Facebook && <FacebookIcon className="w-4 h-4" />}
                                             {p === PlatformEnum.Instagram && <InstagramIcon className="w-4 h-4" />}
