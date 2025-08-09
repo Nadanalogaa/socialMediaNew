@@ -43,6 +43,15 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, onP
         setAssets(prev => prev.map(a => a.id === id ? { ...a, ...updates } : a));
     }, []);
 
+    const removeAsset = (assetId: string) => {
+        setAssets(prev => prev.filter(a => a.id !== assetId));
+        setSelectedAssetIds(prev => {
+            const newSet = new Set(prev);
+            newSet.delete(assetId);
+            return newSet;
+        });
+    };
+
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const files = e.target.files;
         if (files) {
@@ -236,7 +245,7 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, onP
 
             {assets.length > 0 && (
                 <div className="bg-dark-card p-4 rounded-lg border border-dark-border space-y-4">
-                    <div className="flex flex-col sm:flex-row items-center gap-4">
+                    <div className="flex flex-wrap items-center justify-between gap-4">
                         <div className="flex items-center space-x-3">
                             <input 
                                 type="checkbox"
@@ -249,19 +258,18 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, onP
                                 {selectedAssetIds.size} / {assets.length} selected
                             </label>
                         </div>
-                        <div className="flex-grow hidden sm:block" />
                         <div className="flex items-center gap-2 w-full sm:w-auto">
-                            <button onClick={handleBulkGenerate} disabled={selectedAssetIds.size === 0 || bulkProgress.action !== null} className="w-full sm:w-auto flex-1 flex justify-center items-center py-2 px-3 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-brand-primary hover:bg-brand-secondary disabled:bg-gray-500 disabled:cursor-not-allowed">
-                                ✨ Generate
+                            <button onClick={handleBulkGenerate} disabled={selectedAssetIds.size === 0 || bulkProgress.action !== null} className="w-full sm:w-auto flex-1 flex justify-center items-center gap-2 py-2 px-3 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-brand-primary hover:bg-brand-secondary disabled:bg-gray-500 disabled:cursor-not-allowed">
+                                ✨ Generate Selected
                             </button>
-                            <button onClick={handleBulkPublish} disabled={selectedAssetIds.size === 0 || bulkProgress.action !== null} className="w-full sm:w-auto flex-1 flex justify-center items-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 disabled:bg-gray-500 disabled:cursor-not-allowed">
-                                🚀 Publish
+                            <button onClick={handleBulkPublish} disabled={selectedAssetIds.size === 0 || bulkProgress.action !== null} className="w-full sm:w-auto flex-1 flex justify-center items-center gap-2 py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 disabled:bg-gray-500 disabled:cursor-not-allowed">
+                                🚀 Publish Selected
                             </button>
                         </div>
                     </div>
                     
                     {bulkProgress.action && (
-                        <div className="pt-2 space-y-2">
+                        <div className="pt-2 space-y-2" aria-live="polite">
                             <div className="flex justify-between text-sm font-medium text-dark-text-secondary">
                                 <span>{bulkProgress.action === 'generating' ? 'Generating Content...' : 'Publishing Posts...'}</span>
                                 <span>{bulkProgress.completed} / {bulkProgress.total}</span>
@@ -320,15 +328,15 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, onP
                                         </div>
                                     </div>
                                 </div>
-                                <div className="bg-gray-900/50 p-3 flex items-center gap-2">
+                                <div className="bg-gray-900/50 p-3 flex items-center gap-3">
                                      <button onClick={() => handleGenerateContent(asset.id)} disabled={isWorking || isDone || !asset.prompt} className="flex-1 flex justify-center items-center py-2 px-3 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-brand-primary hover:bg-brand-secondary disabled:bg-gray-500 disabled:cursor-not-allowed">
                                         {asset.status === 'generating' ? <LoadingSpinner size="h-4 w-4" /> : '✨ Generate'}
                                     </button>
                                      <button onClick={() => handlePublish(asset.id)} disabled={isWorking || isDone || asset.platforms.length === 0 || !asset.description} className="flex-1 flex justify-center items-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 disabled:bg-gray-500 disabled:cursor-not-allowed">
                                         {asset.status === 'publishing' ? <LoadingSpinner size="h-4 w-4" /> : (isDone ? 'Published!' : '🚀 Publish')}
                                     </button>
-                                    <button onClick={() => setAssets(p => p.filter(a => a.id !== asset.id))} className="p-2 text-red-400 hover:text-red-300 disabled:opacity-50" aria-label="Remove asset" disabled={isWorking}>
-                                        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                                    <button onClick={() => removeAsset(asset.id)} className="flex-shrink-0 px-3 py-2 text-sm font-medium text-red-500 hover:bg-red-500/10 rounded-md disabled:opacity-50" aria-label="Remove asset" disabled={isWorking}>
+                                        Remove
                                     </button>
                                 </div>
                                 {asset.status === 'error' && <div className="text-sm text-red-400 text-center bg-red-900/30 p-2">{asset.errorMessage}</div>}
