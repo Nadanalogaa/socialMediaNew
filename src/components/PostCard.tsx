@@ -56,9 +56,18 @@ export const PostCard: React.FC<PostCardProps> = ({ post, isSelected, isFacebook
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   const handleDeleteClick = async () => {
-    const confirmDelete = window.confirm(
-      'Are you sure you want to delete this post? This action is permanent and will also remove it from connected social platforms.'
-    );
+    const onFacebook = post.platforms.includes(Platform.Facebook);
+    const onInstagram = post.platforms.includes(Platform.Instagram);
+
+    let confirmMessage = 'Are you sure you want to delete this post? This will permanently remove it from your dashboard.';
+
+    if (onInstagram) {
+        confirmMessage += '\n\nNOTE: This will also attempt to delete the post from Facebook. However, due to Instagram API limitations, you must manually delete the post from the Instagram app itself.';
+    } else if (onFacebook) {
+        confirmMessage += '\n\nThis action will also permanently delete the post from your Facebook Page.';
+    }
+
+    const confirmDelete = window.confirm(confirmMessage);
     if (confirmDelete) {
       await onDelete(post.id);
     }
