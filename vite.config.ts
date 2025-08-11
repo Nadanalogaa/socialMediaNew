@@ -19,5 +19,10 @@ export default defineConfig({
         changeOrigin: true,
       }
     }
+  },
+  build: {
+    rollupOptions: {
+      external: ['@ffmpeg/ffmpeg', '@ffmpeg/util']
+    }
   }
 })
