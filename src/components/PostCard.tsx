@@ -1,3 +1,4 @@
+/// <reference lib="dom" />
 
 import React, { useState } from 'react';
 import type { Post } from '../types';

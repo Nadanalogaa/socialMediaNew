@@ -1,4 +1,4 @@
-
+/// <reference lib="dom" />
 
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import type { ConnectionStatus, Platform, ConnectionDetails } from '../types';

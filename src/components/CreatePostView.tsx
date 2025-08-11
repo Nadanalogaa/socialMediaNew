@@ -1,3 +1,4 @@
+/// <reference lib="dom" />
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import type { Platform, Audience, Post, ConnectionStatus, MediaAsset, GeneratedPostIdea, ConnectionDetails } from '../types';
@@ -146,6 +147,8 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
 
     // Sync assets to IndexedDB whenever they change
     useEffect(() => {
+        // Avoid syncing on the very first render before we've had a chance to load from DB
+        if (assets.length === 0 && document.readyState !== 'complete') return;
         syncAssetsWithDB(assets);
     }, [assets]);
 
@@ -249,10 +252,12 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
             });
             
             setTimeout(() => {
-                const currentAsset = assets.find(a => a.id === assetId);
-                if (currentAsset && currentAsset.errorMessage?.startsWith('Compressed')) {
-                     updateAsset(assetId, { errorMessage: undefined });
-                }
+                setAssets(currentAssets => currentAssets.map(a => {
+                    if (a.id === assetId && a.errorMessage?.startsWith('Compressed')) {
+                        return { ...a, errorMessage: undefined };
+                    }
+                    return a;
+                }));
             }, 5000);
 
         } catch (error) {

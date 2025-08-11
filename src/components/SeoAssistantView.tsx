@@ -1,3 +1,4 @@
+/// <reference lib="dom" />
 
 import React, { useState, useCallback } from 'react';
 import { generateSeoSuggestions, generatePostFromIdea } from '../services/geminiService';
