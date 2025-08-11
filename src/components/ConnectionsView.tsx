@@ -1,5 +1,4 @@
 
-
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import type { ConnectionStatus, Platform } from '../types';
 import { Platform as PlatformEnum } from '../types';
@@ -91,8 +90,9 @@ export const ConnectionsView: React.FC<ConnectionsViewProps> = ({ connections, s
                 try {
                     const updatedConnections = await getConnections();
                     setConnections(updatedConnections);
-                } catch (err: any) {
-                    setError(`Failed to refresh connections after auth for ${platform}. Details: ${err.message}`);
+                } catch (err) {
+                    const message = err instanceof Error ? err.message : String(err);
+                    setError(`Failed to refresh connections after auth for ${platform}. Details: ${message}`);
                 }
             } else {
                 setError(`Authentication for ${platform} failed or was cancelled.`);
@@ -142,9 +142,10 @@ export const ConnectionsView: React.FC<ConnectionsViewProps> = ({ connections, s
                                 setError(null);
                                 setShowFbTroubleshooter(false);
                             })
-                            .catch((err: any) => {
+                            .catch((err: unknown) => {
+                                 const message = err instanceof Error ? err.message : String(err);
                                  console.error(`Backend connection failed after successful FB login:`, err);
-                                 setError(`Facebook login was successful, but the backend couldn't connect to the page or Instagram account. Error: ${err.message}. Please ensure you are an admin of the target page and its linked IG account.`);
+                                 setError(`Facebook login was successful, but the backend couldn't connect to the page or Instagram account. Error: ${message}. Please ensure you are an admin of the target page and its linked IG account.`);
                                  setShowFbTroubleshooter(true);
                             })
                             .finally(() => {
@@ -228,8 +229,9 @@ export const ConnectionsView: React.FC<ConnectionsViewProps> = ({ connections, s
             const updatedConnections = await disconnectPlatform(platform);
             setConnections(updatedConnections);
 
-        } catch (err: any) {
-            setError(`Failed to disconnect ${platform}: ${err.message}`);
+        } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            setError(`Failed to disconnect ${platform}: ${message}`);
         } finally {
             setLoadingPlatform(null);
         }

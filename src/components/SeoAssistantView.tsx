@@ -1,4 +1,5 @@
 
+
 import React, { useState, useCallback } from 'react';
 import { generateSeoSuggestions, generatePostFromIdea } from '../services/geminiService';
 import type { SeoSuggestions, View } from '../types';
@@ -70,7 +71,7 @@ export const SeoConnectorView: React.FC<SeoConnectorViewProps> = ({ navigateTo }
                         id="website-url"
                         className="flex-1 min-w-0 block w-full px-3 py-2 rounded-none rounded-l-md focus:ring-brand-primary focus:border-brand-primary sm:text-sm border-dark-border bg-dark-bg text-dark-text"
                         value={url}
-                        onChange={(e) => setUrl(e.target.value)}
+                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setUrl(e.target.value)}
                         placeholder="www.your-business.com"
                     />
                     <button

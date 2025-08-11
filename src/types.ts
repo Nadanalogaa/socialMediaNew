@@ -77,6 +77,6 @@ export interface MediaAsset {
   description: string;
   hashtags: string[];
   platforms: Platform[];
-  status: 'idle' | 'generating' | 'publishing' | 'error' | 'published';
+  status: 'idle' | 'generating' | 'publishing' | 'error' | 'published' | 'compressing';
   errorMessage?: string;
 }
