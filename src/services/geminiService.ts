@@ -1,5 +1,6 @@
 
 
+
 import type { Platform, SeoSuggestions, Post, ConnectionStatus, GeneratedAssetContent, GeneratedPostIdea, ConnectionDetails } from '../types';
 
 const handleResponse = async (response: Response) => {
@@ -9,7 +10,7 @@ const handleResponse = async (response: Response) => {
             const errorBody = await response.json();
             errorMessage = errorBody.message || errorMessage;
         } catch (e) {
-            // Ignore if the response body is not JSON
+            // Ignore if the response is not JSON
         }
         throw new Error(errorMessage);
     }
@@ -74,6 +75,15 @@ export const publishPost = async (
             'Content-Type': 'application/json'
         },
         body: JSON.stringify({ ...postData, ...connectionDetails })
+    });
+    return handleResponse(response);
+};
+
+export const getPostInsights = async (postId: string, pageAccessToken: string): Promise<{ likes: number; comments: number; shares: number; }> => {
+    const response = await fetch('/api/post-insights', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ postId, pageAccessToken }),
     });
     return handleResponse(response);
 };

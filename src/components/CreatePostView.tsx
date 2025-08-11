@@ -1,5 +1,6 @@
 
 
+
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import type { Platform, Audience, Post, ConnectionStatus, MediaAsset, GeneratedPostIdea, ConnectionDetails } from '../types';
 import { Platform as PlatformEnum, Audience as AudienceEnum } from '../types';
@@ -25,7 +26,7 @@ interface CreatePostViewProps {
     connections: ConnectionStatus;
     connectionDetails: ConnectionDetails;
     onPostPublished: (post: Post) => void;
-    postSeed: GeneratedPostIdea | null;
+    postSeed: GeneratedPostIdea | Post | null;
     clearPostSeed: () => void;
 }
 
@@ -64,17 +65,35 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
 
     useEffect(() => {
         if (postSeed) {
-            const newAsset: MediaAsset = {
-                id: `asset_${Date.now()}`,
-                file: undefined,
-                previewUrl: undefined,
-                name: "Generated Social Post", // Default title
-                prompt: postSeed.imagePrompt,
-                description: postSeed.postText,
-                hashtags: postSeed.hashtags,
-                platforms: [PlatformEnum.Facebook], // Default selection
-                status: 'idle',
-            };
+            let newAsset: MediaAsset;
+            if ('postedAt' in postSeed) { // Type guard: it's a Post object
+                const post = postSeed as Post;
+                newAsset = {
+                    id: `asset_${Date.now()}`,
+                    file: undefined,
+                    previewUrl: post.imageUrl,
+                    name: post.generatedContent.youtubeTitle || "Copied Post",
+                    prompt: post.prompt,
+                    description: post.generatedContent.facebook || post.generatedContent.instagram || post.generatedContent.youtubeDescription || '',
+                    hashtags: post.generatedContent.hashtags,
+                    platforms: post.platforms,
+                    status: 'idle',
+                    errorMessage: post.imageUrl ? 'This is a copy. To publish, confirm or change the media.' : 'This is a copy. Please add media to publish.',
+                };
+            } else { // It's a GeneratedPostIdea
+                const idea = postSeed as GeneratedPostIdea;
+                newAsset = {
+                    id: `asset_${Date.now()}`,
+                    file: undefined,
+                    previewUrl: undefined,
+                    name: "Generated Social Post",
+                    prompt: idea.imagePrompt,
+                    description: idea.postText,
+                    hashtags: idea.hashtags,
+                    platforms: [PlatformEnum.Facebook],
+                    status: 'idle',
+                };
+            }
             setAssets(prev => [newAsset, ...prev]);
             clearPostSeed();
         }
@@ -246,7 +265,7 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
 
     const handlePublish = async (assetId: string) => {
         const asset = assets.find(a => a.id === assetId);
-        if (!asset || !asset.file) {
+        if (!asset || (!asset.file && !asset.previewUrl?.startsWith('data:'))) {
             updateAsset(assetId, { status: 'error', errorMessage: 'Please add an image or video before publishing.' });
             return;
         };
@@ -265,12 +284,22 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
         updateAsset(assetId, { status: 'publishing', errorMessage: undefined });
         
         let imageUrlData: string;
-        try {
-            imageUrlData = await toBase64(asset.file);
-        } catch (error) {
-            console.error("Error converting file to base64:", error);
-            updateAsset(assetId, { status: 'error', errorMessage: 'Could not read the image file for upload.' });
-            return;
+
+        // If the asset came from an edited post, the previewUrl is already a data URL.
+        // Otherwise, we need to convert the file.
+        if (asset.previewUrl?.startsWith('data:')) {
+            imageUrlData = asset.previewUrl;
+        } else if (asset.file) {
+            try {
+                imageUrlData = await toBase64(asset.file);
+            } catch (error) {
+                console.error("Error converting file to base64:", error);
+                updateAsset(assetId, { status: 'error', errorMessage: 'Could not read the image file for upload.' });
+                return;
+            }
+        } else {
+             updateAsset(assetId, { status: 'error', errorMessage: 'Media is missing.' });
+             return;
         }
 
         const postToCreate: Omit<Post, 'id' | 'engagement' | 'postedAt'> = {
@@ -466,9 +495,9 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
                     <div className="p-4 flex-grow space-y-4">
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div className="space-y-3">
-                               {asset.previewUrl && asset.file?.type.startsWith('image/') ? (
+                               {asset.previewUrl && (asset.file?.type.startsWith('image/') || asset.previewUrl.startsWith('data:image')) ? (
                                     <img src={asset.previewUrl} alt="Preview" className="rounded-lg w-full object-cover aspect-video bg-dark-bg" />
-                                ) : asset.previewUrl && asset.file?.type.startsWith('video/') ? (
+                                ) : asset.previewUrl && (asset.file?.type.startsWith('video/') || asset.previewUrl.startsWith('data:video')) ? (
                                     <video src={asset.previewUrl} controls className="rounded-lg w-full aspect-video bg-black"></video>
                                 ) : (
                                    <MediaPlaceholder prompt={asset.prompt} onAddMedia={() => handleAddMediaClick(asset.id)} />
@@ -514,7 +543,7 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
                          </div>
                     </div>
                     <div className="bg-gray-900/50 p-3 flex items-center gap-4">
-                         <button onClick={() => handlePublish(asset.id)} disabled={!asset.file || (asset.status !== 'idle' && asset.errorMessage?.startsWith('Compressed') === false) || asset.platforms.length === 0} className="w-full flex justify-center items-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 disabled:bg-gray-500 disabled:cursor-not-allowed">
+                         <button onClick={() => handlePublish(asset.id)} disabled={(!asset.file && !asset.previewUrl?.startsWith('data:')) || (asset.status !== 'idle' && asset.errorMessage?.startsWith('Compressed') === false && asset.errorMessage?.startsWith('This is a copy') === false) || asset.platforms.length === 0} className="w-full flex justify-center items-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 disabled:bg-gray-500 disabled:cursor-not-allowed">
                              {asset.status === 'publishing' ? <LoadingSpinner /> : (asset.status === 'published' ? 'Published!' : 'Publish Asset')}
                          </button>
                          <button onClick={() => setAssets(p => p.filter(a => a.id !== asset.id))} className="text-red-400 hover:text-red-300 text-sm font-medium p-2" aria-label="Remove asset">

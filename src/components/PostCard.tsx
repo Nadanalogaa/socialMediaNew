@@ -1,13 +1,25 @@
 
-import React from 'react';
+
+
+import React, { useState, useRef, useEffect } from 'react';
 import type { Post } from '../types';
 import { Platform } from '../types';
 import { FacebookIcon } from './icons/FacebookIcon';
 import { InstagramIcon } from './icons/InstagramIcon';
 import { YoutubeIcon } from './icons/YoutubeIcon';
+import { EditIcon } from './icons/EditIcon';
+import { TrashIcon } from './icons/TrashIcon';
+import { RefreshIcon } from './icons/RefreshIcon';
+import { DotsVerticalIcon } from './icons/DotsVerticalIcon';
 
 interface PostCardProps {
   post: Post;
+  isSelected: boolean;
+  isFacebookConnected: boolean;
+  onSelect: (postId: string) => void;
+  onDelete: (postId: string) => void;
+  onEdit: (post: Post) => void;
+  onRefreshInsights: (postId: string) => Promise<void>;
 }
 
 const PlatformIcons: React.FC<{ platforms: Platform[] }> = ({ platforms }) => (
@@ -35,9 +47,70 @@ const timeAgo = (dateString: string): string => {
     return Math.floor(seconds) + " seconds ago";
 }
 
-export const PostCard: React.FC<PostCardProps> = ({ post }) => {
+const ActionsDropdown: React.FC<{ post: Post; onDelete: () => void; onEdit: () => void; }> = ({ post, onDelete, onEdit }) => {
+    const [isOpen, setIsOpen] = useState(false);
+    const ref = useRef<HTMLDivElement>(null);
+
+    useEffect(() => {
+        const handleClickOutside = (event: MouseEvent) => {
+            if (ref.current && !ref.current.contains(event.target as Node)) {
+                setIsOpen(false);
+            }
+        };
+        document.addEventListener("mousedown", handleClickOutside);
+        return () => document.removeEventListener("mousedown", handleClickOutside);
+    }, [ref]);
+
+    return (
+        <div className="relative" ref={ref}>
+            <button onClick={() => setIsOpen(!isOpen)} className="p-1 rounded-full text-dark-text-secondary hover:bg-dark-bg hover:text-dark-text">
+                <DotsVerticalIcon className="w-5 h-5" />
+            </button>
+            {isOpen && (
+                <div className="absolute right-0 mt-2 w-48 bg-gray-900 border border-dark-border rounded-md shadow-lg z-20 animate-fade-in-fast">
+                    <div className="py-1">
+                        <button onClick={() => { onEdit(); setIsOpen(false); }} className="w-full text-left flex items-center px-4 py-2 text-sm text-dark-text hover:bg-dark-card">
+                            <EditIcon className="w-4 h-4 mr-3" />
+                            Use as Template
+                        </button>
+                        <button onClick={() => { onDelete(); setIsOpen(false); }} className="w-full text-left flex items-center px-4 py-2 text-sm text-red-400 hover:bg-dark-card">
+                            <TrashIcon className="w-4 h-4 mr-3" />
+                            Delete
+                        </button>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
+export const PostCard: React.FC<PostCardProps> = ({ post, isSelected, isFacebookConnected, onSelect, onDelete, onEdit, onRefreshInsights }) => {
+  const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const handleRefresh = async () => {
+    // Only allow refresh for posts with a real FB id, not mock ones.
+    if (!isFacebookConnected || post.id.startsWith('post_')) return;
+    setIsRefreshing(true);
+    try {
+        await onRefreshInsights(post.id);
+    } catch (e) {
+        // Error is handled in DashboardView, so we just stop loading here
+    } finally {
+        setIsRefreshing(false);
+    }
+  }
+
   return (
-    <div className="bg-dark-card border border-dark-border rounded-lg overflow-hidden flex flex-col md:flex-row">
+    <div className={`bg-dark-card border rounded-lg overflow-hidden flex flex-col md:flex-row transition-colors ${isSelected ? 'border-brand-primary' : 'border-dark-border'}`}>
+      <div className="p-2 pl-4 flex items-center justify-center bg-dark-card md:bg-gray-900/50">
+        <input
+            type="checkbox"
+            className="h-5 w-5 rounded bg-dark-bg border-dark-border text-brand-primary focus:ring-brand-primary"
+            checked={isSelected}
+            onChange={() => onSelect(post.id)}
+            aria-label={`Select post: ${post.prompt}`}
+        />
+      </div>
       {post.imageUrl && (
         <div className="md:w-1/3">
           <img
@@ -53,7 +126,10 @@ export const PostCard: React.FC<PostCardProps> = ({ post }) => {
                  <p className="text-sm text-dark-text-secondary">Posted to <span className="font-semibold text-dark-text">{post.audience}</span></p>
                  <p className="text-xs text-dark-text-secondary">{timeAgo(post.postedAt)}</p>
             </div>
-          <PlatformIcons platforms={post.platforms} />
+            <div className="flex items-center gap-4">
+                <PlatformIcons platforms={post.platforms} />
+                <ActionsDropdown post={post} onEdit={() => onEdit(post)} onDelete={() => onDelete(post.id)} />
+            </div>
         </div>
         
         <p className="text-sm text-dark-text-secondary italic mb-4">Prompt: "{post.prompt}"</p>
@@ -85,10 +161,21 @@ export const PostCard: React.FC<PostCardProps> = ({ post }) => {
              )}
         </div>
 
-        <div className="mt-6 pt-4 border-t border-dark-border flex space-x-6 text-sm text-dark-text-secondary">
-            <span>❤️ {post.engagement.likes} Likes</span>
-            <span>💬 {post.engagement.comments} Comments</span>
-            <span>🔁 {post.engagement.shares} Shares</span>
+        <div className="mt-6 pt-4 border-t border-dark-border flex items-center justify-between text-sm text-dark-text-secondary">
+            <div className="flex space-x-6">
+                <span>❤️ {post.engagement.likes} Likes</span>
+                <span>💬 {post.engagement.comments} Comments</span>
+                <span>🔁 {post.engagement.shares} Shares</span>
+            </div>
+             <button 
+                onClick={handleRefresh} 
+                disabled={isRefreshing || !isFacebookConnected || post.id.startsWith('post_')}
+                title={post.id.startsWith('post_') ? 'Cannot refresh mock posts' : (!isFacebookConnected ? 'Connect Facebook to refresh insights' : 'Refresh insights')}
+                className="flex items-center gap-2 text-xs text-dark-text-secondary hover:text-dark-text disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+             >
+                <RefreshIcon className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+                {isRefreshing ? 'Refreshing...' : 'Refresh'}
+             </button>
         </div>
       </div>
     </div>

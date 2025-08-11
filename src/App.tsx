@@ -1,12 +1,13 @@
 
 
+
 import React, { useState, useCallback, useEffect } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { DashboardView } from './components/DashboardView';
 import { CreatePostView } from './components/CreatePostView';
 import { SeoConnectorView } from './components/SeoAssistantView';
 import { ConnectionsView } from './components/ConnectionsView';
-import type { Post, ConnectionStatus, ConnectionDetails } from './types';
+import type { Post, ConnectionStatus, ConnectionDetails, GeneratedPostIdea } from './types';
 import { View, Platform } from './types';
 import { MOCK_POSTS } from './constants';
 import { getConnections, connectFacebook } from './services/geminiService';
@@ -20,7 +21,7 @@ declare global {
 }
 
 const App: React.FC = () => {
-  const [activeView, setActiveView] = useState<View>(View.CREATE_POST);
+  const [activeView, setActiveView] = useState<View>(View.DASHBOARD);
   const [posts, setPosts] = useState<Post[]>(MOCK_POSTS);
   const [connections, setConnections] = useState<ConnectionStatus>({
     [Platform.Facebook]: false,
@@ -29,10 +30,25 @@ const App: React.FC = () => {
   });
   const [connectionDetails, setConnectionDetails] = useState<ConnectionDetails>({});
   const [isFbSdkInitialized, setIsFbSdkInitialized] = useState(false);
-  const [postSeed, setPostSeed] = useState<any>(null);
+  const [postSeed, setPostSeed] = useState<GeneratedPostIdea | Post | null>(null);
 
   const addPost = (post: Post) => {
     setPosts(prevPosts => [post, ...prevPosts]);
+  };
+  
+  const deletePost = (postId: string) => {
+    setPosts(prevPosts => prevPosts.filter(p => p.id !== postId));
+  };
+
+  const deletePosts = (postIds: string[]) => {
+      const idsToDelete = new Set(postIds);
+      setPosts(prevPosts => prevPosts.filter(p => !idsToDelete.has(p.id)));
+  };
+
+  const updatePostEngagement = (postId: string, newEngagement: { likes: number, comments: number, shares: number }) => {
+      setPosts(prevPosts => prevPosts.map(p =>
+          p.id === postId ? { ...p, engagement: newEngagement } : p
+      ));
   };
 
   const navigateTo = (view: View, data: any = null) => {
@@ -150,7 +166,14 @@ const App: React.FC = () => {
         return <ConnectionsView connections={connections} setConnections={setConnections} setConnectionDetails={setConnectionDetails} isFbSdkInitialized={isFbSdkInitialized} />;
       case View.DASHBOARD:
       default:
-        return <DashboardView posts={posts} />;
+        return <DashboardView 
+                    posts={posts}
+                    connectionDetails={connectionDetails}
+                    onDeletePost={deletePost}
+                    onDeletePosts={deletePosts}
+                    onUpdatePostEngagement={updatePostEngagement}
+                    onEditPost={(post) => navigateTo(View.CREATE_POST, post)}
+                />;
     }
   };
 

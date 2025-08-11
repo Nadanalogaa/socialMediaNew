@@ -1,5 +1,6 @@
 
 
+
 import express from 'express';
 import 'dotenv/config';
 import { GoogleGenAI, Type } from '@google/genai';
@@ -579,6 +580,38 @@ app.post('/api/generate-post-from-idea', async (req, res) => {
     } catch (error) {
         console.error("Error generating post from idea:", error);
         res.status(500).json({ message: `Failed to generate post from idea: ${error.message || 'Please check server logs.'}` });
+    }
+});
+
+app.post('/api/post-insights', async (req, res) => {
+    const { postId, pageAccessToken } = req.body;
+    if (!postId || !pageAccessToken) {
+        return res.status(400).json({ message: 'Missing required fields: postId, pageAccessToken' });
+    }
+
+    try {
+        console.log(`[REAL INSIGHTS] Fetching insights for post: ${postId}`);
+        const insightsUrl = `https://graph.facebook.com/v23.0/${postId}?fields=likes.summary(true),comments.summary(true),shares&access_token=${pageAccessToken}`;
+
+        const response = await fetch(insightsUrl);
+        const data = await response.json();
+
+        if (data.error) {
+            throw new Error(`Graph API error fetching insights: ${data.error.message}`);
+        }
+
+        const insights = {
+            likes: data.likes?.summary?.total_count || 0,
+            comments: data.comments?.summary?.total_count || 0,
+            shares: data.shares?.count || 0,
+        };
+
+        console.log(`[REAL INSIGHTS] Successfully fetched insights:`, insights);
+        res.json(insights);
+
+    } catch (error) {
+        console.error('[REAL INSIGHTS] Failed to fetch post insights:', error);
+        res.status(500).json({ message: `Failed to fetch post insights: ${error.message}` });
     }
 });
 
