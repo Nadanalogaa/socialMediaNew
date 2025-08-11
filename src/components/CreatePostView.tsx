@@ -44,6 +44,8 @@ const syncAssetsWithDB = async (assets: MediaAsset[]): Promise<void> => {
         const transaction = db.transaction(STORE_NAME, 'readwrite');
         const store = transaction.objectStore(STORE_NAME);
 
+        transaction.onerror = () => console.error("IndexedDB transaction error:", transaction.error);
+
         const oldKeysRequest = store.getAllKeys();
 
         oldKeysRequest.onsuccess = () => {
@@ -59,10 +61,20 @@ const syncAssetsWithDB = async (assets: MediaAsset[]): Promise<void> => {
 
             // Add or update assets
             for (const asset of assets) {
-                store.put(asset);
+                // Create a clone to avoid mutating state and prepare for storage.
+                const storableAsset = { ...asset };
+                // We MUST remove the blob URL before storing, as it's session-specific and will be invalid on reload.
+                // It will be recreated from the persisted File object when the app loads.
+                // We only remove blob URLs, preserving permanent ones (e.g. from edited posts).
+                if (storableAsset.previewUrl?.startsWith('blob:')) {
+                    delete storableAsset.previewUrl;
+                }
+                store.put(storableAsset);
             }
         };
-    } catch(error) {
+        oldKeysRequest.onerror = () => console.error('IndexedDB getAllKeys error:', oldKeysRequest.error);
+
+    } catch (error) {
         console.error("Could not sync assets with IndexedDB", error);
     }
 };
@@ -129,10 +141,13 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
                 const storedAssets = await getAssetsFromDB();
                 if (storedAssets && storedAssets.length > 0) {
                     const assetsWithPreviews = storedAssets.map(asset => {
-                        // Recreate blob URLs for previews since they are session-specific
-                        if (asset.file && (!asset.previewUrl || asset.previewUrl.startsWith('blob:'))) {
+                        // ALWAYS recreate blob URLs for previews from the File object on load,
+                        // because they are session-specific and were not stored in the DB.
+                        if (asset.file) {
+                             // The 'file' property is a File object that was persisted.
                             return { ...asset, previewUrl: URL.createObjectURL(asset.file) };
                         }
+                        // This handles assets that don't have a local file (e.g., from SEO page, or edited posts with remote images)
                         return asset;
                     }).filter(a => a.status !== 'published');
                     
