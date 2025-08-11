@@ -1,7 +1,5 @@
 
-
-
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState } from 'react';
 import type { Post } from '../types';
 import { Platform } from '../types';
 import { FacebookIcon } from './icons/FacebookIcon';
@@ -10,17 +8,24 @@ import { YoutubeIcon } from './icons/YoutubeIcon';
 import { EditIcon } from './icons/EditIcon';
 import { TrashIcon } from './icons/TrashIcon';
 import { RefreshIcon } from './icons/RefreshIcon';
-import { DotsVerticalIcon } from './icons/DotsVerticalIcon';
 
 interface PostCardProps {
   post: Post;
   isSelected: boolean;
   isFacebookConnected: boolean;
+  isDeleting: boolean;
   onSelect: (postId: string) => void;
-  onDelete: (postId: string) => void;
+  onDelete: (postId: string) => Promise<void>;
   onEdit: (post: Post) => void;
   onRefreshInsights: (postId: string) => Promise<void>;
 }
+
+const LoadingSpinner: React.FC<{ size?: string }> = ({ size = 'h-8 w-8' }) => (
+    <svg className={`animate-spin ${size} text-white`} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+    </svg>
+);
 
 const PlatformIcons: React.FC<{ platforms: Platform[] }> = ({ platforms }) => (
     <div className="flex space-x-2">
@@ -47,45 +52,17 @@ const timeAgo = (dateString: string): string => {
     return Math.floor(seconds) + " seconds ago";
 }
 
-const ActionsDropdown: React.FC<{ post: Post; onDelete: () => void; onEdit: () => void; }> = ({ post, onDelete, onEdit }) => {
-    const [isOpen, setIsOpen] = useState(false);
-    const ref = useRef<HTMLDivElement>(null);
-
-    useEffect(() => {
-        const handleClickOutside = (event: MouseEvent) => {
-            if (ref.current && !ref.current.contains(event.target as Node)) {
-                setIsOpen(false);
-            }
-        };
-        document.addEventListener("mousedown", handleClickOutside);
-        return () => document.removeEventListener("mousedown", handleClickOutside);
-    }, [ref]);
-
-    return (
-        <div className="relative" ref={ref}>
-            <button onClick={() => setIsOpen(!isOpen)} className="p-1 rounded-full text-dark-text-secondary hover:bg-dark-bg hover:text-dark-text">
-                <DotsVerticalIcon className="w-5 h-5" />
-            </button>
-            {isOpen && (
-                <div className="absolute right-0 mt-2 w-48 bg-gray-900 border border-dark-border rounded-md shadow-lg z-20 animate-fade-in-fast">
-                    <div className="py-1">
-                        <button onClick={() => { onEdit(); setIsOpen(false); }} className="w-full text-left flex items-center px-4 py-2 text-sm text-dark-text hover:bg-dark-card">
-                            <EditIcon className="w-4 h-4 mr-3" />
-                            Use as Template
-                        </button>
-                        <button onClick={() => { onDelete(); setIsOpen(false); }} className="w-full text-left flex items-center px-4 py-2 text-sm text-red-400 hover:bg-dark-card">
-                            <TrashIcon className="w-4 h-4 mr-3" />
-                            Delete
-                        </button>
-                    </div>
-                </div>
-            )}
-        </div>
-    );
-};
-
-export const PostCard: React.FC<PostCardProps> = ({ post, isSelected, isFacebookConnected, onSelect, onDelete, onEdit, onRefreshInsights }) => {
+export const PostCard: React.FC<PostCardProps> = ({ post, isSelected, isFacebookConnected, isDeleting, onSelect, onDelete, onEdit, onRefreshInsights }) => {
   const [isRefreshing, setIsRefreshing] = useState(false);
+
+  const handleDeleteClick = async () => {
+    const confirmDelete = window.confirm(
+      'Are you sure you want to delete this post? This action is permanent and will also remove it from connected social platforms.'
+    );
+    if (confirmDelete) {
+      await onDelete(post.id);
+    }
+  };
 
   const handleRefresh = async () => {
     // Only allow refresh for posts with a real FB id, not mock ones.
@@ -101,7 +78,13 @@ export const PostCard: React.FC<PostCardProps> = ({ post, isSelected, isFacebook
   }
 
   return (
-    <div className={`bg-dark-card border rounded-lg overflow-hidden flex flex-col md:flex-row transition-colors ${isSelected ? 'border-brand-primary' : 'border-dark-border'}`}>
+    <div className={`relative bg-dark-card border rounded-lg overflow-hidden flex flex-col md:flex-row transition-colors ${isSelected ? 'border-brand-primary' : 'border-dark-border'}`}>
+      {isDeleting && (
+        <div className="absolute inset-0 bg-dark-card/80 backdrop-blur-sm flex flex-col items-center justify-center z-30 rounded-lg animate-fade-in">
+            <LoadingSpinner />
+            <p className="mt-4 text-white font-semibold">Deleting post...</p>
+        </div>
+      )}
       <div className="p-2 pl-4 flex items-center justify-center bg-dark-card md:bg-gray-900/50">
         <input
             type="checkbox"
@@ -128,7 +111,24 @@ export const PostCard: React.FC<PostCardProps> = ({ post, isSelected, isFacebook
             </div>
             <div className="flex items-center gap-4">
                 <PlatformIcons platforms={post.platforms} />
-                <ActionsDropdown post={post} onEdit={() => onEdit(post)} onDelete={() => onDelete(post.id)} />
+                <div className="flex items-center gap-1 border-l border-dark-border pl-3 ml-1">
+                    <button
+                        onClick={() => onEdit(post)}
+                        title="Use as Template"
+                        className="p-2 rounded-full text-dark-text-secondary hover:bg-dark-bg hover:text-dark-text transition-colors"
+                        aria-label="Use post as template"
+                    >
+                        <EditIcon className="w-4 h-4" />
+                    </button>
+                    <button
+                        onClick={handleDeleteClick}
+                        title="Delete Post"
+                        className="p-2 rounded-full text-dark-text-secondary hover:bg-dark-bg hover:text-red-400 transition-colors"
+                        aria-label="Delete post"
+                    >
+                        <TrashIcon className="w-4 h-4" />
+                    </button>
+                </div>
             </div>
         </div>
         

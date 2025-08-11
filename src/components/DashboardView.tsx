@@ -1,6 +1,7 @@
 
 
 
+
 import React, { useState } from 'react';
 import type { Post, ConnectionDetails } from '../types';
 import { PostCard } from './PostCard';
@@ -11,11 +12,18 @@ import { TrashIcon } from './icons/TrashIcon';
 interface DashboardViewProps {
   posts: Post[];
   connectionDetails: ConnectionDetails;
-  onDeletePost: (postId: string) => void;
-  onDeletePosts: (postIds: string[]) => void;
+  onDeletePost: (postId: string) => Promise<void>;
+  onDeletePosts: (postIds: string[]) => Promise<void>;
   onUpdatePostEngagement: (postId: string, engagement: { likes: number, comments: number, shares: number }) => void;
   onEditPost: (post: Post) => void;
 }
+
+const LoadingSpinner: React.FC = () => (
+    <svg className="animate-spin h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+       <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+       <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+    </svg>
+);
 
 export const DashboardView: React.FC<DashboardViewProps> = ({ posts, connectionDetails, onDeletePost, onDeletePosts, onUpdatePostEngagement, onEditPost }) => {
   const totalLikes = posts.reduce((sum, post) => sum + post.engagement.likes, 0);
@@ -24,6 +32,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ posts, connectionD
   
   const [selectedPosts, setSelectedPosts] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
+  const [deletingPosts, setDeletingPosts] = useState<Set<string>>(new Set());
+  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
 
   const handleSelectPost = (postId: string) => {
     setSelectedPosts(prev => {
@@ -45,9 +55,38 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ posts, connectionD
     }
   };
   
-  const handleDeleteSelected = () => {
-    onDeletePosts(Array.from(selectedPosts));
-    setSelectedPosts(new Set());
+  const handleDeleteSelected = async () => {
+    setError(null);
+    setIsBulkDeleting(true);
+    try {
+        await onDeletePosts(Array.from(selectedPosts));
+        setSelectedPosts(new Set());
+    } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        setError(message);
+        setTimeout(() => setError(null), 8000);
+    } finally {
+        setIsBulkDeleting(false);
+    }
+  };
+
+  const handleDeletePost = async (postId: string) => {
+      setDeletingPosts(prev => new Set(prev).add(postId));
+      setError(null);
+      try {
+          await onDeletePost(postId);
+          // PostCard will be unmounted, no need to clear state here
+      } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          setError(message);
+          setTimeout(() => setError(null), 8000);
+          // If deletion failed, remove loading state from the specific post
+          setDeletingPosts(prev => {
+              const newSet = new Set(prev);
+              newSet.delete(postId);
+              return newSet;
+          });
+      }
   };
   
   const handleRefreshInsights = async (postId: string) => {
@@ -122,9 +161,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ posts, connectionD
                     </label>
                 </div>
                 {selectedPosts.size > 0 && (
-                    <button onClick={handleDeleteSelected} className="flex items-center gap-2 px-3 py-1.5 border border-red-500/50 text-red-400 bg-red-500/10 hover:bg-red-500/20 rounded-md text-sm font-medium transition-colors">
-                        <TrashIcon className="w-4 h-4" />
-                        Delete Selected
+                    <button 
+                      onClick={handleDeleteSelected} 
+                      disabled={isBulkDeleting}
+                      className="flex items-center justify-center gap-2 px-3 py-1.5 border border-red-500/50 text-red-400 bg-red-500/10 hover:bg-red-500/20 rounded-md text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-wait"
+                    >
+                        {isBulkDeleting ? <LoadingSpinner /> : <TrashIcon className="w-4 h-4" />}
+                        {isBulkDeleting ? 'Deleting...' : 'Delete Selected'}
                     </button>
                 )}
             </div>
@@ -137,10 +180,11 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ posts, connectionD
                     post={post}
                     isSelected={selectedPosts.has(post.id)}
                     onSelect={handleSelectPost}
-                    onDelete={onDeletePost}
+                    onDelete={handleDeletePost}
                     onEdit={onEditPost}
                     onRefreshInsights={handleRefreshInsights}
                     isFacebookConnected={!!connectionDetails.facebook}
+                    isDeleting={deletingPosts.has(post.id)}
                 />
             )
           ) : (

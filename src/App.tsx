@@ -1,6 +1,4 @@
 
-
-
 import React, { useState, useCallback, useEffect } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { DashboardView } from './components/DashboardView';
@@ -10,7 +8,7 @@ import { ConnectionsView } from './components/ConnectionsView';
 import type { Post, ConnectionStatus, ConnectionDetails, GeneratedPostIdea } from './types';
 import { View, Platform } from './types';
 import { MOCK_POSTS } from './constants';
-import { getConnections, connectFacebook } from './services/geminiService';
+import { getConnections, connectFacebook, deletePost as deletePostOnPlatform } from './services/geminiService';
 
 // Extend the Window interface to include FB
 declare global {
@@ -36,13 +34,58 @@ const App: React.FC = () => {
     setPosts(prevPosts => [post, ...prevPosts]);
   };
   
-  const deletePost = (postId: string) => {
+  const deletePost = async (postId: string) => {
+    const postToDelete = posts.find(p => p.id === postId);
+    if (!postToDelete) return;
+
+    // Only attempt platform deletion for real posts that were published to Facebook
+    if (!postToDelete.id.startsWith('post_') && postToDelete.platforms.includes(Platform.Facebook)) {
+      const pageAccessToken = connectionDetails.facebook?.pageAccessToken;
+      if (!pageAccessToken) {
+        throw new Error("Cannot delete post from Facebook: Connection details are missing.");
+      }
+      await deletePostOnPlatform(postId, pageAccessToken);
+    }
+
+    // If platform deletion is successful (or not applicable), remove from local state
     setPosts(prevPosts => prevPosts.filter(p => p.id !== postId));
   };
 
-  const deletePosts = (postIds: string[]) => {
-      const idsToDelete = new Set(postIds);
-      setPosts(prevPosts => prevPosts.filter(p => !idsToDelete.has(p.id)));
+  const deletePosts = async (postIds: string[]) => {
+    const pageAccessToken = connectionDetails.facebook?.pageAccessToken;
+    const idsToDelete = new Set(postIds);
+
+    const realPostsToDelete = posts.filter(p => 
+        idsToDelete.has(p.id) && 
+        !p.id.startsWith('post_') && 
+        p.platforms.includes(Platform.Facebook)
+    );
+
+    if (realPostsToDelete.length > 0 && !pageAccessToken) {
+      throw new Error("Cannot delete posts from Facebook: Connection details are missing.");
+    }
+
+    let failedDeletions: string[] = [];
+    if (pageAccessToken) {
+        const deletePromises = realPostsToDelete.map(post => deletePostOnPlatform(post.id, pageAccessToken));
+        const results = await Promise.allSettled(deletePromises);
+        
+        failedDeletions = results.reduce((acc, result, index) => {
+            if (result.status === 'rejected') {
+                console.error(`Failed to delete post ${realPostsToDelete[index].id}:`, result.reason);
+                acc.push(realPostsToDelete[index].id);
+            }
+            return acc;
+        }, [] as string[]);
+    }
+    
+    // Always remove from dashboard state as requested by user action
+    setPosts(prevPosts => prevPosts.filter(p => !idsToDelete.has(p.id)));
+
+    if (failedDeletions.length > 0) {
+      // Surface an error to the UI
+      throw new Error(`Failed to delete ${failedDeletions.length} of ${realPostsToDelete.length} post(s) from Facebook. They have been removed from the dashboard.`);
+    }
   };
 
   const updatePostEngagement = (postId: string, newEngagement: { likes: number, comments: number, shares: number }) => {

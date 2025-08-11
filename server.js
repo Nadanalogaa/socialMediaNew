@@ -1,6 +1,7 @@
 
 
 
+
 import express from 'express';
 import 'dotenv/config';
 import { GoogleGenAI, Type } from '@google/genai';
@@ -612,6 +613,47 @@ app.post('/api/post-insights', async (req, res) => {
     } catch (error) {
         console.error('[REAL INSIGHTS] Failed to fetch post insights:', error);
         res.status(500).json({ message: `Failed to fetch post insights: ${error.message}` });
+    }
+});
+
+app.delete('/api/post/:postId', async (req, res) => {
+    const { postId } = req.params;
+    const { pageAccessToken } = req.body;
+
+    if (!postId || !pageAccessToken) {
+        return res.status(400).json({ message: 'Missing required fields: postId, pageAccessToken' });
+    }
+
+    if (postId.startsWith('post_')) {
+        return res.status(400).json({ message: 'Cannot delete mock posts from the platform.' });
+    }
+
+    try {
+        console.log(`[REAL DELETE] Attempting to delete post: ${postId}`);
+        const deleteUrl = `https://graph.facebook.com/v23.0/${postId}?access_token=${pageAccessToken}`;
+
+        const response = await fetch(deleteUrl, { method: 'DELETE' });
+        const data = await response.json();
+
+        if (data.error) {
+            if (data.error.code === 100 && data.error.error_subcode === 33) {
+                console.warn(`[REAL DELETE] Post ${postId} might have been already deleted. Message: ${data.error.message}`);
+                return res.json({ success: true, message: "Post already deleted." });
+            }
+            throw new Error(`Graph API error deleting post: ${data.error.message}`);
+        }
+
+        if (data.success === false) {
+             console.error('[REAL DELETE] Facebook API indicated failure without an error object:', data);
+             throw new Error('Facebook API indicated deletion was unsuccessful.');
+        }
+
+        console.log(`[REAL DELETE] Successfully deleted post: ${postId}`);
+        res.json({ success: true });
+
+    } catch (error) {
+        console.error('[REAL DELETE] Failed to delete post:', error);
+        res.status(500).json({ message: `Failed to delete post: ${error.message}` });
     }
 });
 

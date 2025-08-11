@@ -1,6 +1,7 @@
 
 
 
+
 import type { Platform, SeoSuggestions, Post, ConnectionStatus, GeneratedAssetContent, GeneratedPostIdea, ConnectionDetails } from '../types';
 
 const handleResponse = async (response: Response) => {
@@ -84,6 +85,20 @@ export const getPostInsights = async (postId: string, pageAccessToken: string): 
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ postId, pageAccessToken }),
+    });
+    return handleResponse(response);
+};
+
+export const deletePost = async (postId: string, pageAccessToken: string): Promise<{ success: boolean }> => {
+    // Mock posts are handled client-side only and don't need an API call.
+    if (postId.startsWith('post_')) {
+        return Promise.resolve({ success: true });
+    }
+
+    const response = await fetch(`/api/post/${postId}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pageAccessToken }),
     });
     return handleResponse(response);
 };

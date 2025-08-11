@@ -1,6 +1,4 @@
 
-
-
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import type { Platform, Audience, Post, ConnectionStatus, MediaAsset, GeneratedPostIdea, ConnectionDetails } from '../types';
 import { Platform as PlatformEnum, Audience as AudienceEnum } from '../types';
@@ -176,7 +174,7 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
     };
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const files = e.currentTarget.files;
+        const files = e.target.files;
         if (!files || files.length === 0) return;
 
         const MAX_VIDEO_SIZE_MB_BEFORE_COMPRESSION = 20;
@@ -223,7 +221,7 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
             Array.from(files).forEach(file => processFile(file));
         }
 
-        if (e.currentTarget) e.currentTarget.value = '';
+        if (e.target) (e.target as HTMLInputElement).value = '';
         setAssetForMediaUpload(null);
     };
 
@@ -449,7 +447,7 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
                      <div className="bg-dark-card p-4 rounded-lg border border-dark-border flex items-center justify-between">
                         <div>
                             <label htmlFor="audience" className="block text-sm font-medium text-dark-text-secondary mb-2">Global Target Audience for all Posts</label>
-                            <select id="audience" value={audience} onChange={(e) => setAudience(e.currentTarget.value as Audience)} className="w-full md:w-auto bg-dark-bg border border-dark-border rounded-md p-2 focus:ring-brand-primary focus:border-brand-primary text-dark-text">
+                            <select id="audience" value={audience} onChange={(e) => setAudience(e.target.value as Audience)} className="w-full md:w-auto bg-dark-bg border border-dark-border rounded-md p-2 focus:ring-brand-primary focus:border-brand-primary text-dark-text">
                                 {Object.values(AudienceEnum).map(a => <option key={a}>{a}</option>)}
                             </select>
                         </div>
@@ -502,7 +500,7 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
                                 ) : (
                                    <MediaPlaceholder prompt={asset.prompt} onAddMedia={() => handleAddMediaClick(asset.id)} />
                                 )}
-                                <textarea value={asset.prompt} onChange={(e) => updateAsset(asset.id, { prompt: e.currentTarget.value, status: 'idle' })} placeholder="e.g., A dancer in a dramatic pose" className="w-full bg-dark-bg border border-dark-border rounded-md p-2 text-sm focus:ring-brand-primary focus:border-brand-primary" rows={2}/>
+                                <textarea value={asset.prompt} onChange={(e) => updateAsset(asset.id, { prompt: e.target.value, status: 'idle' })} placeholder="e.g., A dancer in a dramatic pose" className="w-full bg-dark-bg border border-dark-border rounded-md p-2 text-sm focus:ring-brand-primary focus:border-brand-primary" rows={2}/>
                                 <button onClick={() => handleGenerateContent(asset.id)} disabled={asset.status === 'generating' || !asset.prompt} className="w-full flex justify-center items-center py-2 px-3 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-brand-primary hover:bg-brand-secondary disabled:bg-gray-500 disabled:cursor-not-allowed">
                                     {asset.status === 'generating' ? <LoadingSpinner /> : '✨ Generate AI Content'}
                                 </button>
@@ -511,15 +509,15 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
                             <div className="space-y-3 flex flex-col">
                                  <div>
                                     <label className="text-xs font-bold text-dark-text-secondary">Title</label>
-                                    <input type="text" value={asset.name} onChange={(e) => updateAsset(asset.id, { name: e.currentTarget.value })} className="w-full mt-1 bg-dark-bg border border-dark-border rounded-md p-2 text-sm" />
+                                    <input type="text" value={asset.name} onChange={(e) => updateAsset(asset.id, { name: e.target.value })} className="w-full mt-1 bg-dark-bg border border-dark-border rounded-md p-2 text-sm" />
                                  </div>
                                  <div className="flex-grow">
                                     <label className="text-xs font-bold text-dark-text-secondary">Description</label>
-                                    <textarea rows={5} value={asset.description} onChange={(e) => updateAsset(asset.id, { description: e.currentTarget.value })} className="w-full mt-1 bg-dark-bg border border-dark-border rounded-md p-2 text-sm h-full"/>
+                                    <textarea rows={5} value={asset.description} onChange={(e) => updateAsset(asset.id, { description: e.target.value })} className="w-full mt-1 bg-dark-bg border border-dark-border rounded-md p-2 text-sm h-full"/>
                                  </div>
                                  <div>
                                     <label className="text-xs font-bold text-dark-text-secondary">Hashtags</label>
-                                    <input type="text" value={asset.hashtags.join(' ')} onChange={(e) => updateAsset(asset.id, { hashtags: e.currentTarget.value.split(' ').map(h => h.replace('#', '')) })} className="w-full mt-1 bg-dark-bg border border-dark-border rounded-md p-2 text-sm" placeholder="dance art inspiration"/>
+                                    <input type="text" value={asset.hashtags.join(' ')} onChange={(e) => updateAsset(asset.id, { hashtags: e.target.value.split(' ').map(h => h.replace('#', '')) })} className="w-full mt-1 bg-dark-bg border border-dark-border rounded-md p-2 text-sm" placeholder="dance art inspiration"/>
                                 </div>
                             </div>
                         </div>
