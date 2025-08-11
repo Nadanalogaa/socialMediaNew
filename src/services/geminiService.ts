@@ -1,5 +1,6 @@
 
-import type { Platform, SeoSuggestions, Post, ConnectionStatus, GeneratedAssetContent, GeneratedPostIdea } from '../types';
+
+import type { Platform, SeoSuggestions, Post, ConnectionStatus, GeneratedAssetContent, GeneratedPostIdea, ConnectionDetails } from '../types';
 
 const handleResponse = async (response: Response) => {
     if (!response.ok) {
@@ -47,7 +48,7 @@ export const getConnections = async (): Promise<ConnectionStatus> => {
     return handleResponse(response);
 }
 
-export const connectFacebook = async (accessToken: string): Promise<ConnectionStatus> => {
+export const connectFacebook = async (accessToken: string): Promise<{ connections: ConnectionStatus, details: ConnectionDetails }> => {
     const response = await fetch('/api/connect/facebook', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -63,13 +64,16 @@ export const disconnectPlatform = async (platform: Platform): Promise<Connection
     return handleResponse(response);
 };
 
-export const publishPost = async (postData: Omit<Post, 'id' | 'engagement' | 'postedAt'>): Promise<Post> => {
+export const publishPost = async (
+    postData: Omit<Post, 'id' | 'engagement' | 'postedAt'>,
+    connectionDetails: ConnectionDetails
+): Promise<Post> => {
     const response = await fetch('/api/publish-post', {
         method: 'POST',
         headers: {
             'Content-Type': 'application/json'
         },
-        body: JSON.stringify(postData)
+        body: JSON.stringify({ ...postData, ...connectionDetails })
     });
     return handleResponse(response);
 };

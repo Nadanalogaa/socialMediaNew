@@ -1,11 +1,12 @@
 
+
 import React, { useState, useCallback, useEffect } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { DashboardView } from './components/DashboardView';
 import { CreatePostView } from './components/CreatePostView';
 import { SeoConnectorView } from './components/SeoAssistantView';
 import { ConnectionsView } from './components/ConnectionsView';
-import type { Post, ConnectionStatus } from './types';
+import type { Post, ConnectionStatus, ConnectionDetails } from './types';
 import { View, Platform } from './types';
 import { MOCK_POSTS } from './constants';
 import { getConnections, connectFacebook } from './services/geminiService';
@@ -26,6 +27,7 @@ const App: React.FC = () => {
     [Platform.Instagram]: false,
     [Platform.YouTube]: false,
   });
+  const [connectionDetails, setConnectionDetails] = useState<ConnectionDetails>({});
   const [isFbSdkInitialized, setIsFbSdkInitialized] = useState(false);
   const [postSeed, setPostSeed] = useState<any>(null);
 
@@ -42,16 +44,24 @@ const App: React.FC = () => {
   useEffect(() => {
     const fetchInitialConnections = async () => {
         try {
-            console.log("Fetching connection statuses...");
+            console.log("Fetching initial connection statuses...");
             const status = await getConnections();
             setConnections(status);
-            console.log("Connection statuses updated:", status);
+            console.log("Initial connection statuses set:", status);
         } catch (error) {
             console.error("Failed to fetch connection statuses:", error);
         }
     };
     fetchInitialConnections();
   }, []);
+  
+  // When Facebook connection is lost, clear the sensitive token details.
+  useEffect(() => {
+    if (!connections.Facebook && Object.keys(connectionDetails).length > 0) {
+        console.log("Facebook disconnected, clearing connection details from state.");
+        setConnectionDetails({});
+    }
+  }, [connections.Facebook, connectionDetails]);
 
   // Load and initialize the Facebook SDK, and check login status
   useEffect(() => {
@@ -61,11 +71,12 @@ const App: React.FC = () => {
         if (response.status === 'connected') {
             console.log('User is connected to Facebook and has authorized the app. Syncing status...');
             const accessToken = response.authResponse.accessToken;
-            // This call is idempotent. It ensures the connection is marked as true on the backend.
+            // This call ensures we get a fresh page access token and page details.
             connectFacebook(accessToken)
-                .then(updatedConnections => {
-                    setConnections(updatedConnections);
-                    console.log('Successfully synced Facebook connection status.');
+                .then(result => {
+                    setConnections(result.connections);
+                    setConnectionDetails(result.details);
+                    console.log('Successfully synced Facebook connection status and details.');
                 })
                 .catch(err => {
                      console.error('Failed to sync Facebook connection on backend:', err);
@@ -80,14 +91,7 @@ const App: React.FC = () => {
             }
             // If the app's state thinks Facebook is connected, but it's not, we sync the state to false.
             // This handles cases like the user revoking permissions on Facebook's website.
-            // We use a functional update to prevent issues with stale state in the closure.
-            setConnections(prevConnections => {
-                if (prevConnections[Platform.Facebook]) {
-                    console.log('Syncing disconnected Facebook status to the app state.');
-                    return { ...prevConnections, [Platform.Facebook]: false, [Platform.Instagram]: false };
-                }
-                return prevConnections; // No change needed
-            });
+            setConnections(prev => ({ ...prev, [Platform.Facebook]: false, [Platform.Instagram]: false }));
         }
     }
 
@@ -139,11 +143,11 @@ const App: React.FC = () => {
   const renderView = () => {
     switch (activeView) {
       case View.CREATE_POST:
-        return <CreatePostView connections={connections} onPostPublished={addPost} postSeed={postSeed} clearPostSeed={() => setPostSeed(null)} />;
+        return <CreatePostView connections={connections} connectionDetails={connectionDetails} onPostPublished={addPost} postSeed={postSeed} clearPostSeed={() => setPostSeed(null)} />;
       case View.SEO_CONNECTOR:
         return <SeoConnectorView navigateTo={navigateTo} />;
       case View.CONNECTIONS:
-        return <ConnectionsView connections={connections} setConnections={setConnections} isFbSdkInitialized={isFbSdkInitialized} />;
+        return <ConnectionsView connections={connections} setConnections={setConnections} setConnectionDetails={setConnectionDetails} isFbSdkInitialized={isFbSdkInitialized} />;
       case View.DASHBOARD:
       default:
         return <DashboardView posts={posts} />;

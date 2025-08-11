@@ -1,6 +1,7 @@
 
+
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import type { ConnectionStatus, Platform } from '../types';
+import type { ConnectionStatus, Platform, ConnectionDetails } from '../types';
 import { Platform as PlatformEnum } from '../types';
 import { getConnections, disconnectPlatform, connectFacebook } from '../services/geminiService';
 import { FacebookIcon } from './icons/FacebookIcon';
@@ -10,6 +11,7 @@ import { YoutubeIcon } from './icons/YoutubeIcon';
 interface ConnectionsViewProps {
     connections: ConnectionStatus;
     setConnections: React.Dispatch<React.SetStateAction<ConnectionStatus>>;
+    setConnectionDetails: React.Dispatch<React.SetStateAction<ConnectionDetails>>;
     isFbSdkInitialized: boolean;
 }
 
@@ -65,7 +67,7 @@ const FacebookTroubleshooter: React.FC = () => (
 );
 
 
-export const ConnectionsView: React.FC<ConnectionsViewProps> = ({ connections, setConnections, isFbSdkInitialized }) => {
+export const ConnectionsView: React.FC<ConnectionsViewProps> = ({ connections, setConnections, setConnectionDetails, isFbSdkInitialized }) => {
     const [loadingPlatform, setLoadingPlatform] = useState<Platform | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [showFbTroubleshooter, setShowFbTroubleshooter] = useState(false);
@@ -137,8 +139,9 @@ export const ConnectionsView: React.FC<ConnectionsViewProps> = ({ connections, s
                         console.log('Access Token found:', accessToken.substring(0,15) + '...');
 
                         connectFacebook(accessToken)
-                            .then(updatedConnections => {
-                                setConnections(updatedConnections);
+                            .then(result => {
+                                setConnections(result.connections);
+                                setConnectionDetails(result.details)
                                 setError(null);
                                 setShowFbTroubleshooter(false);
                             })
@@ -228,6 +231,7 @@ export const ConnectionsView: React.FC<ConnectionsViewProps> = ({ connections, s
 
             const updatedConnections = await disconnectPlatform(platform);
             setConnections(updatedConnections);
+            // The App.tsx useEffect hook will clear the connectionDetails state.
 
         } catch (err) {
             const message = err instanceof Error ? err.message : String(err);

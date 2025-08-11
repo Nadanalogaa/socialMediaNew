@@ -56,6 +56,22 @@ export interface ConnectionStatus {
     [Platform.YouTube]: boolean;
 }
 
+export interface FacebookConnectionDetails {
+    pageId: string;
+    pageAccessToken: string;
+    pageName: string;
+}
+
+export interface InstagramConnectionDetails {
+    igUserId: string | null;
+    username: string | null;
+}
+
+export interface ConnectionDetails {
+    facebook?: FacebookConnectionDetails;
+    instagram?: InstagramConnectionDetails;
+}
+
 export interface GeneratedAssetContent {
     name: string;
     description: string;

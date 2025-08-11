@@ -1,24 +1,29 @@
 
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
-import type { Platform, Audience, Post, ConnectionStatus, MediaAsset, GeneratedPostIdea } from '../types';
-import { Platform as PlatformEnum, Audience as AudienceEnum, View } from '../types';
+import type { Platform, Audience, Post, ConnectionStatus, MediaAsset, GeneratedPostIdea, ConnectionDetails } from '../types';
+import { Platform as PlatformEnum, Audience as AudienceEnum } from '../types';
 import { publishPost, generateAssetContent } from '../services/geminiService';
 import { FacebookIcon } from './icons/FacebookIcon';
 import { InstagramIcon } from './icons/InstagramIcon';
 import { YoutubeIcon } from './icons/YoutubeIcon';
-import * as FFmpegModule from '@ffmpeg/ffmpeg';
-import * as ffmpegUtil from '@ffmpeg/util';
 
 const toBase64 = (file: File): Promise<string> => new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.readAsDataURL(file);
-    reader.onload = () => resolve(reader.result as string);
+    reader.onload = () => {
+        if (typeof reader.result === 'string') {
+            resolve(reader.result);
+        } else {
+            reject(new Error('Failed to convert file to base64 string.'));
+        }
+    };
     reader.onerror = error => reject(error);
 });
 
 interface CreatePostViewProps {
     connections: ConnectionStatus;
+    connectionDetails: ConnectionDetails;
     onPostPublished: (post: Post) => void;
     postSeed: GeneratedPostIdea | null;
     clearPostSeed: () => void;
@@ -43,7 +48,7 @@ const MediaPlaceholder: React.FC<{ prompt: string; onAddMedia: () => void }> = (
 );
 
 
-export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, onPostPublished, postSeed, clearPostSeed }) => {
+export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, connectionDetails, onPostPublished, postSeed, clearPostSeed }) => {
     const [assets, setAssets] = useState<MediaAsset[]>([]);
     const [audience, setAudience] = useState<Audience>(AudienceEnum.Global);
     const fileInputRef = useRef<HTMLInputElement>(null);
@@ -54,7 +59,7 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, onP
     const [isBulkPublishing, setIsBulkPublishing] = useState(false);
     
     const [isFfmpegLoaded, setIsFfmpegLoaded] = useState(false);
-    const ffmpegRef = useRef(new FFmpegModule.FFmpeg());
+    const ffmpegRef = useRef<any>(null);
 
 
     useEffect(() => {
@@ -77,15 +82,21 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, onP
 
     useEffect(() => {
         const loadFfmpeg = async () => {
-            const ffmpeg = ffmpegRef.current;
-            ffmpeg.on('log', ({ message }) => {
-                console.log('[FFMPEG]:', message);
-            });
             try {
-                const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd';
+                const { FFmpeg } = await import('@ffmpeg/ffmpeg');
+                const { toBlobURL } = await import('@ffmpeg/util');
+
+                const ffmpeg = new FFmpeg();
+                ffmpegRef.current = ffmpeg;
+                
+                ffmpeg.on('log', ({ message }) => {
+                    console.log('[FFMPEG]:', message);
+                });
+                
+                const baseURL = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/umd'
                 await ffmpeg.load({
-                    coreURL: await ffmpegUtil.toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
-                    wasmURL: await ffmpegUtil.toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
+                    coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
+                    wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
                 });
                 setIsFfmpegLoaded(true);
                 console.log('FFmpeg loaded successfully.');
@@ -103,7 +114,7 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, onP
 
     const handleCompressVideo = async (assetId: string, file: File) => {
         const ffmpeg = ffmpegRef.current;
-        if (!isFfmpegLoaded) {
+        if (!isFfmpegLoaded || !ffmpeg) {
             updateAsset(assetId, { status: 'error', errorMessage: 'Compression library not ready. Please refresh and try again.' });
             return;
         }
@@ -111,10 +122,11 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, onP
         updateAsset(assetId, { status: 'compressing', errorMessage: undefined });
 
         try {
+            const { fetchFile } = await import('@ffmpeg/util');
             const inputFileName = `input_${file.name}`;
             const outputFileName = 'output.mp4';
 
-            await ffmpeg.writeFile(inputFileName, await ffmpegUtil.fetchFile(file));
+            await ffmpeg.writeFile(inputFileName, await fetchFile(file));
             await ffmpeg.exec(['-i', inputFileName, '-vf', 'scale=iw/2:-2', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '28', outputFileName]);
 
             const data = await ffmpeg.readFile(outputFileName);
@@ -145,7 +157,7 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, onP
     };
 
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-        const files = e.target.files;
+        const files = e.currentTarget.files;
         if (!files || files.length === 0) return;
 
         const MAX_VIDEO_SIZE_MB_BEFORE_COMPRESSION = 20;
@@ -192,7 +204,7 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, onP
             Array.from(files).forEach(file => processFile(file));
         }
 
-        if (e.target) e.target.value = '';
+        if (e.currentTarget) e.currentTarget.value = '';
         setAssetForMediaUpload(null);
     };
 
@@ -225,8 +237,9 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, onP
                 status: 'idle',
             });
             return Promise.resolve();
-        } catch (err: any) {
-            updateAsset(assetId, { status: 'error', errorMessage: err.message || 'Failed to generate content.' });
+        } catch (err) {
+            const message = err instanceof Error ? err.message : 'Failed to generate content.';
+            updateAsset(assetId, { status: 'error', errorMessage: message });
             return Promise.reject(err);
         }
     }, [assets, updateAsset]);
@@ -275,7 +288,7 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, onP
         };
 
         try {
-            const newPost = await publishPost(postToCreate);
+            const newPost = await publishPost(postToCreate, connectionDetails);
             onPostPublished(newPost);
             updateAsset(assetId, { status: 'published' });
             setTimeout(() => {
@@ -286,8 +299,9 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, onP
                     return newSet;
                 });
             }, 2000);
-        } catch (err: any) {
-            updateAsset(assetId, { status: 'error', errorMessage: err.message || 'Failed to publish.' });
+        } catch (err) {
+            const message = err instanceof Error ? err.message : 'Failed to publish.';
+            updateAsset(assetId, { status: 'error', errorMessage: message });
         }
     };
 
@@ -406,7 +420,7 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, onP
                      <div className="bg-dark-card p-4 rounded-lg border border-dark-border flex items-center justify-between">
                         <div>
                             <label htmlFor="audience" className="block text-sm font-medium text-dark-text-secondary mb-2">Global Target Audience for all Posts</label>
-                            <select id="audience" value={audience} onChange={(e: React.ChangeEvent<HTMLSelectElement>) => setAudience(e.target.value as Audience)} className="w-full md:w-auto bg-dark-bg border border-dark-border rounded-md p-2 focus:ring-brand-primary focus:border-brand-primary text-dark-text">
+                            <select id="audience" value={audience} onChange={(e) => setAudience(e.currentTarget.value as Audience)} className="w-full md:w-auto bg-dark-bg border border-dark-border rounded-md p-2 focus:ring-brand-primary focus:border-brand-primary text-dark-text">
                                 {Object.values(AudienceEnum).map(a => <option key={a}>{a}</option>)}
                             </select>
                         </div>
@@ -459,7 +473,7 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, onP
                                 ) : (
                                    <MediaPlaceholder prompt={asset.prompt} onAddMedia={() => handleAddMediaClick(asset.id)} />
                                 )}
-                                <textarea value={asset.prompt} onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => updateAsset(asset.id, { prompt: e.target.value, status: 'idle' })} placeholder="e.g., A dancer in a dramatic pose" className="w-full bg-dark-bg border border-dark-border rounded-md p-2 text-sm focus:ring-brand-primary focus:border-brand-primary" rows={2}/>
+                                <textarea value={asset.prompt} onChange={(e) => updateAsset(asset.id, { prompt: e.currentTarget.value, status: 'idle' })} placeholder="e.g., A dancer in a dramatic pose" className="w-full bg-dark-bg border border-dark-border rounded-md p-2 text-sm focus:ring-brand-primary focus:border-brand-primary" rows={2}/>
                                 <button onClick={() => handleGenerateContent(asset.id)} disabled={asset.status === 'generating' || !asset.prompt} className="w-full flex justify-center items-center py-2 px-3 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-brand-primary hover:bg-brand-secondary disabled:bg-gray-500 disabled:cursor-not-allowed">
                                     {asset.status === 'generating' ? <LoadingSpinner /> : '✨ Generate AI Content'}
                                 </button>
@@ -468,15 +482,15 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, onP
                             <div className="space-y-3 flex flex-col">
                                  <div>
                                     <label className="text-xs font-bold text-dark-text-secondary">Title</label>
-                                    <input type="text" value={asset.name} onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateAsset(asset.id, { name: e.target.value })} className="w-full mt-1 bg-dark-bg border border-dark-border rounded-md p-2 text-sm" />
+                                    <input type="text" value={asset.name} onChange={(e) => updateAsset(asset.id, { name: e.currentTarget.value })} className="w-full mt-1 bg-dark-bg border border-dark-border rounded-md p-2 text-sm" />
                                  </div>
                                  <div className="flex-grow">
                                     <label className="text-xs font-bold text-dark-text-secondary">Description</label>
-                                    <textarea rows={5} value={asset.description} onChange={(e: React.ChangeEvent<HTMLTextAreaElement>) => updateAsset(asset.id, { description: e.target.value })} className="w-full mt-1 bg-dark-bg border border-dark-border rounded-md p-2 text-sm h-full"/>
+                                    <textarea rows={5} value={asset.description} onChange={(e) => updateAsset(asset.id, { description: e.currentTarget.value })} className="w-full mt-1 bg-dark-bg border border-dark-border rounded-md p-2 text-sm h-full"/>
                                  </div>
                                  <div>
                                     <label className="text-xs font-bold text-dark-text-secondary">Hashtags</label>
-                                    <input type="text" value={asset.hashtags.join(' ')} onChange={(e: React.ChangeEvent<HTMLInputElement>) => updateAsset(asset.id, { hashtags: e.target.value.split(' ').map(h => h.replace('#', '')) })} className="w-full mt-1 bg-dark-bg border border-dark-border rounded-md p-2 text-sm" placeholder="dance art inspiration"/>
+                                    <input type="text" value={asset.hashtags.join(' ')} onChange={(e) => updateAsset(asset.id, { hashtags: e.currentTarget.value.split(' ').map(h => h.replace('#', '')) })} className="w-full mt-1 bg-dark-bg border border-dark-border rounded-md p-2 text-sm" placeholder="dance art inspiration"/>
                                 </div>
                             </div>
                         </div>
@@ -500,7 +514,7 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, onP
                          </div>
                     </div>
                     <div className="bg-gray-900/50 p-3 flex items-center gap-4">
-                         <button onClick={() => handlePublish(asset.id)} disabled={!asset.file || asset.status !== 'idle' || asset.platforms.length === 0} className="w-full flex justify-center items-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 disabled:bg-gray-500 disabled:cursor-not-allowed">
+                         <button onClick={() => handlePublish(asset.id)} disabled={!asset.file || (asset.status !== 'idle' && asset.errorMessage?.startsWith('Compressed') === false) || asset.platforms.length === 0} className="w-full flex justify-center items-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 disabled:bg-gray-500 disabled:cursor-not-allowed">
                              {asset.status === 'publishing' ? <LoadingSpinner /> : (asset.status === 'published' ? 'Published!' : 'Publish Asset')}
                          </button>
                          <button onClick={() => setAssets(p => p.filter(a => a.id !== asset.id))} className="text-red-400 hover:text-red-300 text-sm font-medium p-2" aria-label="Remove asset">

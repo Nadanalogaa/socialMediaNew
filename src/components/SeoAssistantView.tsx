@@ -1,5 +1,4 @@
 
-
 import React, { useState, useCallback } from 'react';
 import { generateSeoSuggestions, generatePostFromIdea } from '../services/geminiService';
 import type { SeoSuggestions, View } from '../types';
@@ -35,8 +34,8 @@ export const SeoConnectorView: React.FC<SeoConnectorViewProps> = ({ navigateTo }
         try {
             const result = await generateSeoSuggestions(url);
             setSuggestions(result);
-        } catch (err: any) {
-            setError(err.message || 'An unknown error occurred.');
+        } catch (err) {
+            setError(err instanceof Error ? err.message : 'An unknown error occurred.');
         } finally {
             setIsLoading(false);
         }
@@ -48,8 +47,9 @@ export const SeoConnectorView: React.FC<SeoConnectorViewProps> = ({ navigateTo }
         try {
             const postIdea = await generatePostFromIdea(idea.title, idea.description);
             navigateTo(ViewEnum.CREATE_POST, postIdea);
-        } catch (err: any) {
-            setError(`Failed to generate post from idea: ${err.message}`);
+        } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            setError(`Failed to generate post from idea: ${message}`);
         } finally {
             setLoadingIdea(null);
         }
@@ -71,7 +71,7 @@ export const SeoConnectorView: React.FC<SeoConnectorViewProps> = ({ navigateTo }
                         id="website-url"
                         className="flex-1 min-w-0 block w-full px-3 py-2 rounded-none rounded-l-md focus:ring-brand-primary focus:border-brand-primary sm:text-sm border-dark-border bg-dark-bg text-dark-text"
                         value={url}
-                        onChange={(e: React.ChangeEvent<HTMLInputElement>) => setUrl(e.target.value)}
+                        onChange={(e) => setUrl(e.currentTarget.value)}
                         placeholder="www.your-business.com"
                     />
                     <button
