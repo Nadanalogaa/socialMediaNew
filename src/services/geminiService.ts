@@ -1,5 +1,5 @@
 
-import type { Platform, SeoSuggestions, Post, ConnectionStatus, GeneratedAssetContent } from '../types';
+import type { Platform, SeoSuggestions, Post, ConnectionStatus, GeneratedAssetContent, GeneratedPostIdea } from '../types';
 
 const handleResponse = async (response: Response) => {
     if (!response.ok) {
@@ -33,6 +33,15 @@ export const generateSeoSuggestions = async (url: string): Promise<SeoSuggestion
     return handleResponse(response);
 };
 
+export const generatePostFromIdea = async (title: string, description: string): Promise<GeneratedPostIdea> => {
+    const response = await fetch('/api/generate-post-from-idea', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title, description }),
+    });
+    return handleResponse(response);
+};
+
 export const getConnections = async (): Promise<ConnectionStatus> => {
     const response = await fetch('/api/connections');
     return handleResponse(response);
@@ -48,15 +57,19 @@ export const connectFacebook = async (accessToken: string): Promise<ConnectionSt
 }
 
 export const disconnectPlatform = async (platform: Platform): Promise<ConnectionStatus> => {
-    const response = await fetch(`/api/connections/${platform}`, { method: 'DELETE' });
-    return handleResponse(response);
-}
-
-export const publishPost = async (post: Omit<Post, 'id' | 'engagement' | 'postedAt'>): Promise<Post> => {
-     const response = await fetch('/api/publish-post', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(post),
+    const response = await fetch(`/api/connections/${platform}`, {
+        method: 'DELETE',
     });
     return handleResponse(response);
-}
+};
+
+export const publishPost = async (postData: Omit<Post, 'id' | 'engagement' | 'postedAt'>): Promise<Post> => {
+    const response = await fetch('/api/publish-post', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify(postData)
+    });
+    return handleResponse(response);
+};

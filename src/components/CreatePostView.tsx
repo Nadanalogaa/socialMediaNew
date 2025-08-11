@@ -1,7 +1,7 @@
 
-import React, { useState, useCallback, useRef } from 'react';
-import type { Platform, Audience, Post, ConnectionStatus, MediaAsset } from '../types';
-import { Platform as PlatformEnum, Audience as AudienceEnum } from '../types';
+import React, { useState, useCallback, useRef, useEffect } from 'react';
+import type { Platform, Audience, Post, ConnectionStatus, MediaAsset, GeneratedPostIdea } from '../types';
+import { Platform as PlatformEnum, Audience as AudienceEnum, View } from '../types';
 import { publishPost, generateAssetContent } from '../services/geminiService';
 import { FacebookIcon } from './icons/FacebookIcon';
 import { InstagramIcon } from './icons/InstagramIcon';
@@ -17,6 +17,8 @@ const toBase64 = (file: File): Promise<string> => new Promise((resolve, reject) 
 interface CreatePostViewProps {
     connections: ConnectionStatus;
     onPostPublished: (post: Post) => void;
+    postSeed: GeneratedPostIdea | null;
+    clearPostSeed: () => void;
 }
 
 const LoadingSpinner: React.FC<{ size?: string }> = ({ size = 'h-5 w-5' }) => (
@@ -26,42 +28,63 @@ const LoadingSpinner: React.FC<{ size?: string }> = ({ size = 'h-5 w-5' }) => (
     </svg>
 );
 
-const ChevronIcon: React.FC<{ className?: string }> = ({ className }) => (
-    <svg xmlns="http://www.w3.org/2000/svg" className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-    </svg>
+const MediaPlaceholder: React.FC<{ prompt: string; onAddMedia: () => void }> = ({ prompt, onAddMedia }) => (
+     <div className="flex flex-col items-center justify-center w-full aspect-video bg-dark-bg rounded-lg p-4 text-center border-2 border-dashed border-dark-border">
+        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="w-10 h-10 text-dark-text-secondary"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+        <p className="text-xs text-dark-text-secondary mt-2">AI Image Prompt:</p>
+        <p className="text-sm font-medium text-white italic mb-3">"{prompt}"</p>
+        <button onClick={onAddMedia} className="bg-brand-light text-brand-primary hover:bg-opacity-90 text-xs font-bold py-1 px-3 rounded-md">
+            Add Media
+        </button>
+    </div>
 );
 
 
-export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, onPostPublished }) => {
+export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, onPostPublished, postSeed, clearPostSeed }) => {
     const [assets, setAssets] = useState<MediaAsset[]>([]);
     const [audience, setAudience] = useState<Audience>(AudienceEnum.Global);
     const fileInputRef = useRef<HTMLInputElement>(null);
-    const [selectedAssetIds, setSelectedAssetIds] = useState<Set<string>>(new Set());
-    const [bulkProgress, setBulkProgress] = useState<{
-        total: number;
-        completed: number;
-        action: 'generating' | 'publishing' | null;
-        errorCount: number;
-    }>({ total: 0, completed: 0, action: null, errorCount: 0 });
-    const [expandedAssetId, setExpandedAssetId] = useState<string | null>(null);
+    const [assetForMediaUpload, setAssetForMediaUpload] = useState<string | null>(null);
+
+    useEffect(() => {
+        if (postSeed) {
+            const newAsset: MediaAsset = {
+                id: `asset_${Date.now()}`,
+                file: undefined,
+                previewUrl: undefined,
+                name: "Generated Social Post", // Default title
+                prompt: postSeed.imagePrompt,
+                description: postSeed.postText,
+                hashtags: postSeed.hashtags,
+                platforms: [PlatformEnum.Facebook], // Default selection
+                status: 'idle',
+            };
+            setAssets(prev => [newAsset, ...prev]);
+            clearPostSeed();
+        }
+    }, [postSeed, clearPostSeed]);
+
 
     const updateAsset = useCallback((id: string, updates: Partial<MediaAsset>) => {
         setAssets(prev => prev.map(a => a.id === id ? { ...a, ...updates } : a));
     }, []);
 
-    const removeAsset = (assetId: string) => {
-        setAssets(prev => prev.filter(a => a.id !== assetId));
-        setSelectedAssetIds(prev => {
-            const newSet = new Set(prev);
-            newSet.delete(assetId);
-            return newSet;
-        });
-    };
-
     const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const files = e.target.files;
-        if (files) {
+        if (!files || files.length === 0) return;
+
+        if (assetForMediaUpload) {
+            // Updating a single asset that was text-only
+            const file = files[0];
+            const assetToUpdate = assets.find(a => a.id === assetForMediaUpload);
+            if (assetToUpdate) {
+                 updateAsset(assetForMediaUpload, {
+                    file,
+                    previewUrl: URL.createObjectURL(file),
+                });
+            }
+        } else {
+            // Adding one or more new assets from the main dropzone
             const newAssets: MediaAsset[] = Array.from(files).map(file => ({
                 id: `asset_${Date.now()}_${Math.random()}`,
                 file,
@@ -75,15 +98,26 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, onP
             }));
             setAssets(prev => [...prev, ...newAssets]);
         }
+        
         if (e.target) e.target.value = '';
+        setAssetForMediaUpload(null);
     };
+
+    const handleAddMediaClick = (assetId: string) => {
+        setAssetForMediaUpload(assetId);
+        fileInputRef.current?.click();
+    };
+    
+    const handleUploadAreaClick = () => {
+        setAssetForMediaUpload(null);
+        fileInputRef.current?.click();
+    }
     
     const handleGenerateContent = useCallback(async (assetId: string) => {
         const asset = assets.find(a => a.id === assetId);
         if (!asset || !asset.prompt.trim()) {
-            const errorMsg = 'Please enter a prompt.';
-            updateAsset(assetId, { status: 'error', errorMessage: errorMsg });
-            throw new Error(errorMsg);
+            updateAsset(assetId, { status: 'error', errorMessage: 'Please enter a prompt.' });
+            return;
         }
         
         updateAsset(assetId, { status: 'generating', errorMessage: undefined });
@@ -98,291 +132,176 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, onP
             });
         } catch (err: any) {
             updateAsset(assetId, { status: 'error', errorMessage: err.message || 'Failed to generate content.' });
-            throw err;
         }
     }, [assets, updateAsset]);
 
-    const handlePublish = async (assetId: string): Promise<void> => {
+    const handlePublish = async (assetId: string) => {
         const asset = assets.find(a => a.id === assetId);
-        if (!asset) throw new Error('Asset not found.');
-
-        if (asset.platforms.length === 0) {
-            const errorMsg = 'Please select at least one platform.'
-            updateAsset(assetId, { status: 'error', errorMessage: errorMsg });
-            throw new Error(errorMsg);
-        }
-
-        if (!asset.description || !asset.name) {
-            const errorMsg = 'Please generate content (title and description) before publishing.'
-            updateAsset(assetId, { status: 'error', errorMessage: errorMsg });
-            throw new Error(errorMsg);
-        }
-        
-        if (asset.platforms.includes(PlatformEnum.Instagram) && !asset.platforms.includes(PlatformEnum.Facebook)) {
-            const errorMsg = 'To post on Instagram, Facebook must also be selected due to API requirements.';
-            updateAsset(assetId, { status: 'error', errorMessage: errorMsg });
-            throw new Error(errorMsg);
-        }
+        if (!asset || !asset.file) {
+            updateAsset(assetId, { status: 'error', errorMessage: 'Please add an image or video before publishing.' });
+            return;
+        };
 
         const unconnected = asset.platforms.filter(p => !connections[p]);
         if (unconnected.length > 0) {
-            const errorMsg = `Please connect ${unconnected.join(', ')} first.`
-            updateAsset(assetId, { status: 'error', errorMessage: errorMsg });
-            throw new Error(errorMsg);
+            updateAsset(assetId, { status: 'error', errorMessage: `Please connect ${unconnected.join(', ')} first.`});
+            return;
         }
 
         updateAsset(assetId, { status: 'publishing', errorMessage: undefined });
         
+        let imageUrlData: string;
         try {
-            const imageUrlData = await toBase64(asset.file);
-            const postToCreate: Omit<Post, 'id' | 'engagement' | 'postedAt'> = {
-                platforms: asset.platforms,
-                audience,
-                imageUrl: imageUrlData,
-                prompt: asset.prompt,
-                generatedContent: {
-                    facebook: asset.description,
-                    instagram: asset.description,
-                    youtubeTitle: asset.name,
-                    youtubeDescription: asset.description,
-                    hashtags: asset.hashtags,
-                }
-            };
+            imageUrlData = await toBase64(asset.file);
+        } catch (error) {
+            console.error("Error converting file to base64:", error);
+            updateAsset(assetId, { status: 'error', errorMessage: 'Could not read the image file for upload.' });
+            return;
+        }
+
+        const postToCreate: Omit<Post, 'id' | 'engagement' | 'postedAt'> = {
+            platforms: asset.platforms,
+            audience,
+            imageUrl: imageUrlData,
+            prompt: asset.prompt,
+            generatedContent: {
+                facebook: asset.description,
+                instagram: asset.description,
+                youtubeTitle: asset.name,
+                youtubeDescription: asset.description,
+                hashtags: asset.hashtags,
+            }
+        };
+
+        try {
             const newPost = await publishPost(postToCreate);
             onPostPublished(newPost);
             updateAsset(assetId, { status: 'published' });
+            setTimeout(() => {
+                setAssets(prev => prev.filter(a => a.id !== assetId));
+            }, 2000);
         } catch (err: any) {
             updateAsset(assetId, { status: 'error', errorMessage: err.message || 'Failed to publish.' });
-            throw err;
         }
     };
-    
-    const handleToggleSelection = (assetId: string) => {
-        setSelectedAssetIds(prev => {
-            const newSet = new Set(prev);
-            if (newSet.has(assetId)) {
-                newSet.delete(assetId);
-            } else {
-                newSet.add(assetId);
-            }
-            return newSet;
-        });
-    };
-
-    const handleSelectAll = (e: React.ChangeEvent<HTMLInputElement>) => {
-        if (e.target.checked) {
-            setSelectedAssetIds(new Set(assets.filter(a => a.status !== 'published').map(a => a.id)));
-        } else {
-            setSelectedAssetIds(new Set());
-        }
-    };
-
-    const handleBulkGenerate = async () => {
-        const assetsToGenerate = assets.filter(a => selectedAssetIds.has(a.id) && a.status !== 'generating');
-        if (assetsToGenerate.length === 0) return;
-
-        setBulkProgress({ total: assetsToGenerate.length, completed: 0, action: 'generating', errorCount: 0 });
-
-        const promises = assetsToGenerate.map(asset => 
-            handleGenerateContent(asset.id)
-                .then(() => {
-                    setBulkProgress(prev => ({ ...prev, completed: prev.completed + 1 }));
-                })
-                .catch(() => {
-                    setBulkProgress(prev => ({ ...prev, completed: prev.completed + 1, errorCount: prev.errorCount + 1 }));
-                })
-        );
-        await Promise.all(promises);
-
-        setTimeout(() => setBulkProgress({ total: 0, completed: 0, action: null, errorCount: 0 }), 2000);
-    };
-
-    const handleBulkPublish = async () => {
-        const assetsToPublish = assets.filter(a => selectedAssetIds.has(a.id) && a.status !== 'publishing' && a.status !== 'published');
-        if (assetsToPublish.length === 0) return;
-
-        setBulkProgress({ total: assetsToPublish.length, completed: 0, action: 'publishing', errorCount: 0 });
-
-        for (const asset of assetsToPublish) {
-            try {
-                await handlePublish(asset.id);
-            } catch (error) {
-                 updateAsset(asset.id, { status: 'error', errorMessage: (error as Error).message });
-                 setBulkProgress(prev => ({ ...prev, errorCount: prev.errorCount + 1 }));
-            } finally {
-                setBulkProgress(prev => ({ ...prev, completed: prev.completed + 1 }));
-            }
-        }
-        
-        setTimeout(() => {
-            setBulkProgress({ total: 0, completed: 0, action: null, errorCount: 0 });
-            setAssets(prev => prev.filter(a => a.status !== 'published'));
-            setSelectedAssetIds(new Set());
-        }, 3000);
-    };
-
 
     const togglePlatform = (assetId: string, platform: Platform) => {
         const asset = assets.find(a => a.id === assetId);
         if (!asset) return;
         
         const currentPlatforms = new Set(asset.platforms);
+
         if (currentPlatforms.has(platform)) {
             currentPlatforms.delete(platform);
+            if (platform === PlatformEnum.Facebook) {
+                currentPlatforms.delete(PlatformEnum.Instagram);
+            }
         } else {
             currentPlatforms.add(platform);
+            if (platform === PlatformEnum.Instagram) {
+                currentPlatforms.add(PlatformEnum.Facebook);
+            }
         }
-        updateAsset(assetId, { platforms: Array.from(currentPlatforms), status: 'idle', errorMessage: undefined });
-    };
-
-    const handleCardClick = (assetId: string, isExpanded: boolean) => {
-        if (window.innerWidth < 768) { // md breakpoint
-            setExpandedAssetId(isExpanded ? null : assetId);
-        }
+        updateAsset(assetId, { platforms: Array.from(currentPlatforms), status: 'idle' });
     };
     
     return (
-        <div className="max-w-7xl mx-auto animate-fade-in space-y-6 sm:space-y-8">
+        <div className="max-w-7xl mx-auto animate-fade-in space-y-8">
             <div>
                 <h1 className="text-3xl font-bold text-white">Create Posts</h1>
                 <p className="text-dark-text-secondary mt-1">Upload media, generate content with AI, and publish across your platforms.</p>
             </div>
             
-            <div 
-                className="relative block w-full border-2 border-dark-border border-dashed rounded-lg p-12 text-center hover:border-brand-primary transition-colors cursor-pointer bg-dark-card/50"
-                onClick={() => fileInputRef.current?.click()}
-            >
-                <svg className="mx-auto h-12 w-12 text-dark-text-secondary" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true"><path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
-                <span className="mt-2 block text-sm font-semibold text-white">Upload Images or Videos</span>
-                <span className="block text-xs text-dark-text-secondary">Drag and drop or click to select files</span>
-                <input ref={fileInputRef} type="file" multiple onChange={handleFileChange} className="sr-only" accept="image/*,video/*" />
-            </div>
+            <div className="space-y-6">
+                <div 
+                    className="relative block w-full border-2 border-dark-border border-dashed rounded-lg p-12 text-center hover:border-brand-primary transition-colors cursor-pointer bg-dark-card/50"
+                    onClick={handleUploadAreaClick}
+                >
+                    <svg className="mx-auto h-12 w-12 text-dark-text-secondary" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true"><path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
+                    <span className="mt-2 block text-sm font-semibold text-white">Upload Images or Videos</span>
+                    <span className="block text-xs text-dark-text-secondary">Drag and drop or click to select files</span>
+                    <input ref={fileInputRef} type="file" multiple={!assetForMediaUpload} onChange={handleFileChange} className="sr-only" accept="image/*,video/*" />
+                </div>
 
-            {assets.length > 0 && (
-                 <div className="bg-dark-card p-4 rounded-lg border border-dark-border space-y-4">
-                    <div className="hidden md:flex flex-wrap items-center justify-between gap-4">
-                         <div className="flex items-center space-x-3">
-                            <input 
-                                type="checkbox"
-                                onChange={handleSelectAll}
-                                checked={assets.length > 0 && selectedAssetIds.size === assets.filter(a => a.status !== 'published').length}
-                                disabled={assets.length === 0}
-                                className="h-5 w-5 rounded bg-dark-bg border-dark-border text-brand-primary focus:ring-brand-primary"
-                            />
-                            <label className="text-sm font-medium text-dark-text">
-                                {selectedAssetIds.size} / {assets.length} selected
-                            </label>
-                        </div>
-                        <div className="flex items-center gap-2">
-                            <button onClick={handleBulkGenerate} disabled={selectedAssetIds.size === 0 || bulkProgress.action !== null} className="flex justify-center items-center gap-2 py-2 px-3 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-brand-primary hover:bg-brand-secondary disabled:bg-gray-500 disabled:cursor-not-allowed">
-                                ✨ Generate Selected
-                            </button>
-                            <button onClick={handleBulkPublish} disabled={selectedAssetIds.size === 0 || bulkProgress.action !== null} className="flex justify-center items-center gap-2 py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 disabled:bg-gray-500 disabled:cursor-not-allowed">
-                                🚀 Publish Selected
-                            </button>
-                        </div>
-                    </div>
-                     
-                    {bulkProgress.action && (
-                        <div className="pt-2 space-y-2" aria-live="polite">
-                            <div className="flex justify-between text-sm font-medium text-dark-text-secondary">
-                                <span>{bulkProgress.action === 'generating' ? 'Generating Content...' : 'Publishing Posts...'}</span>
-                                <span>{bulkProgress.completed} / {bulkProgress.total}</span>
-                            </div>
-                            <div className="w-full bg-dark-bg rounded-full h-2.5">
-                                <div className="bg-brand-primary h-2.5 rounded-full transition-all duration-300" style={{ width: `${(bulkProgress.completed / bulkProgress.total) * 100}%` }}></div>
-                            </div>
-                            {bulkProgress.errorCount > 0 && <p className="text-xs text-red-400 text-right">{bulkProgress.errorCount} item(s) failed.</p>}
-                        </div>
-                    )}
-
-                    <div>
-                        <label htmlFor="audience" className="block text-sm font-medium text-dark-text-secondary mb-2">Global Target Audience</label>
+                {assets.length > 0 && (
+                     <div className="bg-dark-card p-4 rounded-lg border border-dark-border">
+                        <label htmlFor="audience" className="block text-sm font-medium text-dark-text-secondary mb-2">Global Target Audience for all Posts</label>
                         <select id="audience" value={audience} onChange={(e) => setAudience(e.target.value as Audience)} className="w-full md:w-1/3 bg-dark-bg border border-dark-border rounded-md p-2 focus:ring-brand-primary focus:border-brand-primary text-dark-text">
                             {Object.values(AudienceEnum).map(a => <option key={a}>{a}</option>)}
                         </select>
-                    </div>
-                </div>
-            )}
+                     </div>
+                )}
+            </div>
             
-            <div className="grid grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 gap-6">
-                {assets.map((asset) => {
-                    const isExpanded = expandedAssetId === asset.id;
-                    const isWorking = asset.status === 'generating' || asset.status === 'publishing';
-                    const isDone = asset.status === 'published';
-                    
-                    return (
-                        <div key={asset.id} className={`bg-dark-card rounded-lg border flex flex-col transition-all duration-500 ${isDone ? 'border-green-500 opacity-60' : 'border-dark-border'} ${selectedAssetIds.has(asset.id) ? 'border-brand-primary ring-2 ring-brand-primary' : ''}`}>
-                            {/* Card Header (for mobile collapse/expand) */}
-                            <div className="flex items-center p-3 gap-3 cursor-pointer md:cursor-auto" onClick={() => handleCardClick(asset.id, isExpanded)}>
-                                {!isDone && (
-                                    <input 
-                                        type="checkbox"
-                                        checked={selectedAssetIds.has(asset.id)}
-                                        onChange={() => handleToggleSelection(asset.id)}
-                                        onClick={(e) => e.stopPropagation()}
-                                        className="h-5 w-5 rounded bg-dark-bg border-dark-border text-brand-primary focus:ring-brand-primary ring-offset-dark-card flex-shrink-0"
-                                    />
-                                )}
-                                {asset.file.type.startsWith('image/') ? (
-                                    <img src={asset.previewUrl} alt="Preview" className="w-12 h-12 object-cover rounded-md bg-dark-bg flex-shrink-0" />
+            <div className="grid grid-cols-1 xl:grid-cols-2 2xl:grid-cols-3 gap-6">
+            {assets.map((asset) => (
+                <div key={asset.id} className={`bg-dark-card rounded-lg border flex flex-col transition-all duration-500 ${asset.status === 'published' ? 'border-green-500 opacity-50 scale-95' : 'border-dark-border'}`}>
+                    <div className="p-4 flex-grow space-y-4">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div className="space-y-3">
+                               {asset.previewUrl && asset.file?.type.startsWith('image/') ? (
+                                    <img src={asset.previewUrl} alt="Preview" className="rounded-lg w-full object-cover aspect-video bg-dark-bg" />
+                                ) : asset.previewUrl && asset.file?.type.startsWith('video/') ? (
+                                    <video src={asset.previewUrl} controls className="rounded-lg w-full aspect-video bg-black"></video>
                                 ) : (
-                                    <div className="w-12 h-12 bg-black flex items-center justify-center rounded-md flex-shrink-0">
-                                        <YoutubeIcon className="w-6 h-6 text-white" />
-                                    </div>
+                                   <MediaPlaceholder prompt={asset.prompt} onAddMedia={() => handleAddMediaClick(asset.id)} />
                                 )}
-                                <div className="flex-1 overflow-hidden">
-                                    <p className="font-semibold text-white truncate" title={asset.name}>{asset.name}</p>
-                                    <p className="text-xs text-dark-text-secondary capitalize">{asset.status}</p>
-                                </div>
-                                <button className="p-1 rounded-full text-dark-text-secondary hover:bg-dark-bg md:hidden" aria-label="Expand">
-                                    <ChevronIcon className={`w-6 h-6 transition-transform ${isExpanded ? 'rotate-180' : 'rotate-0'}`} />
+                                <textarea value={asset.prompt} onChange={e => updateAsset(asset.id, { prompt: e.target.value, status: 'idle' })} placeholder="e.g., A dancer in a dramatic pose" className="w-full bg-dark-bg border border-dark-border rounded-md p-2 text-sm focus:ring-brand-primary focus:border-brand-primary" rows={2}/>
+                                <button onClick={() => handleGenerateContent(asset.id)} disabled={asset.status === 'generating' || !asset.prompt} className="w-full flex justify-center items-center py-2 px-3 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-brand-primary hover:bg-brand-secondary disabled:bg-gray-500 disabled:cursor-not-allowed">
+                                    {asset.status === 'generating' ? <LoadingSpinner /> : '✨ Generate AI Content'}
                                 </button>
                             </div>
 
-                            {/* Collapsible Card Body */}
-                            <div className={`border-t border-dark-border ${isExpanded ? 'block' : 'hidden'} md:block`}>
-                                <div className="p-4 flex-grow space-y-4">
-                                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                                        <div className="space-y-3">
-                                            {asset.file.type.startsWith('image/') ? <img src={asset.previewUrl} alt="Preview" className="rounded-lg w-full object-cover aspect-video bg-dark-bg" /> : <video src={asset.previewUrl} controls className="rounded-lg w-full aspect-video bg-black"></video>}
-                                            <textarea value={asset.prompt} onChange={e => updateAsset(asset.id, { prompt: e.target.value, status: 'idle' })} placeholder="e.g., A dancer in a dramatic pose" className="w-full bg-dark-bg border border-dark-border rounded-md p-2 text-sm focus:ring-brand-primary focus:border-brand-primary" rows={2}/>
-                                        </div>
-                                        <div className="space-y-3 flex flex-col">
-                                            <div><label className="text-xs font-bold text-dark-text-secondary">Title</label><input type="text" value={asset.name} onChange={e => updateAsset(asset.id, { name: e.target.value })} className="w-full mt-1 bg-dark-bg border border-dark-border rounded-md p-2 text-sm" /></div>
-                                            <div className="flex-grow"><label className="text-xs font-bold text-dark-text-secondary">Description</label><textarea rows={5} value={asset.description} onChange={e => updateAsset(asset.id, { description: e.target.value })} className="w-full mt-1 bg-dark-bg border border-dark-border rounded-md p-2 text-sm h-full"/></div>
-                                            <div><label className="text-xs font-bold text-dark-text-secondary">Hashtags</label><input type="text" value={asset.hashtags.join(' ')} onChange={e => updateAsset(asset.id, { hashtags: e.target.value.split(' ').map(h => h.replace('#', '')) })} className="w-full mt-1 bg-dark-bg border border-dark-border rounded-md p-2 text-sm" placeholder="dance art inspiration"/></div>
-                                        </div>
-                                    </div>
-                                    <div className="pt-4 border-t border-dark-border space-y-3">
-                                        <div>
-                                            <label className="block text-xs font-medium text-dark-text-secondary mb-2">Select Platforms</label>
-                                            <div className="flex flex-wrap gap-2">
-                                                {Object.values(PlatformEnum).map(p => (<button key={p} onClick={() => togglePlatform(asset.id, p)} className={`flex items-center space-x-2 px-3 py-1.5 rounded-md border text-xs transition-all ${asset.platforms.includes(p) ? 'bg-brand-secondary border-brand-secondary text-white' : 'bg-dark-bg border-dark-border hover:border-brand-secondary'}`}>{p === PlatformEnum.Facebook && <FacebookIcon className="w-4 h-4" />}{p === PlatformEnum.Instagram && <InstagramIcon className="w-4 h-4" />}{p === PlatformEnum.YouTube && <YoutubeIcon className="w-4 h-4" />}<span>{p}</span></button>))}
-                                            </div>
-                                        </div>
-                                    </div>
+                            <div className="space-y-3 flex flex-col">
+                                 <div>
+                                    <label className="text-xs font-bold text-dark-text-secondary">Title</label>
+                                    <input type="text" value={asset.name} onChange={e => updateAsset(asset.id, { name: e.target.value })} className="w-full mt-1 bg-dark-bg border border-dark-border rounded-md p-2 text-sm" />
+                                 </div>
+                                 <div className="flex-grow">
+                                    <label className="text-xs font-bold text-dark-text-secondary">Description</label>
+                                    <textarea rows={5} value={asset.description} onChange={e => updateAsset(asset.id, { description: e.target.value })} className="w-full mt-1 bg-dark-bg border border-dark-border rounded-md p-2 text-sm h-full"/>
+                                 </div>
+                                 <div>
+                                    <label className="text-xs font-bold text-dark-text-secondary">Hashtags</label>
+                                    <input type="text" value={asset.hashtags.join(' ')} onChange={e => updateAsset(asset.id, { hashtags: e.target.value.split(' ').map(h => h.replace('#', '')) })} className="w-full mt-1 bg-dark-bg border border-dark-border rounded-md p-2 text-sm" placeholder="dance art inspiration"/>
                                 </div>
-                                <div className="bg-gray-900/50 p-3 flex items-center gap-3">
-                                     <button onClick={() => handleGenerateContent(asset.id)} disabled={isWorking || isDone || !asset.prompt} className="flex-1 flex justify-center items-center py-2 px-3 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-brand-primary hover:bg-brand-secondary disabled:bg-gray-500 disabled:cursor-not-allowed">
-                                        {asset.status === 'generating' ? <LoadingSpinner size="h-4 w-4" /> : '✨ Generate'}
-                                    </button>
-                                     <button onClick={() => handlePublish(asset.id)} disabled={isWorking || isDone || asset.platforms.length === 0 || !asset.description} className="flex-1 flex justify-center items-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 disabled:bg-gray-500 disabled:cursor-not-allowed">
-                                        {asset.status === 'publishing' ? <LoadingSpinner size="h-4 w-4" /> : (isDone ? 'Published!' : '🚀 Publish')}
-                                    </button>
-                                    <button onClick={() => removeAsset(asset.id)} className="flex-shrink-0 px-3 py-2 text-sm font-medium text-red-500 hover:bg-red-500/10 rounded-md disabled:opacity-50" aria-label="Remove asset" disabled={isWorking}>
-                                        Remove
-                                    </button>
-                                </div>
-                                {asset.status === 'error' && <div className="text-sm text-red-400 text-center bg-red-900/30 p-2">{asset.errorMessage}</div>}
                             </div>
                         </div>
-                    );
-                })}
+
+                        <div className="pt-4 border-t border-dark-border space-y-3">
+                            <div>
+                                <label className="block text-xs font-medium text-dark-text-secondary mb-2">Select Platforms</label>
+                                <div className="flex flex-wrap gap-2">
+                                    {Object.values(PlatformEnum).map(p => (
+                                        <button key={p}
+                                            onClick={() => togglePlatform(asset.id, p)}
+                                            className={`flex items-center space-x-2 px-3 py-1.5 rounded-md border text-xs transition-all ${asset.platforms.includes(p) ? 'bg-brand-secondary border-brand-secondary text-white' : 'bg-dark-bg border-dark-border hover:border-brand-secondary'}`}>
+                                            {p === PlatformEnum.Facebook && <FacebookIcon className="w-4 h-4" />}
+                                            {p === PlatformEnum.Instagram && <InstagramIcon className="w-4 h-4" />}
+                                            {p === PlatformEnum.YouTube && <YoutubeIcon className="w-4 h-4" />}
+                                            <span>{p}</span>
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                         </div>
+                    </div>
+                    <div className="bg-gray-900/50 p-3 flex items-center gap-4">
+                         <button onClick={() => handlePublish(asset.id)} disabled={!asset.file || asset.status === 'publishing' || asset.platforms.length === 0 || asset.status === 'published'} className="w-full flex justify-center items-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 disabled:bg-gray-500 disabled:cursor-not-allowed">
+                             {asset.status === 'publishing' ? <LoadingSpinner /> : (asset.status === 'published' ? 'Published!' : 'Publish Asset')}
+                         </button>
+                         <button onClick={() => setAssets(p => p.filter(a => a.id !== asset.id))} className="text-red-400 hover:text-red-300 text-sm font-medium p-2" aria-label="Remove asset">
+                             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                         </button>
+                    </div>
+                     {asset.status === 'error' && <div className="text-sm text-red-400 text-center bg-red-900/30 p-2">{asset.errorMessage}</div>}
+                </div>
+            ))}
             </div>
             {assets.length === 0 && (
                 <div className="text-center text-dark-text-secondary py-16">
                     <p>Upload some media to get started!</p>
+                    <p className="text-xs mt-1">Or generate ideas from the SEO Connector page.</p>
                 </div>
             )}
         </div>

@@ -1,5 +1,4 @@
 
-
   import React from 'react';
   import { DashboardIcon } from './icons/DashboardIcon';
   import { CreatePostIcon } from './icons/CreatePostIcon';
@@ -35,7 +34,7 @@
 
   export const Sidebar: React.FC<SidebarProps> = ({ activeView, setActiveView }) => {
     return (
-      <aside className="w-64 bg-gray-900 text-white p-4 hidden md:flex flex-col sticky top-0 h-screen border-r border-dark-border">
+      <aside className="w-64 bg-gray-900 text-white p-4 flex flex-col sticky top-0 h-screen border-r border-dark-border">
         <div className="flex items-center mb-10">
           <div className="p-2 bg-gradient-to-r from-brand-primary to-brand-secondary rounded-lg">
             <CreatePostIcon className="w-6 h-6 text-white" />
@@ -57,9 +56,9 @@
           />
           <NavItem
             icon={<SeoIcon className="w-5 h-5" />}
-            label="SEO Assistant"
-            isActive={activeView === ViewEnum.SEO_ASSISTANT}
-            onClick={() => setActiveView(ViewEnum.SEO_ASSISTANT)}
+            label="SEO Connector"
+            isActive={activeView === ViewEnum.SEO_CONNECTOR}
+            onClick={() => setActiveView(ViewEnum.SEO_CONNECTOR)}
           />
           <NavItem
             icon={<ConnectIcon className="w-5 h-5" />}

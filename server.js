@@ -106,6 +106,21 @@ const seoSchema = {
     required: ["metaTitle", "metaDescription", "keywords", "blogIdeas"]
 };
 
+const postFromIdeaSchema = {
+    type: Type.OBJECT,
+    properties: {
+        postText: { type: Type.STRING, description: "A short, engaging social media caption or post body based on the blog idea. It should be written to generate interest and encourage clicks." },
+        imagePrompt: { type: Type.STRING, description: "A descriptive and creative prompt for an AI image generator to create a visually appealing and relevant image for the social media post. E.g., 'A vibrant illustration of a dancer surrounded by musical notes and cultural symbols'." },
+        hashtags: {
+            type: Type.ARRAY,
+            items: { type: Type.STRING },
+            description: "A list of 5-7 relevant and trending hashtags for the social media post, without the '#' symbol."
+        }
+    },
+    required: ["postText", "imagePrompt", "hashtags"]
+};
+
+
 // --- Mock OAuth HTML Templates ---
 const consentPageHTML = (platform, error = '') => `
 <!DOCTYPE html>
@@ -551,6 +566,42 @@ app.post('/api/generate-seo', async (req, res) => {
     } catch (error) {
         console.error("Error generating SEO suggestions:", error);
         res.status(500).json({ message: `Failed to generate SEO suggestions: ${error.message || 'Please check server logs.'}` });
+    }
+});
+
+
+app.post('/api/generate-post-from-idea', async (req, res) => {
+    const { title, description } = req.body;
+    if (!title || !description) {
+        return res.status(400).json({ message: 'Missing required fields: title, description' });
+    }
+
+    if (!hasApiKey) {
+        return setTimeout(() => res.json({
+            postText: `Check out our new blog post: "${title}"! We dive deep into ${description.toLowerCase()}. Learn more on our website!`,
+            imagePrompt: `A mock image prompt for a blog post about "${title}"`,
+            hashtags: ['mock', 'blog', 'newpost', 'nadanaloga', 'seo']
+        }), 1000);
+    }
+    
+    const systemInstruction = `You are a social media marketing expert for 'Nadanaloga' (www.nadanaloga.com), an Indian classical dance school. Your task is to turn a blog post idea into a promotional social media post.`;
+    const prompt = `Blog Post Title: "${title}"\nBlog Post Description: "${description}"\n\nBased on the above, generate a short, engaging social media caption to promote this blog post. Also, create a detailed, creative prompt for an AI image generator to make a suitable visual. Finally, provide 5-7 relevant hashtags.`;
+
+    try {
+        const response = await ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: prompt,
+            config: {
+                systemInstruction,
+                responseMimeType: "application/json",
+                responseSchema: postFromIdeaSchema,
+            }
+        });
+        const jsonText = response.text.trim();
+        res.json(JSON.parse(jsonText));
+    } catch (error) {
+        console.error("Error generating post from idea:", error);
+        res.status(500).json({ message: `Failed to generate post from idea: ${error.message || 'Please check server logs.'}` });
     }
 });
 

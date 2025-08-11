@@ -1,16 +1,14 @@
 
-
 import React, { useState, useCallback, useEffect } from 'react';
 import { Sidebar } from './components/Sidebar';
 import { DashboardView } from './components/DashboardView';
 import { CreatePostView } from './components/CreatePostView';
-import { SeoAssistantView } from './components/SeoAssistantView';
+import { SeoConnectorView } from './components/SeoAssistantView';
 import { ConnectionsView } from './components/ConnectionsView';
 import type { Post, ConnectionStatus } from './types';
 import { View, Platform } from './types';
 import { MOCK_POSTS } from './constants';
 import { getConnections, connectFacebook } from './services/geminiService';
-import { BottomNavBar } from './components/BottomNavBar';
 
 // Extend the Window interface to include FB
 declare global {
@@ -29,9 +27,15 @@ const App: React.FC = () => {
     [Platform.YouTube]: false,
   });
   const [isFbSdkInitialized, setIsFbSdkInitialized] = useState(false);
+  const [postSeed, setPostSeed] = useState<any>(null);
 
   const addPost = (post: Post) => {
     setPosts(prevPosts => [post, ...prevPosts]);
+  };
+
+  const navigateTo = (view: View, data: any = null) => {
+    setPostSeed(data); // Always set data, even if null, to clear previous
+    setActiveView(view);
   };
 
   // Fetch initial connection state from our own backend on app load.
@@ -80,7 +84,7 @@ const App: React.FC = () => {
             setConnections(prevConnections => {
                 if (prevConnections[Platform.Facebook]) {
                     console.log('Syncing disconnected Facebook status to the app state.');
-                    return { ...prevConnections, [Platform.Facebook]: false };
+                    return { ...prevConnections, [Platform.Facebook]: false, [Platform.Instagram]: false };
                 }
                 return prevConnections; // No change needed
             });
@@ -135,9 +139,9 @@ const App: React.FC = () => {
   const renderView = () => {
     switch (activeView) {
       case View.CREATE_POST:
-        return <CreatePostView connections={connections} onPostPublished={addPost} />;
-      case View.SEO_ASSISTANT:
-        return <SeoAssistantView />;
+        return <CreatePostView connections={connections} onPostPublished={addPost} postSeed={postSeed} clearPostSeed={() => setPostSeed(null)} />;
+      case View.SEO_CONNECTOR:
+        return <SeoConnectorView navigateTo={navigateTo} />;
       case View.CONNECTIONS:
         return <ConnectionsView connections={connections} setConnections={setConnections} isFbSdkInitialized={isFbSdkInitialized} />;
       case View.DASHBOARD:
@@ -148,11 +152,10 @@ const App: React.FC = () => {
 
   return (
     <div className="flex min-h-screen bg-dark-bg font-sans">
-      <Sidebar activeView={activeView} setActiveView={setActiveView} />
-      <main className="flex-1 p-4 sm:p-6 lg:p-8 pb-24 md:pb-8">
+      <Sidebar activeView={activeView} setActiveView={(view) => navigateTo(view)} />
+      <main className="flex-1 p-4 sm:p-6 lg:p-8">
         {renderView()}
       </main>
-      <BottomNavBar activeView={activeView} setActiveView={setActiveView} />
     </div>
   );
 };

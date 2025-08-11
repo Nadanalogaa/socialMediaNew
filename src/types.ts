@@ -17,7 +17,7 @@ export enum Audience {
 export enum View {
   DASHBOARD = 'DASHBOARD',
   CREATE_POST = 'CREATE_POST',
-  SEO_ASSISTANT = 'SEO_ASSISTANT',
+  SEO_CONNECTOR = 'SEO_CONNECTOR',
   CONNECTIONS = 'CONNECTIONS',
 }
 
@@ -62,10 +62,16 @@ export interface GeneratedAssetContent {
     hashtags: string[];
 }
 
+export interface GeneratedPostIdea {
+    postText: string;
+    imagePrompt: string;
+    hashtags: string[];
+}
+
 export interface MediaAsset {
   id: string;
-  file: File;
-  previewUrl: string;
+  file?: File;
+  previewUrl?: string;
   name:string;
   prompt: string;
   description: string;
