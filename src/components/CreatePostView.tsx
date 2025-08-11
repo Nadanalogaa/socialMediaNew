@@ -7,6 +7,67 @@ import { FacebookIcon } from './icons/FacebookIcon';
 import { InstagramIcon } from './icons/InstagramIcon';
 import { YoutubeIcon } from './icons/YoutubeIcon';
 
+// --- IndexedDB Utility Functions ---
+const DB_NAME = 'SocialBoostDB';
+const STORE_NAME = 'draftAssets';
+const DB_VERSION = 1;
+
+const initDB = (): Promise<IDBDatabase> => {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open(DB_NAME, DB_VERSION);
+    request.onerror = () => reject(new Error('Error opening IndexedDB'));
+    request.onsuccess = () => resolve(request.result);
+    request.onupgradeneeded = (event) => {
+      const db = (event.target as IDBOpenDBRequest).result;
+      if (!db.objectStoreNames.contains(STORE_NAME)) {
+        db.createObjectStore(STORE_NAME, { keyPath: 'id' });
+      }
+    };
+  });
+};
+
+const getAssetsFromDB = async (): Promise<MediaAsset[]> => {
+  const db = await initDB();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(STORE_NAME, 'readonly');
+    const store = transaction.objectStore(STORE_NAME);
+    const request = store.getAll();
+    request.onsuccess = () => resolve(request.result || []);
+    request.onerror = () => reject(request.error);
+  });
+};
+
+const syncAssetsWithDB = async (assets: MediaAsset[]): Promise<void> => {
+    try {
+        const db = await initDB();
+        const transaction = db.transaction(STORE_NAME, 'readwrite');
+        const store = transaction.objectStore(STORE_NAME);
+
+        const oldKeysRequest = store.getAllKeys();
+
+        oldKeysRequest.onsuccess = () => {
+            const oldKeys = new Set(oldKeysRequest.result as string[]);
+            const newKeys = new Set(assets.map(a => a.id));
+
+            // Delete assets that are no longer in the state
+            for (const key of oldKeys) {
+                if (!newKeys.has(key)) {
+                    store.delete(key);
+                }
+            }
+
+            // Add or update assets
+            for (const asset of assets) {
+                store.put(asset);
+            }
+        };
+    } catch(error) {
+        console.error("Could not sync assets with IndexedDB", error);
+    }
+};
+// --- End of IndexedDB ---
+
+
 const toBase64 = (file: File): Promise<string> => new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.readAsDataURL(file);
@@ -60,6 +121,33 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
     const [isFfmpegLoaded, setIsFfmpegLoaded] = useState(false);
     const ffmpegRef = useRef<any>(null);
 
+    // Load assets from IndexedDB on initial mount
+    useEffect(() => {
+        const loadAssets = async () => {
+            try {
+                const storedAssets = await getAssetsFromDB();
+                if (storedAssets && storedAssets.length > 0) {
+                    const assetsWithPreviews = storedAssets.map(asset => {
+                        // Recreate blob URLs for previews since they are session-specific
+                        if (asset.file && (!asset.previewUrl || asset.previewUrl.startsWith('blob:'))) {
+                            return { ...asset, previewUrl: URL.createObjectURL(asset.file) };
+                        }
+                        return asset;
+                    }).filter(a => a.status !== 'published');
+                    
+                    setAssets(assetsWithPreviews);
+                }
+            } catch (error) {
+                console.error("Failed to load assets from IndexedDB:", error);
+            }
+        };
+        loadAssets();
+    }, []);
+
+    // Sync assets to IndexedDB whenever they change
+    useEffect(() => {
+        syncAssetsWithDB(assets);
+    }, [assets]);
 
     useEffect(() => {
         if (postSeed) {
@@ -216,12 +304,14 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
 
         if (assetForMediaUpload) {
             const file = files[0];
-            processFile(file, assetForMediaUpload);
+            if (file) {
+                processFile(file, assetForMediaUpload);
+            }
         } else {
             Array.from(files).forEach(file => processFile(file));
         }
 
-        if (e.target) (e.target as HTMLInputElement).value = '';
+        if (e.target) e.target.value = '';
         setAssetForMediaUpload(null);
     };
 
@@ -283,8 +373,8 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
         
         let imageUrlData: string;
 
-        // If the asset came from an edited post, the previewUrl is already a data URL.
-        // Otherwise, we need to convert the file.
+        // If the asset came from an edited post, the previewUrl is a data URL (from image)
+        // or a regular URL (from video). We handle data URL.
         if (asset.previewUrl?.startsWith('data:')) {
             imageUrlData = asset.previewUrl;
         } else if (asset.file) {
