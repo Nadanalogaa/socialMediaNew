@@ -1,7 +1,7 @@
-
 /// <reference lib="dom" />
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
+import type { FFmpeg } from '@ffmpeg/ffmpeg';
 import type { Platform, Audience, Post, ConnectionStatus, MediaAsset, GeneratedPostIdea, ConnectionDetails } from '../types';
 import { Platform as PlatformEnum, Audience as AudienceEnum } from '../types';
 import { publishPost, generateAssetContent } from '../services/geminiService';
@@ -62,7 +62,7 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
     const [isBulkPublishing, setIsBulkPublishing] = useState(false);
     
     const [isFfmpegLoaded, setIsFfmpegLoaded] = useState(false);
-    const ffmpegRef = useRef<any>(null);
+    const ffmpegRef = useRef<FFmpeg | null>(null);
 
     // Load assets from IndexedDB on initial mount
     useEffect(() => {
@@ -71,13 +71,9 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
                 const storedAssets = await getDraftsFromDB();
                 if (storedAssets && storedAssets.length > 0) {
                     const assetsWithPreviews = storedAssets.map(asset => {
-                        // ALWAYS recreate blob URLs for previews from the File object on load,
-                        // because they are session-specific and were not stored in the DB.
                         if (asset.file) {
-                             // The 'file' property is a File object that was persisted.
                             return { ...asset, previewUrl: URL.createObjectURL(asset.file) };
                         }
-                        // This handles assets that don't have a local file (e.g., from SEO page, or edited posts with remote images)
                         return asset;
                     }).filter(a => a.status !== 'published');
                     
@@ -98,6 +94,17 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
            saveDraftsToDB(assets);
         }
     }, [assets, draftsLoaded]);
+    
+    // Memory management: Cleanup blob URLs to prevent leaks
+    useEffect(() => {
+        return () => {
+            assets.forEach(asset => {
+                if (asset.previewUrl && asset.previewUrl.startsWith('blob:')) {
+                    URL.revokeObjectURL(asset.previewUrl);
+                }
+            });
+        };
+    }, [assets]);
 
     useEffect(() => {
         if (postSeed) {
@@ -148,10 +155,8 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
                     console.log('[FFMPEG]:', message);
                 });
                 
-                // For multi-threaded operation (required for video compression without blocking the UI),
-                // we must use the @ffmpeg/core-mt package. The version is aligned with @ffmpeg/ffmpeg
-                // to ensure compatibility. All assets are loaded as Blob URLs to prevent cross-origin issues.
-                const baseURL = 'https://unpkg.com/@ffmpeg/core-mt@0.12.10/dist/esm';
+                // CRITICAL FIX: Use a CDN with proper CORS headers (jsdelivr) instead of unpkg
+                const baseURL = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core-mt@0.12.10/dist/esm';
                 await ffmpeg.load({
                     coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
                     wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
@@ -442,6 +447,17 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
     const selectableAssetsCount = assets.filter(a => a.status !== 'published').length;
     const isAllSelected = selectableAssetsCount > 0 && selectedAssets.size === selectableAssetsCount;
     
+    if (!draftsLoaded) {
+        return (
+            <div className="flex justify-center items-center h-96">
+                <div className="text-center">
+                    <LoadingSpinner size="h-12 w-12" />
+                    <p className="mt-4 text-dark-text-secondary">Loading drafts...</p>
+                </div>
+            </div>
+        );
+    }
+    
     return (
         <div className="max-w-7xl mx-auto animate-fade-in space-y-8">
             <div>
@@ -589,7 +605,7 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
                     </div>
                     <div className="bg-gray-900/50 p-3 flex items-center gap-4">
                          <button onClick={() => handlePublish(asset.id)} disabled={(!asset.file && !asset.previewUrl?.startsWith('data:')) || (asset.status !== 'idle' && asset.errorMessage?.startsWith('Compressed') === false && asset.errorMessage?.startsWith('This is a copy') === false) || asset.platforms.length === 0} className="w-full flex justify-center items-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 disabled:bg-gray-500 disabled:cursor-not-allowed">
-                x             {asset.status === 'publishing' ? <LoadingSpinner /> : (asset.status === 'published' ? 'Published!' : 'Publish Asset')}
+                            {asset.status === 'publishing' ? <LoadingSpinner /> : (asset.status === 'published' ? 'Published!' : 'Publish Asset')}
                          </button>
                          <button onClick={() => setAssets(p => p.filter(a => a.id !== asset.id))} className="text-red-400 hover:text-red-300 text-sm font-medium p-2" aria-label="Remove asset">
                              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
