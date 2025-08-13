@@ -148,15 +148,16 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
                     console.log('[FFMPEG]:', message);
                 });
                 
-                // Use the multi-threaded version of FFmpeg core for performance.
+                // For ffmpeg v0.12.7+, multi-threading uses @ffmpeg/core, not the deprecated @ffmpeg/core-mt.
+                // We align the core version with what's in index.html's importmap (^0.12.10) to ensure compatibility.
                 // All assets are loaded as Blob URLs to prevent cross-origin issues.
-                // Using a consistent version (@0.12.6) for all core assets.
-                const baseURL = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core-mt@0.12.6/dist/esm';
+                const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.10/dist/esm';
                 await ffmpeg.load({
                     coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
                     wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
                     workerURL: await toBlobURL(`${baseURL}/ffmpeg-core.worker.js`, 'text/javascript'),
                 });
+                
                 setIsFfmpegLoaded(true);
                 console.log('FFmpeg loaded successfully.');
             } catch (err) {
