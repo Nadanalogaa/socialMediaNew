@@ -148,10 +148,14 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
                     console.log('[FFMPEG]:', message);
                 });
                 
-                const baseURL = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core@0.12.6/dist/umd'
+                // Use the multi-threaded version of FFmpeg core for performance.
+                // All assets are loaded as Blob URLs to prevent cross-origin issues.
+                // Using a consistent version (@0.12.6) for all core assets.
+                const baseURL = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core-mt@0.12.6/dist/esm';
                 await ffmpeg.load({
                     coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
                     wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
+                    workerURL: await toBlobURL(`${baseURL}/ffmpeg-core.worker.js`, 'text/javascript'),
                 });
                 setIsFfmpegLoaded(true);
                 console.log('FFmpeg loaded successfully.');
@@ -584,7 +588,7 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
                     </div>
                     <div className="bg-gray-900/50 p-3 flex items-center gap-4">
                          <button onClick={() => handlePublish(asset.id)} disabled={(!asset.file && !asset.previewUrl?.startsWith('data:')) || (asset.status !== 'idle' && asset.errorMessage?.startsWith('Compressed') === false && asset.errorMessage?.startsWith('This is a copy') === false) || asset.platforms.length === 0} className="w-full flex justify-center items-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 disabled:bg-gray-500 disabled:cursor-not-allowed">
-                             {asset.status === 'publishing' ? <LoadingSpinner /> : (asset.status === 'published' ? 'Published!' : 'Publish Asset')}
+                x             {asset.status === 'publishing' ? <LoadingSpinner /> : (asset.status === 'published' ? 'Published!' : 'Publish Asset')}
                          </button>
                          <button onClick={() => setAssets(p => p.filter(a => a.id !== asset.id))} className="text-red-400 hover:text-red-300 text-sm font-medium p-2" aria-label="Remove asset">
                              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
