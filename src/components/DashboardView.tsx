@@ -1,13 +1,15 @@
 
-
-
-
 import React, { useState } from 'react';
 import type { Post, ConnectionDetails } from '../types';
+import { Platform } from '../types';
 import { PostCard } from './PostCard';
 import { AnalyticsChart } from './AnalyticsChart';
 import { getPostInsights } from '../services/geminiService';
 import { TrashIcon } from './icons/TrashIcon';
+import { FacebookIcon } from './icons/FacebookIcon';
+import { InstagramIcon } from './icons/InstagramIcon';
+import { YoutubeIcon } from './icons/YoutubeIcon';
+import { AllPlatformsIcon } from './icons/AllPlatformsIcon';
 
 interface DashboardViewProps {
   posts: Post[];
@@ -26,14 +28,20 @@ const LoadingSpinner: React.FC = () => (
 );
 
 export const DashboardView: React.FC<DashboardViewProps> = ({ posts, connectionDetails, onDeletePost, onDeletePosts, onUpdatePostEngagement, onEditPost }) => {
-  const totalLikes = posts.reduce((sum, post) => sum + post.engagement.likes, 0);
-  const totalComments = posts.reduce((sum, post) => sum + post.engagement.comments, 0);
-  const totalShares = posts.reduce((sum, post) => sum + post.engagement.shares, 0);
-  
+  const [platformFilter, setPlatformFilter] = useState<Platform | 'All'>('All');
   const [selectedPosts, setSelectedPosts] = useState<Set<string>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [deletingPosts, setDeletingPosts] = useState<Set<string>>(new Set());
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+
+  const filteredPosts = posts.filter(post => {
+    if (platformFilter === 'All') return true;
+    return post.platforms.includes(platformFilter);
+  });
+  
+  const totalLikes = filteredPosts.reduce((sum, post) => sum + post.engagement.likes, 0);
+  const totalComments = filteredPosts.reduce((sum, post) => sum + post.engagement.comments, 0);
+  const totalShares = filteredPosts.reduce((sum, post) => sum + post.engagement.shares, 0);
 
   const handleSelectPost = (postId: string) => {
     setSelectedPosts(prev => {
@@ -48,10 +56,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ posts, connectionD
   };
 
   const handleSelectAll = () => {
-    if (selectedPosts.size === posts.length) {
+    if (selectedPosts.size === filteredPosts.length) {
         setSelectedPosts(new Set());
     } else {
-        setSelectedPosts(new Set(posts.map(p => p.id)));
+        setSelectedPosts(new Set(filteredPosts.map(p => p.id)));
     }
   };
   
@@ -108,6 +116,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ posts, connectionD
     }
   };
 
+  const filterOptions: { value: Platform | 'All'; label: string; icon: JSX.Element }[] = [
+    { value: 'All', label: 'All', icon: <AllPlatformsIcon className="w-5 h-5" /> },
+    { value: Platform.Facebook, label: 'Facebook', icon: <FacebookIcon className="w-5 h-5" /> },
+    { value: Platform.Instagram, label: 'Instagram', icon: <InstagramIcon className="w-5 h-5" /> },
+    { value: Platform.YouTube, label: 'YouTube', icon: <YoutubeIcon className="w-5 h-5" /> },
+  ];
+
   return (
     <div className="space-y-8 animate-fade-in">
       <div>
@@ -122,6 +137,22 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ posts, connectionD
             <span className="font-bold">Error:</span> {error}
         </div>
       )}
+
+      <div className="mb-6">
+        <div className="flex items-center space-x-2 rounded-lg bg-dark-card p-1 border border-dark-border w-full md:w-auto">
+          {filterOptions.map(option => (
+            <button
+              key={option.value}
+              onClick={() => setPlatformFilter(option.value)}
+              className={`flex items-center gap-2 w-full justify-center px-4 py-2 text-sm font-medium rounded-md transition-colors ${platformFilter === option.value ? 'bg-brand-primary text-white' : 'text-dark-text-secondary hover:bg-dark-bg hover:text-dark-text'}`}
+              aria-label={`Filter by ${option.label}`}
+            >
+              {option.icon}
+              <span className="hidden sm:inline">{option.label}</span>
+            </button>
+          ))}
+        </div>
+      </div>
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
         <div className="bg-dark-card p-6 rounded-lg border border-dark-border">
@@ -140,19 +171,19 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ posts, connectionD
 
       <div className="bg-dark-card p-6 rounded-lg border border-dark-border">
          <h2 className="text-xl font-bold text-white mb-4">Engagement Over Time</h2>
-         <AnalyticsChart posts={posts} />
+         <AnalyticsChart posts={filteredPosts} />
       </div>
 
       <div>
         <h2 className="text-2xl font-bold text-white mb-4">Post History</h2>
-        {posts.length > 0 && (
+        {filteredPosts.length > 0 && (
              <div className="bg-dark-card p-3 rounded-lg border border-dark-border mb-4 flex items-center justify-between sticky top-4 z-10 backdrop-blur-sm bg-opacity-80">
                 <div className="flex items-center gap-4">
                     <input
                         id="select-all"
                         type="checkbox"
                         className="h-5 w-5 rounded bg-dark-bg border-dark-border text-brand-primary focus:ring-brand-primary"
-                        checked={selectedPosts.size === posts.length && posts.length > 0}
+                        checked={filteredPosts.length > 0 && selectedPosts.size === filteredPosts.length}
                         onChange={handleSelectAll}
                         aria-label="Select all posts"
                     />
@@ -173,8 +204,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ posts, connectionD
             </div>
         )}
         <div className="space-y-6">
-          {posts.length > 0 ? (
-            posts.map(post => 
+          {filteredPosts.length > 0 ? (
+            filteredPosts.map(post => 
                 <PostCard 
                     key={post.id} 
                     post={post}
@@ -188,7 +219,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ posts, connectionD
                 />
             )
           ) : (
-            <p className="text-dark-text-secondary text-center py-8">No posts yet. Create one to get started!</p>
+            <p className="text-dark-text-secondary text-center py-8">No posts found for this filter. Create one to get started!</p>
           )}
         </div>
       </div>

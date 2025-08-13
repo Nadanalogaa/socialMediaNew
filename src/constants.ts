@@ -16,7 +16,7 @@ export const MOCK_POSTS: Post[] = [
       youtubeDescription: "",
       hashtags: ["Nadanaloga", "Bharatanatyam", "IndianDance", "ClassicalDance", "Workshop", "DanceClass"]
     },
-    postedAt: new Date(Date.now() - 1 * 24 * 60 * 60 * 1000).toISOString(),
+    postedAt: new Date('2024-08-12T18:30:00Z').toISOString(),
     engagement: {
       likes: 125,
       comments: 15,
@@ -36,7 +36,7 @@ export const MOCK_POSTS: Post[] = [
       youtubeDescription: "Experience the magic of our annual performance gala. Featuring breathtaking performances from our students and faculty. \n\nLearn more about our school at www.nadanaloga.com.\n\n#Nadanaloga #DancePerformance #IndianClassicalDance #ArtandCulture",
       hashtags: ["Nadanaloga", "DancePerformance", "IndianClassicalDance", "ArtandCulture"]
     },
-    postedAt: new Date(Date.now() - 3 * 24 * 60 * 60 * 1000).toISOString(),
+    postedAt: new Date('2024-08-10T09:00:00Z').toISOString(),
     engagement: {
       likes: 340,
       comments: 45,

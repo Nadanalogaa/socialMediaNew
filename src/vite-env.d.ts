@@ -1,5 +1,3 @@
-/// <reference types="vite/client" />
-
 // This file provides type definitions for Vite's special `import.meta.env` object.
 
 interface ImportMetaEnv {

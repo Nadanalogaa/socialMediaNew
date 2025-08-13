@@ -1,3 +1,4 @@
+
 /// <reference lib="dom" />
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
@@ -7,79 +8,7 @@ import { publishPost, generateAssetContent } from '../services/geminiService';
 import { FacebookIcon } from './icons/FacebookIcon';
 import { InstagramIcon } from './icons/InstagramIcon';
 import { YoutubeIcon } from './icons/YoutubeIcon';
-
-// --- IndexedDB Utility Functions ---
-const DB_NAME = 'SocialBoostDB';
-const STORE_NAME = 'draftAssets';
-const DB_VERSION = 1;
-
-const initDB = (): Promise<IDBDatabase> => {
-  return new Promise((resolve, reject) => {
-    const request = indexedDB.open(DB_NAME, DB_VERSION);
-    request.onerror = () => reject(new Error('Error opening IndexedDB'));
-    request.onsuccess = () => resolve(request.result);
-    request.onupgradeneeded = (event) => {
-      const db = (event.target as IDBOpenDBRequest).result;
-      if (!db.objectStoreNames.contains(STORE_NAME)) {
-        db.createObjectStore(STORE_NAME, { keyPath: 'id' });
-      }
-    };
-  });
-};
-
-const getAssetsFromDB = async (): Promise<MediaAsset[]> => {
-  const db = await initDB();
-  return new Promise((resolve, reject) => {
-    const transaction = db.transaction(STORE_NAME, 'readonly');
-    const store = transaction.objectStore(STORE_NAME);
-    const request = store.getAll();
-    request.onsuccess = () => resolve(request.result || []);
-    request.onerror = () => reject(request.error);
-  });
-};
-
-const syncAssetsWithDB = async (assets: MediaAsset[]): Promise<void> => {
-    try {
-        const db = await initDB();
-        const transaction = db.transaction(STORE_NAME, 'readwrite');
-        const store = transaction.objectStore(STORE_NAME);
-
-        transaction.onerror = () => console.error("IndexedDB transaction error:", transaction.error);
-
-        const oldKeysRequest = store.getAllKeys();
-
-        oldKeysRequest.onsuccess = () => {
-            const oldKeys = new Set(oldKeysRequest.result as string[]);
-            const newKeys = new Set(assets.map(a => a.id));
-
-            // Delete assets that are no longer in the state
-            for (const key of oldKeys) {
-                if (!newKeys.has(key)) {
-                    store.delete(key);
-                }
-            }
-
-            // Add or update assets
-            for (const asset of assets) {
-                // Create a clone to avoid mutating state and prepare for storage.
-                const storableAsset = { ...asset };
-                // We MUST remove the blob URL before storing, as it's session-specific and will be invalid on reload.
-                // It will be recreated from the persisted File object when the app loads.
-                // We only remove blob URLs, preserving permanent ones (e.g. from edited posts).
-                if (storableAsset.previewUrl?.startsWith('blob:')) {
-                    delete storableAsset.previewUrl;
-                }
-                store.put(storableAsset);
-            }
-        };
-        oldKeysRequest.onerror = () => console.error('IndexedDB getAllKeys error:', oldKeysRequest.error);
-
-    } catch (error) {
-        console.error("Could not sync assets with IndexedDB", error);
-    }
-};
-// --- End of IndexedDB ---
-
+import { getDraftsFromDB, saveDraftsToDB } from '../utils/db';
 
 const toBase64 = (file: File): Promise<string> => new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -123,6 +52,7 @@ const MediaPlaceholder: React.FC<{ prompt: string; onAddMedia: () => void }> = (
 
 export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, connectionDetails, onPostPublished, postSeed, clearPostSeed }) => {
     const [assets, setAssets] = useState<MediaAsset[]>([]);
+    const [draftsLoaded, setDraftsLoaded] = useState(false);
     const [audience, setAudience] = useState<Audience>(AudienceEnum.Global);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [assetForMediaUpload, setAssetForMediaUpload] = useState<string | null>(null);
@@ -138,7 +68,7 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
     useEffect(() => {
         const loadAssets = async () => {
             try {
-                const storedAssets = await getAssetsFromDB();
+                const storedAssets = await getDraftsFromDB();
                 if (storedAssets && storedAssets.length > 0) {
                     const assetsWithPreviews = storedAssets.map(asset => {
                         // ALWAYS recreate blob URLs for previews from the File object on load,
@@ -154,7 +84,9 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
                     setAssets(assetsWithPreviews);
                 }
             } catch (error) {
-                console.error("Failed to load assets from IndexedDB:", error);
+                console.error("Failed to load drafts from IndexedDB:", error);
+            } finally {
+                setDraftsLoaded(true);
             }
         };
         loadAssets();
@@ -162,10 +94,10 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
 
     // Sync assets to IndexedDB whenever they change
     useEffect(() => {
-        // Avoid syncing on the very first render before we've had a chance to load from DB
-        if (assets.length === 0 && document.readyState !== 'complete') return;
-        syncAssetsWithDB(assets);
-    }, [assets]);
+        if (draftsLoaded) {
+           saveDraftsToDB(assets);
+        }
+    }, [assets, draftsLoaded]);
 
     useEffect(() => {
         if (postSeed) {

@@ -1,3 +1,4 @@
+
 /// <reference lib="dom" />
 
 import React, { useState, useCallback, useEffect } from 'react';
@@ -10,6 +11,7 @@ import type { Post, ConnectionStatus, ConnectionDetails, GeneratedPostIdea } fro
 import { View, Platform } from './types';
 import { MOCK_POSTS } from './constants';
 import { getConnections, connectFacebook, deletePost as deletePostOnPlatform } from './services/geminiService';
+import { getPostsFromDB, savePostsToDB } from './utils/db';
 
 // Extend the Window interface to include FB
 declare global {
@@ -21,7 +23,8 @@ declare global {
 
 const App: React.FC = () => {
   const [activeView, setActiveView] = useState<View>(View.DASHBOARD);
-  const [posts, setPosts] = useState<Post[]>(MOCK_POSTS);
+  const [posts, setPosts] = useState<Post[]>([]);
+  const [isDataLoaded, setIsDataLoaded] = useState(false);
   const [connections, setConnections] = useState<ConnectionStatus>({
     [Platform.Facebook]: false,
     [Platform.Instagram]: false,
@@ -99,6 +102,36 @@ const App: React.FC = () => {
     setPostSeed(data); // Always set data, even if null, to clear previous
     setActiveView(view);
   };
+
+  // Load posts from DB on initial mount
+  useEffect(() => {
+    const loadInitialData = async () => {
+      try {
+        const dbPosts = await getPostsFromDB();
+        if (dbPosts && dbPosts.length > 0) {
+          setPosts(dbPosts);
+        } else {
+          // If DB is empty, populate with mocks and save them
+          const sortedMocks = MOCK_POSTS.sort((a, b) => new Date(b.postedAt).getTime() - new Date(a.postedAt).getTime());
+          setPosts(sortedMocks);
+          await savePostsToDB(sortedMocks);
+        }
+      } catch (error) {
+        console.error("Failed to load posts from DB, using mocks as fallback:", error);
+        setPosts(MOCK_POSTS);
+      } finally {
+        setIsDataLoaded(true);
+      }
+    };
+    loadInitialData();
+  }, []);
+
+  // Persist posts to DB whenever they change
+  useEffect(() => {
+    if (isDataLoaded) {
+      savePostsToDB(posts);
+    }
+  }, [posts, isDataLoaded]);
 
   // Fetch initial connection state from our own backend on app load.
   useEffect(() => {
