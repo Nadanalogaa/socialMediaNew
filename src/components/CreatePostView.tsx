@@ -62,6 +62,7 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
     const [isBulkPublishing, setIsBulkPublishing] = useState(false);
     
     const [isFfmpegLoaded, setIsFfmpegLoaded] = useState(false);
+    const [ffmpegError, setFfmpegError] = useState<string | null>(null);
     const ffmpegRef = useRef<FFmpeg | null>(null);
 
     // Load assets from IndexedDB on initial mount
@@ -149,24 +150,25 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
                 const { toBlobURL } = await import('@ffmpeg/util');
 
                 const ffmpeg = new FFmpeg();
-                ffmpegRef.current = ffmpeg;
                 
                 ffmpeg.on('log', ({ message }) => {
                     console.log('[FFMPEG]:', message);
                 });
                 
-                // CRITICAL FIX: Use a CDN with proper CORS headers (jsdelivr) instead of unpkg
-                const baseURL = 'https://cdn.jsdelivr.net/npm/@ffmpeg/core-mt@0.12.10/dist/esm';
+                // CRITICAL FIX: Load from self-hosted files to prevent CORS issues.
+                const baseURL = '/ffmpeg';
                 await ffmpeg.load({
                     coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
                     wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
                     workerURL: await toBlobURL(`${baseURL}/ffmpeg-core.worker.js`, 'text/javascript'),
                 });
                 
+                ffmpegRef.current = ffmpeg;
                 setIsFfmpegLoaded(true);
-                console.log('FFmpeg loaded successfully.');
+                console.log('FFmpeg loaded successfully from local path.');
             } catch (err) {
                 console.error("Failed to load FFmpeg", err);
+                setFfmpegError('The video compression engine failed to load. Please refresh the page. If the problem persists, video uploads may not work correctly.');
             }
         };
         loadFfmpeg();
@@ -227,15 +229,36 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
         const files = e.target.files;
         if (!files || files.length === 0) return;
 
+        const MAX_ABSOLUTE_VIDEO_SIZE_MB = 250;
+        const MAX_ABSOLUTE_VIDEO_SIZE_BYTES = MAX_ABSOLUTE_VIDEO_SIZE_MB * 1024 * 1024;
         const MAX_VIDEO_SIZE_MB_BEFORE_COMPRESSION = 20;
         const MAX_VIDEO_SIZE_BYTES = MAX_VIDEO_SIZE_MB_BEFORE_COMPRESSION * 1024 * 1024;
         
         const processFile = (file: File, existingAssetId?: string) => {
+            const assetId = existingAssetId || `asset_${Date.now()}_${Math.random()}`;
             const isVideo = file.type.startsWith('video/');
+
+            if (isVideo && file.size > MAX_ABSOLUTE_VIDEO_SIZE_BYTES) {
+                const errorAsset: MediaAsset = {
+                    id: assetId,
+                    name: file.name,
+                    prompt: 'File too large',
+                    description: `This video is ${(file.size / 1024 / 1024).toFixed(1)}MB, which exceeds the ${MAX_ABSOLUTE_VIDEO_SIZE_MB}MB limit.`,
+                    hashtags: [], platforms: [], status: 'error',
+                    errorMessage: `File too large (max ${MAX_ABSOLUTE_VIDEO_SIZE_MB}MB).`,
+                    file: undefined,
+                    previewUrl: URL.createObjectURL(file), // Show video player even for error state
+                };
+                if (existingAssetId) {
+                    updateAsset(existingAssetId, { ...errorAsset, id: existingAssetId });
+                } else {
+                    setAssets(prev => [errorAsset, ...prev]);
+                }
+                return;
+            }
+
             const needsCompression = isVideo && file.size > MAX_VIDEO_SIZE_BYTES;
 
-            const assetId = existingAssetId || `asset_${Date.now()}_${Math.random()}`;
-            
             const commonAssetData = {
                 file,
                 previewUrl: URL.createObjectURL(file),
@@ -464,6 +487,13 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
                 <h1 className="text-3xl font-bold text-white">Create Posts</h1>
                 <p className="text-dark-text-secondary mt-1">Select assets to bulk generate content or publish them all at once.</p>
             </div>
+
+            {ffmpegError && (
+                <div className="bg-red-900/50 border border-red-700 text-red-300 px-4 py-3 rounded-lg" role="alert">
+                    <h3 className="font-bold">Critical Error</h3>
+                    <p>{ffmpegError}</p>
+                </div>
+            )}
             
             {selectedAssets.size > 0 && (
                  <div className="sticky top-4 bg-dark-card/90 backdrop-blur-sm z-10 p-4 rounded-lg border border-dark-border animate-fade-in">
@@ -556,9 +586,9 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
                     <div className="p-4 flex-grow space-y-4">
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div className="space-y-3">
-                               {asset.previewUrl && (asset.file?.type.startsWith('image/') || asset.previewUrl.startsWith('data:image')) ? (
+                               {asset.previewUrl && (asset.previewUrl.startsWith('data:image') || asset.file?.type.startsWith('image/')) ? (
                                     <img src={asset.previewUrl} alt="Preview" className="rounded-lg w-full object-cover aspect-video bg-dark-bg" />
-                                ) : asset.previewUrl && (asset.file?.type.startsWith('video/') || asset.previewUrl.startsWith('data:video')) ? (
+                                ) : asset.previewUrl && (asset.previewUrl.startsWith('data:video') || asset.previewUrl.startsWith('blob:') || asset.file?.type.startsWith('video/')) ? (
                                     <video src={asset.previewUrl} controls className="rounded-lg w-full aspect-video bg-black"></video>
                                 ) : (
                                    <MediaPlaceholder prompt={asset.prompt} onAddMedia={() => handleAddMediaClick(asset.id)} />
