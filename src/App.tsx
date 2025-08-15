@@ -8,6 +8,7 @@ import { CreatePostView } from './components/CreatePostView';
 import { SeoConnectorView } from './components/SeoAssistantView';
 import { ConnectionsView } from './components/ConnectionsView';
 import type { Post, ConnectionStatus, ConnectionDetails, GeneratedPostIdea } from './types';
+import { ErrorModal } from './components/ErrorModal';
 import { View, Platform } from './types';
 import { MOCK_POSTS } from './constants';
 import { getConnections, connectFacebook, deletePost as deletePostOnPlatform } from './services/geminiService';
@@ -33,62 +34,74 @@ const App: React.FC = () => {
   const [connectionDetails, setConnectionDetails] = useState<ConnectionDetails>({});
   const [isFbSdkInitialized, setIsFbSdkInitialized] = useState(false);
   const [postSeed, setPostSeed] = useState<GeneratedPostIdea | Post | null>(null);
+  const [globalError, setGlobalError] = useState<string | null>(null);
 
   const addPost = (post: Post) => {
     setPosts(prevPosts => [post, ...prevPosts]);
   };
   
   const deletePost = async (postId: string) => {
-    const postToDelete = posts.find(p => p.id === postId);
-    if (!postToDelete) return;
+      setGlobalError(null);
+      try {
+        const postToDelete = posts.find(p => p.id === postId);
+        if (!postToDelete) return;
 
-    // Only attempt platform deletion for real posts that were published to Facebook
-    if (!postToDelete.id.startsWith('post_') && postToDelete.platforms.includes(Platform.Facebook)) {
-      const pageAccessToken = connectionDetails.facebook?.pageAccessToken;
-      if (!pageAccessToken) {
-        throw new Error("Cannot delete post from Facebook: Connection details are missing.");
+        // Only attempt platform deletion for real posts that were published to Facebook
+        if (!postToDelete.id.startsWith('post_') && postToDelete.platforms.includes(Platform.Facebook)) {
+            const pageAccessToken = connectionDetails.facebook?.pageAccessToken;
+            if (!pageAccessToken) {
+                throw new Error("Cannot delete post from Facebook: Connection details are missing.");
+            }
+            await deletePostOnPlatform(postId, pageAccessToken);
+        }
+
+        // If platform deletion is successful (or not applicable), remove from local state
+        setPosts(prevPosts => prevPosts.filter(p => p.id !== postId));
+      } catch (err) {
+         const message = err instanceof Error ? err.message : String(err);
+         setGlobalError(message);
       }
-      await deletePostOnPlatform(postId, pageAccessToken);
-    }
-
-    // If platform deletion is successful (or not applicable), remove from local state
-    setPosts(prevPosts => prevPosts.filter(p => p.id !== postId));
   };
 
   const deletePosts = async (postIds: string[]) => {
-    const pageAccessToken = connectionDetails.facebook?.pageAccessToken;
-    const idsToDelete = new Set(postIds);
+    setGlobalError(null);
+    try {
+        const pageAccessToken = connectionDetails.facebook?.pageAccessToken;
+        const idsToDelete = new Set(postIds);
 
-    const realPostsToDelete = posts.filter(p => 
-        idsToDelete.has(p.id) && 
-        !p.id.startsWith('post_') && 
-        p.platforms.includes(Platform.Facebook)
-    );
+        const realPostsToDelete = posts.filter(p => 
+            idsToDelete.has(p.id) && 
+            !p.id.startsWith('post_') && 
+            p.platforms.includes(Platform.Facebook)
+        );
 
-    if (realPostsToDelete.length > 0 && !pageAccessToken) {
-      throw new Error("Cannot delete posts from Facebook: Connection details are missing.");
-    }
+        if (realPostsToDelete.length > 0 && !pageAccessToken) {
+            throw new Error("Cannot delete posts from Facebook: Connection details are missing.");
+        }
 
-    let failedDeletions: string[] = [];
-    if (pageAccessToken) {
-        const deletePromises = realPostsToDelete.map(post => deletePostOnPlatform(post.id, pageAccessToken));
-        const results = await Promise.allSettled(deletePromises);
+        let failedDeletions: string[] = [];
+        if (pageAccessToken) {
+            const deletePromises = realPostsToDelete.map(post => deletePostOnPlatform(post.id, pageAccessToken));
+            const results = await Promise.allSettled(deletePromises);
+            
+            failedDeletions = results.reduce((acc, result, index) => {
+                if (result.status === 'rejected') {
+                    console.error(`Failed to delete post ${realPostsToDelete[index].id}:`, result.reason);
+                    acc.push(realPostsToDelete[index].id);
+                }
+                return acc;
+            }, [] as string[]);
+        }
         
-        failedDeletions = results.reduce((acc, result, index) => {
-            if (result.status === 'rejected') {
-                console.error(`Failed to delete post ${realPostsToDelete[index].id}:`, result.reason);
-                acc.push(realPostsToDelete[index].id);
-            }
-            return acc;
-        }, [] as string[]);
-    }
-    
-    // Always remove from dashboard state as requested by user action
-    setPosts(prevPosts => prevPosts.filter(p => !idsToDelete.has(p.id)));
+        // Always remove from dashboard state as requested by user action
+        setPosts(prevPosts => prevPosts.filter(p => !idsToDelete.has(p.id)));
 
-    if (failedDeletions.length > 0) {
-      // Surface an error to the UI
-      throw new Error(`Failed to delete ${failedDeletions.length} of ${realPostsToDelete.length} post(s) from Facebook. They have been removed from the dashboard.`);
+        if (failedDeletions.length > 0) {
+            throw new Error(`Failed to delete ${failedDeletions.length} of ${realPostsToDelete.length} post(s) from Facebook. They have been removed from the dashboard.`);
+        }
+    } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        setGlobalError(message);
     }
   };
 
@@ -250,6 +263,7 @@ const App: React.FC = () => {
                     onDeletePosts={deletePosts}
                     onUpdatePostEngagement={updatePostEngagement}
                     onEditPost={(post) => navigateTo(View.CREATE_POST, post)}
+                    onError={setGlobalError}
                 />;
     }
   };
@@ -258,6 +272,7 @@ const App: React.FC = () => {
     <div className="flex min-h-screen bg-dark-bg font-sans">
       <Sidebar activeView={activeView} setActiveView={(view) => navigateTo(view)} />
       <main className="flex-1 p-4 sm:p-6 lg:p-8">
+        <ErrorModal message={globalError} onClose={() => setGlobalError(null)} />
         {renderView()}
       </main>
     </div>

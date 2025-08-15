@@ -18,6 +18,7 @@ interface DashboardViewProps {
   onDeletePosts: (postIds: string[]) => Promise<void>;
   onUpdatePostEngagement: (postId: string, engagement: { likes: number, comments: number, shares: number }) => void;
   onEditPost: (post: Post) => void;
+  onError: (message: string | null) => void;
 }
 
 const LoadingSpinner: React.FC = () => (
@@ -27,10 +28,9 @@ const LoadingSpinner: React.FC = () => (
     </svg>
 );
 
-export const DashboardView: React.FC<DashboardViewProps> = ({ posts, connectionDetails, onDeletePost, onDeletePosts, onUpdatePostEngagement, onEditPost }) => {
+export const DashboardView: React.FC<DashboardViewProps> = ({ posts, connectionDetails, onDeletePost, onDeletePosts, onUpdatePostEngagement, onEditPost, onError }) => {
   const [platformFilter, setPlatformFilter] = useState<Platform | 'All'>('All');
   const [selectedPosts, setSelectedPosts] = useState<Set<string>>(new Set());
-  const [error, setError] = useState<string | null>(null);
   const [deletingPosts, setDeletingPosts] = useState<Set<string>>(new Set());
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
 
@@ -64,15 +64,14 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ posts, connectionD
   };
   
   const handleDeleteSelected = async () => {
-    setError(null);
+    onError(null);
     setIsBulkDeleting(true);
     try {
         await onDeletePosts(Array.from(selectedPosts));
         setSelectedPosts(new Set());
     } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        setError(message);
-        setTimeout(() => setError(null), 8000);
+        onError(message);
     } finally {
         setIsBulkDeleting(false);
     }
@@ -80,14 +79,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ posts, connectionD
 
   const handleDeletePost = async (postId: string) => {
       setDeletingPosts(prev => new Set(prev).add(postId));
-      setError(null);
+      onError(null);
       try {
           await onDeletePost(postId);
           // PostCard will be unmounted, no need to clear state here
       } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
-          setError(message);
-          setTimeout(() => setError(null), 8000);
+          onError(message);
           // If deletion failed, remove loading state from the specific post
           setDeletingPosts(prev => {
               const newSet = new Set(prev);
@@ -99,19 +97,17 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ posts, connectionD
   
   const handleRefreshInsights = async (postId: string) => {
     if (!connectionDetails?.facebook?.pageAccessToken) {
-        setError("Cannot refresh insights: Facebook not connected or token missing.");
-        setTimeout(() => setError(null), 5000);
+        onError("Cannot refresh insights: Facebook not connected or token missing.");
         throw new Error("Facebook connection details not found.");
     }
-    setError(null);
+    onError(null);
     try {
         const newEngagement = await getPostInsights(postId, connectionDetails.facebook.pageAccessToken);
         onUpdatePostEngagement(postId, newEngagement);
     } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         console.error(`Failed to refresh insights for post ${postId}:`, message);
-        setError(`Failed to refresh insights: ${message}`);
-        setTimeout(() => setError(null), 5000);
+        onError(`Failed to refresh insights: ${message}`);
         throw err; // Re-throw to be caught in PostCard
     }
   };
@@ -131,12 +127,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ posts, connectionD
           Welcome back! Here's a summary of your recent activity.
         </p>
       </div>
-
-      {error && (
-         <div className="bg-red-900/50 border border-red-700 text-red-300 px-4 py-3 rounded-lg" role="alert">
-            <span className="font-bold">Error:</span> {error}
-        </div>
-      )}
 
       <div className="mb-6">
         <div className="flex items-center space-x-2 rounded-lg bg-dark-card p-1 border border-dark-border w-full md:w-auto">
