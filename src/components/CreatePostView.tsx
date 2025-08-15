@@ -1,7 +1,6 @@
 /// <reference lib="dom" />
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
-import type { FFmpeg } from '@ffmpeg/ffmpeg';
 import type { Platform, Audience, Post, ConnectionStatus, MediaAsset, GeneratedPostIdea, ConnectionDetails } from '../types';
 import { Platform as PlatformEnum, Audience as AudienceEnum } from '../types';
 import { publishPost, generateAssetContent } from '../services/geminiService';
@@ -107,10 +106,6 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
     const [selectedAssets, setSelectedAssets] = useState<Set<string>>(new Set());
     const [isBulkGenerating, setIsBulkGenerating] = useState(false);
     const [isBulkPublishing, setIsBulkPublishing] = useState(false);
-    
-    const [isFfmpegLoaded, setIsFfmpegLoaded] = useState(false);
-    const [ffmpegError, setFfmpegError] = useState<string | null>(null);
-    const ffmpegRef = useRef<FFmpeg | null>(null);
 
     // Load assets from IndexedDB on initial mount
     useEffect(() => {
@@ -119,8 +114,8 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
                 const storedAssets = await getDraftsFromDB();
                 if (storedAssets && storedAssets.length > 0) {
                     const assetsWithPreviews = storedAssets.map(asset => {
-                        // Re-create blob URLs for files that were persisted
-                        if (asset.file && !asset.previewUrl) {
+                        // Re-create blob URLs for files that were persisted but don't have a final URL yet
+                        if (asset.file && !asset.previewUrl?.startsWith('https://')) {
                             return { ...asset, previewUrl: URL.createObjectURL(asset.file) };
                         }
                         return asset;
@@ -192,49 +187,6 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
         }
     }, [postSeed, clearPostSeed]);
 
-    useEffect(() => {
-        const loadFfmpeg = async () => {
-            try {
-                const { FFmpeg } = await import('@ffmpeg/ffmpeg');
-                const { toBlobURL } = await import('@ffmpeg/util');
-                const ffmpeg = new FFmpeg();
-                ffmpeg.on('log', ({ message }) => console.log('[FFMPEG]:', message));
-    
-                const cdnUrls = [
-                    'https://cdn.jsdelivr.net/npm/@ffmpeg/core-st@0.12.6/dist/umd',
-                    'https://unpkg.com/@ffmpeg/core-st@0.12.6/dist/umd'
-                ];
-    
-                let loaded = false;
-                for (const baseURL of cdnUrls) {
-                    try {
-                        console.log(`Attempting to load FFmpeg from ${baseURL}...`);
-                        await ffmpeg.load({
-                            coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
-                            wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
-                        });
-                        ffmpegRef.current = ffmpeg;
-                        setIsFfmpegLoaded(true);
-                        loaded = true;
-                        console.log(`FFmpeg loaded successfully from ${baseURL}.`);
-                        break; // Exit loop on success
-                    } catch (err) {
-                        console.warn(`Failed to load FFmpeg from ${baseURL}:`, err);
-                    }
-                }
-    
-                if (!loaded) {
-                    throw new Error("Failed to load FFmpeg from all available CDNs.");
-                }
-            } catch (err) {
-                console.error("Failed to load FFmpeg", err);
-                const errorMessage = err instanceof Error ? err.message : String(err);
-                setFfmpegError(`Warning: The video compression engine failed to load. This can be due to network issues or browser restrictions. Video compression is unavailable, but you can still upload videos under 3.5MB. Details: ${errorMessage}`);
-            }
-        };
-        loadFfmpeg();
-    }, []);
-
 
     const updateAsset = useCallback((id: string, updates: Partial<MediaAsset>) => {
         setAssets(prev => prev.map(a => {
@@ -249,58 +201,45 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
         }));
     }, []);
 
-    const handleCompressVideo = async (assetId: string, file: File) => {
-        const ffmpeg = ffmpegRef.current;
-        if (!isFfmpegLoaded || !ffmpeg) {
-            updateAsset(assetId, { status: 'error', errorMessage: 'Compression library not ready. Please refresh and try again.' });
+     const handleCloudinaryUpload = async (assetId: string, file: File) => {
+        const cloudName = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
+        const uploadPreset = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET;
+
+        if (!cloudName || !uploadPreset) {
+            const errorMessage = "Cloudinary is not configured. Please set VITE_CLOUDINARY_CLOUD_NAME and VITE_CLOUDINARY_UPLOAD_PRESET in your environment variables.";
+            console.error(errorMessage);
+            updateAsset(assetId, { status: 'error', errorMessage });
             return;
         }
 
+        const url = `https://api.cloudinary.com/v1_1/${cloudName}/video/upload`;
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('upload_preset', uploadPreset);
+
         try {
-            const { fetchFile } = await import('@ffmpeg/util');
-            const inputFileName = `input_${file.name}`;
-            const outputFileName = 'output.mp4';
+            const response = await fetch(url, {
+                method: 'POST',
+                body: formData,
+            });
 
-            await ffmpeg.writeFile(inputFileName, await fetchFile(file));
-            await ffmpeg.exec(['-i', inputFileName, '-vcodec', 'libx264', '-crf', '28', '-preset', 'veryfast', outputFileName]);
-
-            const data = await ffmpeg.readFile(outputFileName);
-            const compressedFileBlob = new Blob([data], { type: 'video/mp4' });
-            const compressedFile = new File([compressedFileBlob], file.name.replace(/\.[^/.]+$/, "") + '_compressed.mp4', { type: 'video/mp4' });
-
-            await ffmpeg.deleteFile(inputFileName);
-            await ffmpeg.deleteFile(outputFileName);
-            
-            const MAX_PAYLOAD_SIZE_BYTES = 3.5 * 1024 * 1024; // 3.5MB to be safe for Vercel's 4.5MB limit
-            if (compressedFile.size > MAX_PAYLOAD_SIZE_BYTES) {
-                 updateAsset(assetId, {
-                    file: compressedFile,
-                    previewUrl: URL.createObjectURL(compressedFile),
-                    status: 'error',
-                    errorMessage: `Video still too large after compression (${(compressedFile.size / 1024 / 1024).toFixed(1)}MB). Max size is ~3.5MB. Please use a shorter video.`
-                });
-                return;
+            if (!response.ok) {
+                const errorData = await response.json();
+                throw new Error(errorData.error.message || 'Cloudinary upload failed.');
             }
 
+            const data = await response.json();
             updateAsset(assetId, {
-                file: compressedFile,
-                previewUrl: URL.createObjectURL(compressedFile),
+                previewUrl: data.secure_url, // This is the URL we need
+                file: undefined, // Clear the file from state after upload
                 status: 'idle',
-                errorMessage: `Compressed from ${(file.size / 1024 / 1024).toFixed(1)}MB to ${(compressedFile.size / 1024 / 1024).toFixed(1)}MB`,
+                errorMessage: `Video ready (${(data.bytes / 1024 / 1024).toFixed(1)}MB).`,
             });
-            
-            setTimeout(() => {
-                setAssets(currentAssets => currentAssets.map(a => {
-                    if (a.id === assetId && a.errorMessage?.startsWith('Compressed')) {
-                        return { ...a, errorMessage: undefined };
-                    }
-                    return a;
-                }));
-            }, 5000);
+            setTimeout(() => setAssets(curr => curr.map(a => a.id === assetId && a.errorMessage?.startsWith('Video ready') ? { ...a, errorMessage: undefined } : a)), 5000);
 
         } catch (error) {
-            console.error('Video compression failed:', error);
-            updateAsset(assetId, { status: 'error', errorMessage: 'Video compression failed. The video might be in an unsupported format.' });
+            const message = error instanceof Error ? error.message : "An unknown error occurred during upload.";
+            updateAsset(assetId, { status: 'error', errorMessage: `Upload failed: ${message}` });
         }
     };
 
@@ -309,8 +248,7 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
         if (!files || files.length === 0) return;
 
         const MAX_IMAGE_SIZE_MB = 10;
-        const MAX_VIDEO_SIZE_MB = 50;
-        const MAX_PAYLOAD_SIZE_BYTES = 3.5 * 1024 * 1024; // Vercel's limit
+        const MAX_VIDEO_SIZE_MB = 100; // Increased limit for direct upload
         
         const processFile = (file: File, existingAssetId?: string) => {
             const assetId = existingAssetId || `asset_${Date.now()}_${Math.random()}`;
@@ -360,15 +298,8 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
                         updateAsset(assetId, { status: 'error', errorMessage: 'Image optimization failed.' });
                     });
             } else if (isVideo) {
-                 if (file.size > MAX_PAYLOAD_SIZE_BYTES) {
-                    if (isFfmpegLoaded) {
-                        updateAsset(assetId, { ...commonAssetData, status: 'compressing', errorMessage: 'Video requires compression...' });
-                        setTimeout(() => handleCompressVideo(assetId, file), 100);
-                    } else {
-                         const errorMessage = `Video is too large (${(file.size / 1024 / 1024).toFixed(1)}MB). The compression engine failed to load, so it cannot be automatically compressed. Please use a video under 3.5MB.`;
-                        updateAsset(assetId, { ...commonAssetData, status: 'error', errorMessage });
-                    }
-                }
+                 updateAsset(assetId, { status: 'uploading', errorMessage: 'Uploading to cloud...' });
+                 handleCloudinaryUpload(assetId, file);
             }
         };
 
@@ -421,10 +352,13 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
 
     const handlePublish = async (assetId: string) => {
         const asset = assets.find(a => a.id === assetId);
-        if (!asset || !asset.file) {
+        if (!asset) return;
+        
+        const hasMedia = asset.file || (asset.previewUrl && asset.previewUrl.startsWith('https://'));
+        if (!hasMedia) {
             updateAsset(assetId, { status: 'error', errorMessage: 'Please add a media file before publishing.' });
             return;
-        };
+        }
         
         if (asset.status === 'error') {
             updateAsset(assetId, { status: 'error', errorMessage: 'Cannot publish, please resolve the error first.' });
@@ -441,9 +375,15 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
         
         let imageUrlData: string;
         try {
-            imageUrlData = await toBase64(asset.file);
+            if (asset.file) { // For images
+                imageUrlData = await toBase64(asset.file);
+            } else if (asset.previewUrl && asset.previewUrl.startsWith('https://')) { // For videos from Cloudinary
+                imageUrlData = asset.previewUrl;
+            } else {
+                throw new Error('No media file or URL available for upload.');
+            }
         } catch (error) {
-            console.error("Error converting file to base64:", error);
+            console.error("Error preparing media for upload:", error);
             updateAsset(assetId, { status: 'error', errorMessage: 'Could not read the media file for upload.' });
             return;
         }
@@ -560,12 +500,6 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
                 <h1 className="text-3xl font-bold text-white">Create Posts</h1>
                 <p className="text-dark-text-secondary mt-1">Select assets to bulk generate content or publish them all at once.</p>
             </div>
-
-            {ffmpegError && (
-                <div className="bg-yellow-900/50 border border-yellow-700 text-yellow-300 px-4 py-3 rounded-lg" role="alert">
-                    <p>{ffmpegError}</p>
-                </div>
-            )}
             
             {selectedAssets.size > 0 && (
                  <div className="sticky top-4 bg-dark-card/90 backdrop-blur-sm z-10 p-4 rounded-lg border border-dark-border animate-fade-in">
@@ -604,7 +538,7 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
                 >
                     <svg className="mx-auto h-12 w-12 text-dark-text-secondary" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true"><path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
                     <span className="mt-2 block text-sm font-semibold text-white">Upload Images or Videos</span>
-                    <span className="block text-xs text-dark-text-secondary">Images (max 10MB), Videos (max 50MB). Files are optimized before upload.</span>
+                    <span className="block text-xs text-dark-text-secondary">Images (max 10MB), Videos (max 100MB). Files are optimized before upload.</span>
                     <input ref={fileInputRef} type="file" multiple={!assetForMediaUpload} onChange={handleFileChange} className="sr-only" accept="image/*,video/*" />
                 </div>
 
@@ -633,8 +567,9 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
             
             <div className="grid grid-cols-1 xl:grid-cols-2 2xl:grid-cols-3 gap-6">
             {assets.map((asset) => {
-                const isBusy = asset.status === 'generating' || asset.status === 'publishing' || asset.status === 'published' || asset.status === 'compressing';
-                const isPublishDisabled = isBusy || asset.status === 'error' || asset.platforms.length === 0 || !asset.file;
+                const isBusy = asset.status === 'generating' || asset.status === 'publishing' || asset.status === 'published' || asset.status === 'compressing' || asset.status === 'uploading';
+                const hasMedia = asset.file || (asset.previewUrl && asset.previewUrl.startsWith('https://'));
+                const isPublishDisabled = isBusy || asset.status === 'error' || asset.platforms.length === 0 || !hasMedia;
 
                 return (
                 <div key={asset.id} className={`relative bg-dark-card rounded-lg border flex flex-col transition-all duration-500 ${selectedAssets.has(asset.id) ? 'border-brand-primary ring-2 ring-brand-primary' : 'border-dark-border'} ${asset.status === 'published' ? 'opacity-50 scale-95' : ''}`}>
@@ -651,11 +586,13 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
                      )}
                      {selectedAssets.has(asset.id) && <div className="absolute inset-0 bg-brand-primary/10 rounded-lg pointer-events-none"></div>}
 
-                    {(asset.status === 'compressing' || asset.status === 'generating') && (
+                    {(asset.status === 'compressing' || asset.status === 'generating' || asset.status === 'uploading') && (
                         <div className="absolute inset-0 bg-dark-card/80 backdrop-blur-sm flex flex-col items-center justify-center z-20 rounded-lg">
                             <LoadingSpinner size="h-10 w-10" />
                             <p className="mt-4 text-white font-semibold">
-                                {asset.status === 'compressing' ? 'Processing media...' : 'Generating content...'}
+                                {asset.status === 'compressing' ? 'Processing media...' : 
+                                 asset.status === 'uploading' ? 'Uploading to cloud...' : 
+                                 'Generating content...'}
                             </p>
                             <p className="text-sm text-dark-text-secondary">This may take a moment.</p>
                         </div>
@@ -665,7 +602,7 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div className="space-y-3">
                                {asset.previewUrl ? (
-                                    asset.file?.type.startsWith('video/') ? (
+                                    asset.previewUrl.startsWith('https://res.cloudinary.com') ? (
                                         <video src={asset.previewUrl} controls className="rounded-lg w-full aspect-video bg-black"></video>
                                     ) : (
                                         <img src={asset.previewUrl} alt="Preview" className="rounded-lg w-full object-cover aspect-video bg-dark-bg" onClick={() => handleAddMediaClick(asset.id)} style={{cursor: 'pointer'}} />

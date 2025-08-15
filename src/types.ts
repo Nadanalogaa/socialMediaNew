@@ -1,5 +1,6 @@
 
 
+
 export enum Platform {
   Facebook = 'Facebook',
   Instagram = 'Instagram',
@@ -93,6 +94,6 @@ export interface MediaAsset {
   description: string;
   hashtags: string[];
   platforms: Platform[];
-  status: 'idle' | 'generating' | 'publishing' | 'error' | 'published' | 'compressing';
+  status: 'idle' | 'generating' | 'publishing' | 'error' | 'published' | 'compressing' | 'uploading';
   errorMessage?: string;
 }

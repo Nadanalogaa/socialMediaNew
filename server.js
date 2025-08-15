@@ -347,27 +347,30 @@ app.post('/api/publish-post', async (req, res) => {
     console.log("Received publish request for platforms:", platforms);
     const publishedTo = [];
     const failedToPublish = [];
+
+    const isVideo = imageUrl && imageUrl.startsWith('https://');
+    const isImage = imageUrl && imageUrl.startsWith('data:image');
+
     let facebookPostId = null;
     let facebookPhotoUrl = null;
 
-    // Ensure Facebook is processed first if present, as Instagram depends on it
+    // Ensure Facebook is processed first if present, as Instagram depends on it for IMAGE posts
     const orderedPlatforms = [...platforms].sort((a) => a === 'Facebook' ? -1 : 1);
 
     for (const platform of orderedPlatforms) {
         if (platform === 'Facebook') {
-            if (facebook && facebook.pageId && facebook.pageAccessToken) {
-                try {
-                    console.log(`[REAL FB] Publishing to Facebook page: ${facebook.pageName}`);
-
-                    const description = generatedContent.facebook || '';
-                    const hashtags = (generatedContent.hashtags || []).map(h => `#${h}`).join(' ');
-                    const caption = `${description}\n\n${hashtags}`.trim();
-                    
-                    if (!imageUrl || !(imageUrl.startsWith('data:image') || imageUrl.startsWith('data:video'))) {
-                         throw new Error('A valid image or video data URL was not provided for the Facebook post.');
-                    }
+            if (!facebook?.pageId || !facebook?.pageAccessToken) {
+                failedToPublish.push({ platform, reason: 'Connection details not provided.' });
+                continue;
+            }
+            try {
+                console.log(`[REAL FB] Publishing to Facebook page: ${facebook.pageName}`);
+                const description = generatedContent.facebook || '';
+                const hashtags = (generatedContent.hashtags || []).map(h => `#${h}`).join(' ');
+                const caption = `${description}\n\n${hashtags}`.trim();
+                
+                if (isImage) {
                     console.log(`[REAL FB] Preparing multipart/form-data upload from data URL.`);
-
                     const parts = imageUrl.split(',');
                     const meta = parts[0].split(';');
                     const mimeType = meta[0].split(':')[1];
@@ -382,13 +385,9 @@ app.post('/api/publish-post', async (req, res) => {
                     const postUrl = `https://graph.facebook.com/v23.0/${facebook.pageId}/photos`;
                     const fbResponse = await fetch(postUrl, { method: 'POST', body: formData });
                     const fbData = await fbResponse.json();
-
-                    if (fbData.error) {
-                        console.error('[REAL FB] Graph API Error Response:', JSON.stringify(fbData.error, null, 2));
-                        throw new Error(`Graph API post error: ${fbData.error.message}`);
-                    }
+                    if (fbData.error) throw new Error(`Graph API post error: ${fbData.error.message}`);
                     
-                    console.log('[REAL FB] Successfully posted to Facebook. Post ID:', fbData.post_id);
+                    console.log('[REAL FB] Successfully posted photo to Facebook. Post ID:', fbData.post_id);
                     facebookPostId = fbData.post_id;
                     
                     // Fetch the public URL of the just-posted photo for Instagram
@@ -401,77 +400,102 @@ app.post('/api/publish-post', async (req, res) => {
                         console.warn('[REAL FB] Could not retrieve public photo URL after posting.');
                     }
                     
-                    publishedTo.push(platform);
-
-                } catch (error) {
-                    console.error('[REAL FB] Failed to publish to Facebook:', error);
-                    failedToPublish.push({ platform, reason: error.message });
+                } else if (isVideo) {
+                    console.log(`[REAL FB] Publishing video from URL: ${imageUrl.substring(0,70)}...`);
+                    const postUrl = `https://graph.facebook.com/v23.0/${facebook.pageId}/videos`;
+                    const videoParams = new URLSearchParams({
+                        access_token: facebook.pageAccessToken,
+                        file_url: imageUrl,
+                        description: caption
+                    });
+                    const fbResponse = await fetch(postUrl, { method: 'POST', body: videoParams });
+                    const fbData = await fbResponse.json();
+                    if (fbData.error) throw new Error(`Graph API video post error: ${fbData.error.message}`);
+                    console.log('[REAL FB] Successfully posted video to Facebook. Video ID:', fbData.id);
+                    facebookPostId = fbData.id; // video posts return 'id'
+                } else {
+                     throw new Error('A valid image or video was not provided for the Facebook post.');
                 }
-            } else {
-                failedToPublish.push({ platform, reason: 'Connection details not provided.' });
+                publishedTo.push(platform);
+            } catch (error) {
+                console.error('[REAL FB] Failed to publish to Facebook:', error);
+                failedToPublish.push({ platform, reason: error.message });
             }
         } else if (platform === 'Instagram') {
-             if (instagram && instagram.igUserId && facebook && facebook.pageAccessToken) {
-                try {
+             if (!instagram?.igUserId || !facebook?.pageAccessToken) {
+                failedToPublish.push({ platform, reason: 'Connection details not provided.' });
+                continue;
+             }
+             try {
+                console.log(`[REAL IG] Publishing to Instagram account: ${instagram.username}`);
+                const igCaption = (generatedContent.instagram || generatedContent.description || '') + '\n\n' + (generatedContent.hashtags || []).map(h => `#${h}`).join(' ');
+
+                let mediaUrlForIg;
+                if (isImage) {
                     if (!facebookPhotoUrl) {
-                        throw new Error('To post to Instagram, you must also select Facebook. The Instagram post uses the photo from the Facebook post.');
+                        throw new Error('To post an image to Instagram, you must also select Facebook. The Instagram post uses the photo from the Facebook post.');
                     }
-                    console.log(`[REAL IG] Publishing to Instagram account: ${instagram.username}`);
-
-                    // 1. Create Media Container
-                    const igCaption = (generatedContent.instagram || generatedContent.description || '') + '\n\n' + (generatedContent.hashtags || []).map(h => `#${h}`).join(' ');
-                    const createContainerUrl = `https://graph.facebook.com/v23.0/${instagram.igUserId}/media`;
-                    const createContainerParams = new URLSearchParams({
-                        image_url: facebookPhotoUrl,
-                        caption: igCaption,
-                        access_token: facebook.pageAccessToken
-                    });
-
-                    const containerResponse = await fetch(createContainerUrl, { method: 'POST', body: createContainerParams });
-                    const containerData = await containerResponse.json();
-                    if (containerData.error) throw new Error(`IG container creation failed: ${containerData.error.message}`);
-                    const creationId = containerData.id;
-                    console.log(`[REAL IG] Media container created with ID: ${creationId}`);
-
-                    // 2. Poll for container status
-                    let containerStatus = '';
-                    let attempts = 0;
-                    while (containerStatus !== 'FINISHED' && attempts < 15) {
-                        const statusUrl = `https://graph.facebook.com/v23.0/${creationId}?fields=status_code&access_token=${facebook.pageAccessToken}`;
-                        const statusRes = await fetch(statusUrl);
-                        const statusData = await statusRes.json();
-                        if(statusData.error) throw new Error(`IG container status check failed: ${statusData.error.message}`);
-                        
-                        containerStatus = statusData.status_code;
-                        console.log(`[REAL IG] Container status check #${attempts + 1}: ${containerStatus}`);
-
-                        if (containerStatus === 'ERROR') throw new Error('Instagram media container failed to process.');
-                        if (containerStatus !== 'FINISHED') {
-                            await new Promise(resolve => setTimeout(resolve, 2000)); // wait 2s
-                            attempts++;
-                        }
-                    }
-                    if (containerStatus !== 'FINISHED') throw new Error('Instagram media container processing timed out.');
-                    
-                    // 3. Publish container
-                    const publishUrl = `https://graph.facebook.com/v23.0/${instagram.igUserId}/media_publish`;
-                    const publishParams = new URLSearchParams({
-                        creation_id: creationId,
-                        access_token: facebook.pageAccessToken
-                    });
-                    const publishResponse = await fetch(publishUrl, { method: 'POST', body: publishParams });
-                    const publishData = await publishResponse.json();
-
-                    if (publishData.error) throw new Error(`IG publish failed: ${publishData.error.message}`);
-                    console.log('[REAL IG] Successfully posted to Instagram. Media ID:', publishData.id);
-                    publishedTo.push(platform);
-
-                } catch (error) {
-                    console.error('[REAL IG] Failed to publish to Instagram:', error);
-                    failedToPublish.push({ platform, reason: error.message });
+                    mediaUrlForIg = facebookPhotoUrl;
+                } else if (isVideo) {
+                    mediaUrlForIg = imageUrl; // Use Cloudinary URL directly
+                } else {
+                    throw new Error('No valid media URL for Instagram.');
                 }
-            } else {
-                 failedToPublish.push({ platform, reason: 'Connection details not provided.' });
+                
+                // 1. Create Media Container
+                const createContainerUrl = `https://graph.facebook.com/v23.0/${instagram.igUserId}/media`;
+                const createContainerParams = new URLSearchParams({
+                    caption: igCaption,
+                    access_token: facebook.pageAccessToken
+                });
+
+                if (isImage) {
+                    createContainerParams.append('image_url', mediaUrlForIg);
+                } else { // isVideo
+                    createContainerParams.append('video_url', mediaUrlForIg);
+                }
+
+                const containerResponse = await fetch(createContainerUrl, { method: 'POST', body: createContainerParams });
+                const containerData = await containerResponse.json();
+                if (containerData.error) throw new Error(`IG container creation failed: ${containerData.error.message}`);
+                const creationId = containerData.id;
+                console.log(`[REAL IG] Media container created with ID: ${creationId}`);
+
+                // 2. Poll for container status
+                let containerStatus = '';
+                let attempts = 0;
+                while (containerStatus !== 'FINISHED' && attempts < 20) { // Increased timeout for video
+                    const statusUrl = `https://graph.facebook.com/v23.0/${creationId}?fields=status_code&access_token=${facebook.pageAccessToken}`;
+                    const statusRes = await fetch(statusUrl);
+                    const statusData = await statusRes.json();
+                    if(statusData.error) throw new Error(`IG container status check failed: ${statusData.error.message}`);
+                    
+                    containerStatus = statusData.status_code;
+                    console.log(`[REAL IG] Container status check #${attempts + 1}: ${containerStatus}`);
+
+                    if (containerStatus === 'ERROR') throw new Error('Instagram media container failed to process.');
+                    if (containerStatus !== 'FINISHED') {
+                        await new Promise(resolve => setTimeout(resolve, 3000)); // wait 3s
+                        attempts++;
+                    }
+                }
+                if (containerStatus !== 'FINISHED') throw new Error('Instagram media container processing timed out.');
+                
+                // 3. Publish container
+                const publishUrl = `https://graph.facebook.com/v23.0/${instagram.igUserId}/media_publish`;
+                const publishParams = new URLSearchParams({
+                    creation_id: creationId,
+                    access_token: facebook.pageAccessToken
+                });
+                const publishResponse = await fetch(publishUrl, { method: 'POST', body: publishParams });
+                const publishData = await publishResponse.json();
+
+                if (publishData.error) throw new Error(`IG publish failed: ${publishData.error.message}`);
+                console.log('[REAL IG] Successfully posted to Instagram. Media ID:', publishData.id);
+                publishedTo.push(platform);
+            } catch (error) {
+                console.error('[REAL IG] Failed to publish to Instagram:', error);
+                failedToPublish.push({ platform, reason: error.message });
             }
         } else if (platform === 'YouTube') { // Mock logic for YouTube
             if (mockState.YouTube.connected) {
@@ -492,7 +516,7 @@ app.post('/api/publish-post', async (req, res) => {
         id: facebookPostId || `post_${Date.now()}`,
         platforms: publishedTo,
         audience,
-        imageUrl, // This is now the data: URL which is fine for the client to display
+        imageUrl, // This is now a data URL for images, or a Cloudinary URL for videos
         prompt,
         generatedContent,
         postedAt: new Date().toISOString(),

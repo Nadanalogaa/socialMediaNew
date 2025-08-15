@@ -7,6 +7,7 @@ import { getConnections, disconnectPlatform, connectFacebook } from '../services
 import { FacebookIcon } from './icons/FacebookIcon';
 import { InstagramIcon } from './icons/InstagramIcon';
 import { YoutubeIcon } from './icons/YoutubeIcon';
+import { CloudIcon } from './icons/CloudIcon';
 
 interface ConnectionsViewProps {
     connections: ConnectionStatus;
@@ -73,6 +74,8 @@ export const ConnectionsView: React.FC<ConnectionsViewProps> = ({ connections, s
     const [showFbTroubleshooter, setShowFbTroubleshooter] = useState(false);
     const popupRef = useRef<Window | null>(null);
     const intervalRef = useRef<number | null>(null);
+
+    const isCloudinaryConfigured = !!(import.meta.env.VITE_CLOUDINARY_CLOUD_NAME && import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET);
 
     const handleAuthMessage = useCallback(async (event: MessageEvent) => {
         // Basic security check for mock flow
@@ -245,7 +248,7 @@ export const ConnectionsView: React.FC<ConnectionsViewProps> = ({ connections, s
         <div className="max-w-4xl mx-auto animate-fade-in">
             <div className="mb-8">
                 <h1 className="text-3xl font-bold text-white">Manage Connections</h1>
-                <p className="text-dark-text-secondary mt-1">Connect your social media accounts to publish content directly.</p>
+                <p className="text-dark-text-secondary mt-1">Connect your social media accounts and services to enable all features.</p>
             </div>
 
             {error && (
@@ -295,6 +298,25 @@ export const ConnectionsView: React.FC<ConnectionsViewProps> = ({ connections, s
                             </li>
                         );
                     })}
+                     <li key="Cloudinary" className="p-6 flex items-center justify-between bg-dark-bg/30">
+                        <div className="flex items-center">
+                            <div className="text-cyan-400"><CloudIcon className="w-8 h-8" /></div>
+                            <div className="ml-4">
+                                <p className="text-lg font-bold text-white">Cloudinary Video</p>
+                                <p className={`text-sm ${isCloudinaryConfigured ? 'text-green-400' : 'text-yellow-400'}`}>
+                                    {isCloudinaryConfigured ? 'Enabled' : 'Not Configured'}
+                                </p>
+                            </div>
+                        </div>
+                        <div className="text-right">
+                                <p className="text-sm text-dark-text-secondary">
+                                {isCloudinaryConfigured 
+                                    ? 'Video uploads are operational.' 
+                                    : 'Set environment variables to enable.'
+                                }
+                                </p>
+                        </div>
+                    </li>
                 </ul>
             </div>
 
