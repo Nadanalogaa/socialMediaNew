@@ -23,6 +23,53 @@ const toBase64 = (file: File): Promise<string> => new Promise((resolve, reject) 
     reader.onerror = error => reject(error);
 });
 
+const compressImage = (file: File, options: { maxSizeMB: number; maxWidth: number; quality: number }): Promise<File> => {
+    return new Promise((resolve, reject) => {
+        if (!file.type.startsWith('image/') || file.size <= options.maxSizeMB * 1024 * 1024) {
+            return resolve(file);
+        }
+
+        const reader = new FileReader();
+        reader.readAsDataURL(file);
+        reader.onload = (event) => {
+            const img = new Image();
+            img.src = event.target?.result as string;
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                let { width, height } = img;
+
+                if (width > options.maxWidth) {
+                    height = (height * options.maxWidth) / width;
+                    width = options.maxWidth;
+                }
+
+                canvas.width = width;
+                canvas.height = height;
+                const ctx = canvas.getContext('2d');
+                if (!ctx) return reject(new Error('Could not get canvas context'));
+
+                ctx.drawImage(img, 0, 0, width, height);
+                canvas.toBlob(
+                    (blob) => {
+                        if (blob) {
+                            const newFileName = file.name.replace(/\.[^/.]+$/, ".jpg");
+                            const newFile = new File([blob], newFileName, { type: 'image/jpeg', lastModified: Date.now() });
+                            resolve(newFile.size < file.size ? newFile : file);
+                        } else {
+                            reject(new Error('Canvas toBlob failed to create blob.'));
+                        }
+                    },
+                    'image/jpeg',
+                    options.quality
+                );
+            };
+            img.onerror = (err) => reject(err);
+        };
+        reader.onerror = (err) => reject(err);
+    });
+};
+
+
 interface CreatePostViewProps {
     connections: ConnectionStatus;
     connectionDetails: ConnectionDetails;
@@ -32,7 +79,7 @@ interface CreatePostViewProps {
 }
 
 const LoadingSpinner: React.FC<{ size?: string }> = ({ size = 'h-5 w-5' }) => (
-    <svg className={`animate-spin ${size} text-white`} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+    <svg className={`animate-spin ${size} text-white`} xmlns="http://www.w.org/2000/svg" fill="none" viewBox="0 0 24 24">
         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
     </svg>
@@ -155,17 +202,15 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
                     console.log('[FFMPEG]:', message);
                 });
                 
-                // CRITICAL FIX: Load from self-hosted files to prevent CORS issues.
-                const baseURL = '/ffmpeg/wasm';
+                const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd';
                 await ffmpeg.load({
                     coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
                     wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
-                    workerURL: await toBlobURL(`${baseURL}/ffmpeg-core.worker.js`, 'text/javascript'),
                 });
                 
                 ffmpegRef.current = ffmpeg;
                 setIsFfmpegLoaded(true);
-                console.log('FFmpeg loaded successfully from local path.');
+                console.log('FFmpeg loaded successfully from CDN.');
             } catch (err) {
                 console.error("Failed to load FFmpeg", err);
                 setFfmpegError('The video compression engine failed to load. Please refresh the page. If the problem persists, video uploads may not work correctly.');
@@ -203,6 +248,17 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
             await ffmpeg.deleteFile(inputFileName);
             await ffmpeg.deleteFile(outputFileName);
             
+            const MAX_PAYLOAD_SIZE_BYTES = 3.5 * 1024 * 1024; // 3.5MB to be safe for Vercel's 4.5MB limit
+            if (compressedFile.size > MAX_PAYLOAD_SIZE_BYTES) {
+                 updateAsset(assetId, {
+                    file: compressedFile,
+                    previewUrl: URL.createObjectURL(compressedFile),
+                    status: 'error',
+                    errorMessage: `Video too large (${(compressedFile.size / 1024 / 1024).toFixed(1)}MB). Max size is ~3.5MB. Please use a shorter video.`
+                });
+                return;
+            }
+
             updateAsset(assetId, {
                 file: compressedFile,
                 previewUrl: URL.createObjectURL(compressedFile),
@@ -229,69 +285,77 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
         const files = e.target.files;
         if (!files || files.length === 0) return;
 
-        const MAX_ABSOLUTE_VIDEO_SIZE_MB = 250;
-        const MAX_ABSOLUTE_VIDEO_SIZE_BYTES = MAX_ABSOLUTE_VIDEO_SIZE_MB * 1024 * 1024;
-        const MAX_VIDEO_SIZE_MB_BEFORE_COMPRESSION = 20;
-        const MAX_VIDEO_SIZE_BYTES = MAX_VIDEO_SIZE_MB_BEFORE_COMPRESSION * 1024 * 1024;
+        const MAX_IMAGE_SIZE_MB = 10;
+        const MAX_VIDEO_SIZE_MB = 50;
+        const TARGET_VIDEO_COMPRESSION_MB = 15;
+        const MAX_PAYLOAD_BYTES_RAW = 3.5 * 1024 * 1024;
         
         const processFile = (file: File, existingAssetId?: string) => {
             const assetId = existingAssetId || `asset_${Date.now()}_${Math.random()}`;
             const isVideo = file.type.startsWith('video/');
+            const isImage = file.type.startsWith('image/');
+            const createErrorAsset = (message: string) => ({
+                id: assetId, name: file.name, prompt: 'File Error', description: message,
+                hashtags: [], platforms: [], status: 'error' as const, errorMessage: message, file: undefined,
+                previewUrl: URL.createObjectURL(file)
+            });
 
-            if (isVideo && file.size > MAX_ABSOLUTE_VIDEO_SIZE_BYTES) {
-                const errorAsset: MediaAsset = {
-                    id: assetId,
-                    name: file.name,
-                    prompt: 'File too large',
-                    description: `This video is ${(file.size / 1024 / 1024).toFixed(1)}MB, which exceeds the ${MAX_ABSOLUTE_VIDEO_SIZE_MB}MB limit.`,
-                    hashtags: [], platforms: [], status: 'error',
-                    errorMessage: `File too large (max ${MAX_ABSOLUTE_VIDEO_SIZE_MB}MB).`,
-                    file: undefined,
-                    previewUrl: URL.createObjectURL(file), // Show video player even for error state
-                };
-                if (existingAssetId) {
-                    updateAsset(existingAssetId, { ...errorAsset, id: existingAssetId });
-                } else {
-                    setAssets(prev => [errorAsset, ...prev]);
-                }
+            if (isImage && file.size > MAX_IMAGE_SIZE_MB * 1024 * 1024) {
+                const errorAsset = createErrorAsset(`Image is too large (${(file.size / 1024 / 1024).toFixed(1)}MB). Max size is ${MAX_IMAGE_SIZE_MB}MB.`);
+                if (existingAssetId) updateAsset(existingAssetId, errorAsset); else setAssets(p => [errorAsset, ...p]);
+                return;
+            }
+            if (isVideo && file.size > MAX_VIDEO_SIZE_MB * 1024 * 1024) {
+                const errorAsset = createErrorAsset(`Video is too large (${(file.size / 1024 / 1024).toFixed(1)}MB). Max size is ${MAX_VIDEO_SIZE_MB}MB.`);
+                 if (existingAssetId) updateAsset(existingAssetId, errorAsset); else setAssets(p => [errorAsset, ...p]);
                 return;
             }
 
-            const needsCompression = isVideo && file.size > MAX_VIDEO_SIZE_BYTES;
-
             const commonAssetData = {
-                file,
-                previewUrl: URL.createObjectURL(file),
-                status: 'idle' as MediaAsset['status'],
-                errorMessage: undefined
+                file, previewUrl: URL.createObjectURL(file), status: 'idle' as MediaAsset['status'], errorMessage: undefined
             };
-
             if (existingAssetId) {
                  updateAsset(existingAssetId, commonAssetData);
             } else {
-                const newAsset: MediaAsset = {
-                    id: assetId,
-                    name: file.name.split('.').slice(0, -1).join('.').replace(/[\-_]/g, ' '),
-                    prompt: '', description: '', hashtags: [], platforms: [PlatformEnum.Facebook],
-                    ...commonAssetData
-                };
-                setAssets(prev => [newAsset, ...prev]);
+                setAssets(prev => [{
+                    id: assetId, name: file.name.split('.').slice(0, -1).join('.').replace(/[\-_]/g, ' '),
+                    prompt: '', description: '', hashtags: [], platforms: [PlatformEnum.Facebook], ...commonAssetData
+                }, ...prev]);
             }
+            
+            const handleProcessedFile = (processedFile: File, originalFile: File) => {
+                updateAsset(assetId, {
+                    file: processedFile, previewUrl: URL.createObjectURL(processedFile), status: 'idle',
+                    errorMessage: `Optimized from ${(originalFile.size / 1024 / 1024).toFixed(1)}MB to ${(processedFile.size / 1024 / 1024).toFixed(1)}MB`,
+                });
+                setTimeout(() => setAssets(curr => curr.map(a => a.id === assetId && a.errorMessage?.startsWith('Optimized') ? { ...a, errorMessage: undefined } : a)), 5000);
+            };
 
-            if (needsCompression) {
-                if(isFfmpegLoaded) {
-                    setTimeout(() => handleCompressVideo(assetId, file), 100);
-                } else {
-                    updateAsset(assetId, { status: 'error', errorMessage: 'Compression engine is loading. Please wait and try re-uploading the file.' });
+            if (isImage) {
+                updateAsset(assetId, { status: 'compressing', errorMessage: 'Optimizing image...' });
+                compressImage(file, { maxSizeMB: 2, maxWidth: 1920, quality: 0.85 })
+                    .then(compressedFile => handleProcessedFile(compressedFile, file))
+                    .catch(err => {
+                        console.error('Image compression failed:', err);
+                        updateAsset(assetId, { status: 'error', errorMessage: 'Image optimization failed.' });
+                    });
+            } else if (isVideo) {
+                const needsCompression = file.size > TARGET_VIDEO_COMPRESSION_MB * 1024 * 1024;
+                if (needsCompression) {
+                    if (isFfmpegLoaded) {
+                        setTimeout(() => handleCompressVideo(assetId, file), 100);
+                    } else {
+                        updateAsset(assetId, { status: 'error', errorMessage: 'Compression engine is loading. Please wait and re-upload.' });
+                    }
+                } else if (file.size > MAX_PAYLOAD_BYTES_RAW) {
+                     updateAsset(assetId, { status: 'error', errorMessage: `Video is too large (${(file.size / 1024 / 1024).toFixed(1)}MB). Max publish size is ~3.5MB.` });
                 }
             }
         };
 
         if (assetForMediaUpload) {
             const file = files[0];
-            if (file) {
-                processFile(file, assetForMediaUpload);
-            }
+            if (file) processFile(file, assetForMediaUpload);
         } else {
             Array.from(files).forEach(file => processFile(file));
         }
@@ -343,8 +407,8 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
             return;
         };
         
-        if (asset.status === 'error' && asset.errorMessage?.includes('too large')) {
-             updateAsset(assetId, { status: 'error', errorMessage: 'Cannot publish, video file is too large.' });
+        if (asset.status === 'error' && asset.errorMessage?.toLowerCase().includes('too large')) {
+             updateAsset(assetId, { status: 'error', errorMessage: 'Cannot publish, file is too large.' });
             return;
         }
 
@@ -357,9 +421,6 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
         updateAsset(assetId, { status: 'publishing', errorMessage: undefined });
         
         let imageUrlData: string;
-
-        // If the asset came from an edited post, the previewUrl is a data URL (from image)
-        // or a regular URL (from video). We handle data URL.
         if (asset.previewUrl?.startsWith('data:')) {
             imageUrlData = asset.previewUrl;
         } else if (asset.file) {
@@ -367,7 +428,7 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
                 imageUrlData = await toBase64(asset.file);
             } catch (error) {
                 console.error("Error converting file to base64:", error);
-                updateAsset(assetId, { status: 'error', errorMessage: 'Could not read the image file for upload.' });
+                updateAsset(assetId, { status: 'error', errorMessage: 'Could not read the media file for upload.' });
                 return;
             }
         } else {
@@ -532,7 +593,7 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
                 >
                     <svg className="mx-auto h-12 w-12 text-dark-text-secondary" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true"><path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
                     <span className="mt-2 block text-sm font-semibold text-white">Upload Images or Videos</span>
-                    <span className="block text-xs text-dark-text-secondary">Drag and drop or click to select files</span>
+                    <span className="block text-xs text-dark-text-secondary">Images (max 10MB), Videos (max 50MB). Files are optimized before upload.</span>
                     <input ref={fileInputRef} type="file" multiple={!assetForMediaUpload} onChange={handleFileChange} className="sr-only" accept="image/*,video/*" />
                 </div>
 
@@ -578,7 +639,7 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
                     {asset.status === 'compressing' && (
                         <div className="absolute inset-0 bg-dark-card/80 backdrop-blur-sm flex flex-col items-center justify-center z-20 rounded-lg">
                             <LoadingSpinner size="h-10 w-10" />
-                            <p className="mt-4 text-white font-semibold">Compressing video...</p>
+                            <p className="mt-4 text-white font-semibold">Processing media...</p>
                             <p className="text-sm text-dark-text-secondary">This may take a moment.</p>
                         </div>
                     )}
@@ -634,7 +695,7 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
                          </div>
                     </div>
                     <div className="bg-gray-900/50 p-3 flex items-center gap-4">
-                         <button onClick={() => handlePublish(asset.id)} disabled={(!asset.file && !asset.previewUrl?.startsWith('data:')) || (asset.status !== 'idle' && asset.errorMessage?.startsWith('Compressed') === false && asset.errorMessage?.startsWith('This is a copy') === false) || asset.platforms.length === 0} className="w-full flex justify-center items-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 disabled:bg-gray-500 disabled:cursor-not-allowed">
+                         <button onClick={() => handlePublish(asset.id)} disabled={(!asset.file && !asset.previewUrl?.startsWith('data:')) || (asset.status !== 'idle' && asset.errorMessage?.startsWith('Compressed') === false && asset.errorMessage?.startsWith('This is a copy') === false && asset.errorMessage?.startsWith('Optimized') === false) || asset.platforms.length === 0} className="w-full flex justify-center items-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 disabled:bg-gray-500 disabled:cursor-not-allowed">
                             {asset.status === 'publishing' ? <LoadingSpinner /> : (asset.status === 'published' ? 'Published!' : 'Publish Asset')}
                          </button>
                          <button onClick={() => setAssets(p => p.filter(a => a.id !== asset.id))} className="text-red-400 hover:text-red-300 text-sm font-medium p-2" aria-label="Remove asset">
