@@ -156,7 +156,7 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
                 });
                 
                 // CRITICAL FIX: Load from self-hosted files to prevent CORS issues.
-                const baseURL = '/ffmpeg';
+                const baseURL = '/ffmpeg/wasm';
                 await ffmpeg.load({
                     coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
                     wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
