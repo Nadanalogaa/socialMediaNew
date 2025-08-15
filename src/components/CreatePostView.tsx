@@ -197,26 +197,39 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
             try {
                 const { FFmpeg } = await import('@ffmpeg/ffmpeg');
                 const { toBlobURL } = await import('@ffmpeg/util');
-
                 const ffmpeg = new FFmpeg();
-                
-                ffmpeg.on('log', ({ message }) => {
-                    console.log('[FFMPEG]:', message);
-                });
-                
-                const baseURL = 'https://unpkg.com/@ffmpeg/core-st@0.12.6/dist/umd';
-                await ffmpeg.load({
-                    coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
-                    wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
-                });
-                
-                ffmpegRef.current = ffmpeg;
-                setIsFfmpegLoaded(true);
-                console.log('FFmpeg-ST (single-threaded) loaded successfully from CDN.');
+                ffmpeg.on('log', ({ message }) => console.log('[FFMPEG]:', message));
+    
+                const cdnUrls = [
+                    'https://cdn.jsdelivr.net/npm/@ffmpeg/core-st@0.12.6/dist/umd',
+                    'https://unpkg.com/@ffmpeg/core-st@0.12.6/dist/umd'
+                ];
+    
+                let loaded = false;
+                for (const baseURL of cdnUrls) {
+                    try {
+                        console.log(`Attempting to load FFmpeg from ${baseURL}...`);
+                        await ffmpeg.load({
+                            coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
+                            wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
+                        });
+                        ffmpegRef.current = ffmpeg;
+                        setIsFfmpegLoaded(true);
+                        loaded = true;
+                        console.log(`FFmpeg loaded successfully from ${baseURL}.`);
+                        break; // Exit loop on success
+                    } catch (err) {
+                        console.warn(`Failed to load FFmpeg from ${baseURL}:`, err);
+                    }
+                }
+    
+                if (!loaded) {
+                    throw new Error("Failed to load FFmpeg from all available CDNs.");
+                }
             } catch (err) {
                 console.error("Failed to load FFmpeg", err);
                 const errorMessage = err instanceof Error ? err.message : String(err);
-                setFfmpegError(`Critical Error: The video compression engine failed to load. This can be due to network issues or browser security restrictions. Please refresh the page. If the problem persists, video uploads may not work correctly. Details: ${errorMessage}`);
+                setFfmpegError(`Warning: The video compression engine failed to load. This can be due to network issues or browser restrictions. Video compression is unavailable, but you can still upload videos under 3.5MB. Details: ${errorMessage}`);
             }
         };
         loadFfmpeg();
@@ -352,7 +365,8 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
                         updateAsset(assetId, { ...commonAssetData, status: 'compressing', errorMessage: 'Video requires compression...' });
                         setTimeout(() => handleCompressVideo(assetId, file), 100);
                     } else {
-                        updateAsset(assetId, { ...commonAssetData, status: 'error', errorMessage: 'Video too large & compression engine not ready. Please refresh.' });
+                         const errorMessage = `Video is too large (${(file.size / 1024 / 1024).toFixed(1)}MB). The compression engine failed to load, so it cannot be automatically compressed. Please use a video under 3.5MB.`;
+                        updateAsset(assetId, { ...commonAssetData, status: 'error', errorMessage });
                     }
                 }
             }
@@ -548,7 +562,7 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
             </div>
 
             {ffmpegError && (
-                <div className="bg-red-900/50 border border-red-700 text-red-300 px-4 py-3 rounded-lg" role="alert">
+                <div className="bg-yellow-900/50 border border-yellow-700 text-yellow-300 px-4 py-3 rounded-lg" role="alert">
                     <p>{ffmpegError}</p>
                 </div>
             )}
