@@ -442,22 +442,23 @@ app.post('/api/publish-post', async (req, res) => {
                 // 1. Create Media Container
                 const createContainerUrl = `https://graph.facebook.com/v23.0/${instagram.igUserId}/media`;
                 
-                // --- REFACTORED LOGIC ---
-                // Use a more robust if/else if to build params, preventing accidental mismatches.
-                const createContainerParams = new URLSearchParams({
+                // --- SAFER PARAMETER CONSTRUCTION ---
+                // Build a plain JS object first to ensure no conflicting parameters are ever sent.
+                let paramsObject = {
                     caption: igCaption,
                     access_token: facebook.pageAccessToken,
-                });
+                };
 
                 if (isImage) {
-                    console.log('[REAL IG] Appending image_url for IG container.');
-                    createContainerParams.append('image_url', mediaUrlForIg);
+                    paramsObject.image_url = mediaUrlForIg;
                 } else if (isVideo) {
-                    console.log('[REAL IG] Appending video_url and media_type for IG container.');
-                    createContainerParams.append('media_type', 'VIDEO');
-                    createContainerParams.append('video_url', mediaUrlForIg);
+                    paramsObject.media_type = 'VIDEO';
+                    paramsObject.video_url = mediaUrlForIg;
                 }
-                // --- END REFACTORED LOGIC ---
+                
+                console.log('[REAL IG] Creating container with parameters:', Object.keys(paramsObject).join(', '));
+                const createContainerParams = new URLSearchParams(paramsObject);
+                // --- END SAFER CONSTRUCTION ---
 
                 const containerResponse = await fetch(createContainerUrl, { method: 'POST', body: createContainerParams });
                 const containerData = await containerResponse.json();
