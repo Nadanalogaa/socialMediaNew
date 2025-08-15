@@ -1,8 +1,4 @@
 
-
-
-
-
 import express from 'express';
 import 'dotenv/config';
 import { GoogleGenAI, Type } from '@google/genai';
@@ -427,11 +423,11 @@ app.post('/api/publish-post', async (req, res) => {
                 failedToPublish.push({ platform, reason: 'Connection details not provided.' });
                 continue;
              }
+             let mediaUrlForIg; // Declared here to be available in the catch block
              try {
                 console.log(`[REAL IG] Publishing to Instagram account: ${instagram.username}`);
                 const igCaption = (generatedContent.instagram || generatedContent.description || '') + '\n\n' + (generatedContent.hashtags || []).map(h => `#${h}`).join(' ');
 
-                let mediaUrlForIg;
                 if (isImage) {
                     if (!facebookPhotoUrl) {
                         throw new Error('To post an image to Instagram, you must also select Facebook. The Instagram post uses the photo from the Facebook post.');
@@ -445,17 +441,23 @@ app.post('/api/publish-post', async (req, res) => {
                 
                 // 1. Create Media Container
                 const createContainerUrl = `https://graph.facebook.com/v23.0/${instagram.igUserId}/media`;
+                
+                // --- REFACTORED LOGIC ---
+                // Use a more robust if/else if to build params, preventing accidental mismatches.
                 const createContainerParams = new URLSearchParams({
                     caption: igCaption,
-                    access_token: facebook.pageAccessToken
+                    access_token: facebook.pageAccessToken,
                 });
 
                 if (isImage) {
+                    console.log('[REAL IG] Appending image_url for IG container.');
                     createContainerParams.append('image_url', mediaUrlForIg);
-                } else { // isVideo
+                } else if (isVideo) {
+                    console.log('[REAL IG] Appending video_url and media_type for IG container.');
                     createContainerParams.append('media_type', 'VIDEO');
                     createContainerParams.append('video_url', mediaUrlForIg);
                 }
+                // --- END REFACTORED LOGIC ---
 
                 const containerResponse = await fetch(createContainerUrl, { method: 'POST', body: createContainerParams });
                 const containerData = await containerResponse.json();
@@ -496,7 +498,14 @@ app.post('/api/publish-post', async (req, res) => {
                 console.log('[REAL IG] Successfully posted to Instagram. Media ID:', publishData.id);
                 publishedTo.push(platform);
             } catch (error) {
-                console.error('[REAL IG] Failed to publish to Instagram:', error);
+                 // --- IMPROVED LOGGING ---
+                console.error('[REAL IG] Failed to publish to Instagram. Details:', {
+                    errorMessage: error.message,
+                    username: instagram.username,
+                    isImage,
+                    isVideo,
+                    errorStack: error.stack
+                });
                 failedToPublish.push({ platform, reason: error.message });
             }
         } else if (platform === 'YouTube') { // Mock logic for YouTube

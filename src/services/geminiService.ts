@@ -1,18 +1,26 @@
 
-
-
-
 import type { Platform, SeoSuggestions, Post, ConnectionStatus, GeneratedAssetContent, GeneratedPostIdea, ConnectionDetails } from '../types';
 
 const handleResponse = async (response: Response) => {
     if (!response.ok) {
-        let errorMessage = `HTTP error! status: ${response.status}`;
+        let errorMessage = `Request failed with status: ${response.status}`;
         try {
             const errorBody = await response.json();
-            errorMessage = errorBody.message || errorMessage;
+            errorMessage = errorBody.message || JSON.stringify(errorBody);
         } catch (e) {
-            // Ignore if the response is not JSON
+            try {
+                const textBody = await response.text();
+                if (textBody && textBody.length < 500) {
+                    errorMessage = textBody;
+                } else {
+                    console.error("Long non-JSON error response from server:", textBody);
+                    errorMessage = `Server returned a non-JSON error (status ${response.status}). Check console for details.`;
+                }
+            } catch (textErr) {
+                // Fallback if we can't even read the text body
+            }
         }
+        console.error("API Error:", errorMessage);
         throw new Error(errorMessage);
     }
     return response.json();
