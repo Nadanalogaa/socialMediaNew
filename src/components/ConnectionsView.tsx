@@ -24,43 +24,46 @@ const platformConfig = {
 
 const FacebookTroubleshooter: React.FC = () => (
     <div className="mt-8 p-6 bg-blue-900/30 rounded-lg border border-blue-600 text-sm text-blue-100 animate-fade-in">
-        <h3 className="font-bold text-lg text-white mb-3">Facebook & Instagram Connection Troubleshooter</h3>
+        <h3 className="font-bold text-lg text-white mb-3">Facebook & Instagram Connection Guide</h3>
         <p className="mb-4">
-            An "Invalid Scopes" error or connection failure often indicates a misconfiguration in your Facebook Developer account. Please carefully check the following settings for your app.
+            Connection issues are almost always caused by settings in your Facebook Developer account. Please carefully verify the following checklist.
         </p>
+
+        <div className="space-y-4 bg-dark-bg p-4 rounded-md mb-6 border border-blue-500">
+             <h4 className="font-bold text-md text-white">Required Permissions Checklist</h4>
+             <p className="text-xs text-blue-200 mb-3">
+                The screenshot you provided shows <strong className="text-white">messaging</strong> permissions. For this app to publish content, it needs <strong className="text-white">publishing</strong> permissions. Please go to your Facebook App's "App Review → Permissions and Features" page and search for the following:
+             </p>
+             <ul className="list-disc list-inside space-y-2 text-blue-200">
+                <li><strong className="text-white">`instagram_content_publish`</strong>: This is the most important one. It allows the app to post to your Instagram account.</li>
+                <li><strong className="text-white">`pages_manage_posts`</strong>: Allows the app to post to your connected Facebook Page.</li>
+                <li><strong className="text-white">`instagram_basic`</strong> & <strong className="text-white">`pages_show_list`</strong>: Allows the app to find your accounts.</li>
+                <li><strong className="text-white">`pages_read_engagement`</strong>: Allows the app to fetch likes and comments for your posts.</li>
+             </ul>
+        </div>
+
+
+        <h4 className="font-bold text-md text-white mb-3">Detailed Troubleshooting Steps</h4>
         <ol className="list-decimal list-inside space-y-4">
             <li>
-                <strong>Check Allowed Domains:</strong>
+                <strong>Verify App Type is 'Business':</strong>
                 <ul className="list-disc list-inside pl-5 mt-2 space-y-1 text-blue-200">
-                    <li>Go to your Facebook App Dashboard at <a href="https://developers.facebook.com/apps/" target="_blank" rel="noopener noreferrer" className="underline hover:text-white">developers.facebook.com/apps/</a>.</li>
-                    <li>Navigate to <strong>Settings → Basic</strong>.</li>
-                    <li>In the <strong>App Domains</strong> field, make sure your app's domain is listed (e.g., <code className="bg-dark-bg px-1 py-0.5 rounded text-white">social-media-new-omega.vercel.app</code>).</li>
-                    <li>Navigate to <strong>Facebook Login → Settings</strong> (under "Products" in the left sidebar).</li>
-                    <li>In <strong>Allowed Domains for the JavaScript SDK</strong>, ensure your full app URL is listed (e.g., <code className="bg-dark-bg px-1 py-0.5 rounded text-white">https://social-media-new-omega.vercel.app</code>). Note the required <strong>https://</strong> prefix.</li>
+                    <li>Go to your Facebook App Dashboard → <strong>Settings → Basic</strong>.</li>
+                    <li>The <strong>App Type</strong> must be set to "Business". Other types may not support the required permissions.</li>
                 </ul>
             </li>
             <li>
-                <strong>Verify Permissions & App Type:</strong>
+                <strong>Check App Mode ('In Development' vs 'Live'):</strong>
                  <ul className="list-disc list-inside pl-5 mt-2 space-y-1 text-blue-200">
-                    <li>Ensure your app is of type <strong>Business</strong>. You can check this under <strong>App Settings → Basic → App Type</strong>. Other types may not support page management permissions.</li>
-                    <li>This app requests these permissions: <code className="bg-dark-bg px-1 py-0.5 rounded text-white">pages_show_list</code>, <code className="bg-dark-bg px-1 py-0.5 rounded text-white">pages_manage_posts</code>, <code className="bg-dark-bg px-1 py-0.5 rounded text-white">pages_read_engagement</code>, <code className="bg-dark-bg px-1 py-0.5 rounded text-white">instagram_basic</code>, and <code className="bg-dark-bg px-1 py-0.5 rounded text-white">instagram_content_publish</code>.</li>
-                    <li>Go to <strong>App Review → Permissions and Features</strong>. Search for these permissions. They should be available to your app. For an app "In Development", your account (as an Admin/Developer/Tester) should be able to grant them without a formal review.</li>
+                    <li>If your app is <strong>'In Development'</strong> (check the toggle at the top of the dashboard), only users listed under the <strong>'Roles'</strong> section (Admins, Developers, Testers) can connect. Ensure your Facebook account has one of these roles.</li>
+                    <li>If your app is <strong>'Live'</strong>, the permissions listed above require 'Advanced Access', which must be granted through Facebook's formal App Review process. For testing, keeping the app 'In Development' is easier.</li>
                  </ul>
             </li>
-            <li>
-                <strong>Check App Mode:</strong>
-                 <ul className="list-disc list-inside pl-5 mt-2 space-y-1 text-blue-200">
-                    <li>At the top of your App Dashboard, check the app's status toggle.</li>
-                    <li>If it shows <strong>In Development</strong>, only App Admins, Developers, or Testers can connect. Ensure your Facebook account has one of these roles under the <strong>Roles → Roles</strong> section.</li>
-                    <li>If it shows <strong>Live</strong>, the permissions mentioned above will require "Advanced Access", which must be granted through Facebook's App Review process.</li>
-                </ul>
-            </li>
              <li>
-                <strong>Examine Browser Console for Clues:</strong>
+                <strong>Check Allowed Domains for SDK:</strong>
                  <ul className="list-disc list-inside pl-5 mt-2 space-y-1 text-blue-200">
-                    <li>Open your browser's developer console (usually with the F12 key).</li>
-                    <li>Click "Connect" again and watch the console for messages.</li>
-                    <li>The console will log the full response from Facebook, which may contain a specific error like "URL Blocked" or details about the permission failure.</li>
+                    <li>Go to <strong>Facebook Login → Settings</strong> (under "Products" in the left sidebar).</li>
+                    <li>In <strong>Allowed Domains for the JavaScript SDK</strong>, ensure your full app URL is listed. It must start with `https://`.</li>
                 </ul>
             </li>
         </ol>
@@ -71,7 +74,6 @@ const FacebookTroubleshooter: React.FC = () => (
 export const ConnectionsView: React.FC<ConnectionsViewProps> = ({ connections, setConnections, setConnectionDetails, isFbSdkInitialized }) => {
     const [loadingPlatform, setLoadingPlatform] = useState<Platform | null>(null);
     const [error, setError] = useState<string | null>(null);
-    const [showFbTroubleshooter, setShowFbTroubleshooter] = useState(false);
     const popupRef = useRef<Window | null>(null);
     const intervalRef = useRef<number | null>(null);
 
@@ -123,13 +125,11 @@ export const ConnectionsView: React.FC<ConnectionsViewProps> = ({ connections, s
             // --- REAL Facebook & Instagram Login using SDK ---
             if (!isFbSdkInitialized || !window.FB) {
                 setError('Facebook integration is not available. Please ensure the VITE_FACEBOOK_APP_ID is correctly configured in your environment variables.');
-                setShowFbTroubleshooter(true);
                 return;
             }
     
             setLoadingPlatform(platform);
             setError(null);
-            setShowFbTroubleshooter(false);
     
             function loginCallback(response: any) {
                 console.log('FB.login callback triggered. Full response:', response);
@@ -146,13 +146,11 @@ export const ConnectionsView: React.FC<ConnectionsViewProps> = ({ connections, s
                                 setConnections(result.connections);
                                 setConnectionDetails(result.details)
                                 setError(null);
-                                setShowFbTroubleshooter(false);
                             })
                             .catch((err: unknown) => {
                                  const message = err instanceof Error ? err.message : String(err);
                                  console.error(`Backend connection failed after successful FB login:`, err);
                                  setError(`Facebook login was successful, but the backend couldn't connect to the page or Instagram account. Error: ${message}. Please ensure you are an admin of the target page and its linked IG account.`);
-                                 setShowFbTroubleshooter(true);
                             })
                             .finally(() => {
                                 setLoadingPlatform(null);
@@ -160,7 +158,6 @@ export const ConnectionsView: React.FC<ConnectionsViewProps> = ({ connections, s
                     } else {
                         console.error('Facebook login status is "connected" but no authResponse was found.', response);
                         setError('Facebook login returned an inconsistent state. Please try again.');
-                        setShowFbTroubleshooter(true);
                         setLoadingPlatform(null);
                     }
                 } else {
@@ -171,8 +168,7 @@ export const ConnectionsView: React.FC<ConnectionsViewProps> = ({ connections, s
                     } else if (response.status) {
                         failureReason = `Facebook status: ${response.status}. The login could not be completed.`;
                     }
-                    setError(`Facebook login failed. Reason: ${failureReason} Please see the troubleshooter below for likely solutions.`);
-                    setShowFbTroubleshooter(true);
+                    setError(`Facebook login failed. Reason: ${failureReason} Please see the guide below for likely solutions.`);
                     setLoadingPlatform(null);
                 }
             }
@@ -189,7 +185,6 @@ export const ConnectionsView: React.FC<ConnectionsViewProps> = ({ connections, s
         } else {
             // --- MOCK OAuth Flow for other platforms (YouTube) ---
             setError(null);
-            setShowFbTroubleshooter(false);
             setLoadingPlatform(platform);
     
             const width = 600;
@@ -218,7 +213,6 @@ export const ConnectionsView: React.FC<ConnectionsViewProps> = ({ connections, s
     const handleDisconnect = async (platform: Platform) => {
         setLoadingPlatform(platform);
         setError(null);
-        setShowFbTroubleshooter(false);
         try {
             if ((platform === PlatformEnum.Facebook || platform === PlatformEnum.Instagram) && isFbSdkInitialized && window.FB) {
                 console.log("Forcing logout from Facebook app permissions to ensure a clean session...");
@@ -320,30 +314,8 @@ export const ConnectionsView: React.FC<ConnectionsViewProps> = ({ connections, s
                 </ul>
             </div>
 
-            {showFbTroubleshooter ? (
-                <FacebookTroubleshooter />
-            ) : (
-                <div className="mt-8 p-6 bg-dark-bg/50 rounded-lg border border-dark-border text-sm text-dark-text-secondary">
-                    <h3 className="font-bold text-dark-text mb-2">Connecting to Facebook & Instagram</h3>
-                    <p className="mb-3">
-                        This application uses the official Facebook SDK to connect to the <strong className="text-white">"Nadanaloga-chennai"</strong> Facebook page and its linked <strong className="text-white">"nadanaloga_chennai"</strong> Instagram account.
-                    </p>
-                    <ol className="list-decimal list-inside space-y-2 text-xs">
-                        <li>
-                            <strong>Click Connect:</strong> Use the "Connect" button for Facebook or Instagram. A popup will ask you to log in and authorize the connection.
-                        </li>
-                        <li>
-                            <strong>Grant Permissions:</strong> The application will request permissions to manage your pages and Instagram content. You must approve these to continue.
-                        </li>
-                        <li>
-                            <strong>Automatic Detection:</strong> The backend will automatically look for the correct page and linked Instagram account.
-                        </li>
-                        <li>
-                            <strong>Troubleshooting:</strong> If the connection fails, the troubleshooter guide will appear above with detailed steps to resolve common issues.
-                        </li>
-                    </ol>
-                </div>
-            )}
+            {(!connections.Facebook || error) && <FacebookTroubleshooter />}
+
         </div>
     );
 };
