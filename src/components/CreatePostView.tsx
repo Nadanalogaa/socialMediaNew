@@ -204,7 +204,7 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
                     console.log('[FFMPEG]:', message);
                 });
                 
-                const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd';
+                const baseURL = 'https://unpkg.com/@ffmpeg/core-st@0.12.6/dist/umd';
                 await ffmpeg.load({
                     coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
                     wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
@@ -212,11 +212,11 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
                 
                 ffmpegRef.current = ffmpeg;
                 setIsFfmpegLoaded(true);
-                console.log('FFmpeg loaded successfully from CDN.');
+                console.log('FFmpeg-ST (single-threaded) loaded successfully from CDN.');
             } catch (err) {
                 console.error("Failed to load FFmpeg", err);
                 const errorMessage = err instanceof Error ? err.message : String(err);
-                setFfmpegError(`Critical Error: The video compression engine failed to load. Please refresh the page. If the problem persists, video uploads may not work correctly. Details: ${errorMessage}`);
+                setFfmpegError(`Critical Error: The video compression engine failed to load. This can be due to network issues or browser security restrictions. Please refresh the page. If the problem persists, video uploads may not work correctly. Details: ${errorMessage}`);
             }
         };
         loadFfmpeg();
