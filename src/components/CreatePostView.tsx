@@ -1,4 +1,3 @@
-
 /// <reference lib="dom" />
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
@@ -374,6 +373,11 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
         const unconnected = asset.platforms.filter(p => !connections[p]);
         if (unconnected.length > 0) {
             updateAsset(assetId, { status: 'error', errorMessage: `Please connect ${unconnected.join(', ')} first.`});
+            return;
+        }
+
+        if (!asset.prompt || asset.prompt.trim() === '') {
+            updateAsset(assetId, { status: 'error', errorMessage: 'A prompt is required to identify the post in your history. Please enter a brief description of the media.' });
             return;
         }
 
