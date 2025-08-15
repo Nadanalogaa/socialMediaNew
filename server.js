@@ -475,28 +475,39 @@
                     }
                     
                     // 1. Create Media Container
-                    const createContainerUrl = `https://graph.facebook.com/v23.0/${instagram.igUserId}/media`;
-                    
-                    let paramsObject = {
-                        caption: igCaption,
-                        access_token: facebook.pageAccessToken,
-                    };
+                    let containerRequestUrl;
+                    let containerRequestParamsBody;
 
                     if (isImage) {
-                        paramsObject.image_url = mediaUrlForIg;
-                    } else if (isVideo) {
-                        paramsObject.media_type = 'VIDEO';
-                        paramsObject.video_url = mediaUrlForIg;
-                    }
+                        containerRequestUrl = `https://graph.facebook.com/v23.0/${instagram.igUserId}/media`;
+                        containerRequestParamsBody = new URLSearchParams({
+                            caption: igCaption,
+                            access_token: facebook.pageAccessToken,
+                            image_url: mediaUrlForIg,
+                        });
+                    } else { // isVideo is the only other option here
+                        // For videos, media_type and video_url MUST be query parameters according to API docs.
+                        const videoUrlParams = new URLSearchParams({
+                            media_type: 'VIDEO',
+                            video_url: mediaUrlForIg
+                        });
+                        containerRequestUrl = `https://graph.facebook.com/v23.0/${instagram.igUserId}/media?${videoUrlParams.toString()}`;
                     
-                    const loggedParams = { ...paramsObject };
-                    delete loggedParams.access_token; // Don't log the token
-                    console.log('[REAL IG] Creating container with URL:', createContainerUrl);
-                    console.log('[REAL IG] Creating container with parameters:', JSON.stringify(loggedParams, null, 2));
+                        // Caption and token go in the body
+                        containerRequestParamsBody = new URLSearchParams({
+                            caption: igCaption,
+                            access_token: facebook.pageAccessToken,
+                        });
+                    }
 
-                    const createContainerParams = new URLSearchParams(paramsObject);
+                    const loggedBodyParams = {};
+                    containerRequestParamsBody.forEach((value, key) => {
+                        if (key !== 'access_token') loggedBodyParams[key] = value;
+                    });
+                    console.log('[REAL IG] Creating container with URL:', containerRequestUrl);
+                    console.log('[REAL IG] Creating container with body parameters:', JSON.stringify(loggedBodyParams, null, 2));
 
-                    const containerResponse = await fetch(createContainerUrl, { method: 'POST', body: createContainerParams });
+                    const containerResponse = await fetch(containerRequestUrl, { method: 'POST', body: containerRequestParamsBody });
                     const containerData = await containerResponse.json();
                     if (containerData.error) throw new Error(`IG container creation failed: ${containerData.error.message}`);
                     const creationId = containerData.id;
