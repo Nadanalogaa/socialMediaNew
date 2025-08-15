@@ -428,12 +428,33 @@
                 let mediaUrlForIg;
                 try {
                     console.log(`[REAL IG] Publishing to Instagram account: ${instagram.username}`);
-                    const igCaption = (generatedContent.instagram || generatedContent.description || '') + '\n\n' + (generatedContent.hashtags || []).map(h => `#${h}`).join(' ');
+                    
+                    let baseCaption = (generatedContent.instagram || generatedContent.description || '');
+                    const hashtags = (generatedContent.hashtags || []).map(h => `#${h}`).join(' ');
+                    let fullCaption = `${baseCaption}\n\n${hashtags}`.trim();
+
+                    // Enforce Instagram's 2200 character limit
+                    if (fullCaption.length > 2200) {
+                        console.warn(`[REAL IG] Caption is too long (${fullCaption.length} chars). Truncating.`);
+                        const maxBaseCaptionLength = 2200 - hashtags.length - 5; // -5 for newline and ellipsis
+                        if (maxBaseCaptionLength > 0) {
+                            baseCaption = baseCaption.substring(0, maxBaseCaptionLength) + '...';
+                            fullCaption = `${baseCaption}\n\n${hashtags}`.trim();
+                        } else {
+                            // This case is unlikely, but handles if hashtags alone are too long
+                            fullCaption = hashtags.substring(0, 2197) + '...';
+                        }
+                        console.log(`[REAL IG] Truncated caption length: ${fullCaption.length}`);
+                    }
+                    const igCaption = fullCaption;
+
 
                     if (isImage) {
                         if (!facebookPhotoUrl) {
                             throw new Error('To post an image to Instagram, you must also select Facebook. The Instagram post uses the photo from the Facebook post.');
                         }
+                        console.log('[REAL IG] Waiting 2 seconds for Facebook photo URL to propagate...');
+                        await new Promise(resolve => setTimeout(resolve, 2000));
                         mediaUrlForIg = facebookPhotoUrl;
                     } else if (isVideo) {
                         mediaUrlForIg = imageUrl; // Use Cloudinary URL directly
@@ -468,7 +489,11 @@
                         paramsObject.video_url = mediaUrlForIg;
                     }
                     
-                    console.log('[REAL IG] Creating container with parameters:', Object.keys(paramsObject).join(', '));
+                    const loggedParams = { ...paramsObject };
+                    delete loggedParams.access_token; // Don't log the token
+                    console.log('[REAL IG] Creating container with URL:', createContainerUrl);
+                    console.log('[REAL IG] Creating container with parameters:', JSON.stringify(loggedParams, null, 2));
+
                     const createContainerParams = new URLSearchParams(paramsObject);
 
                     const containerResponse = await fetch(createContainerUrl, { method: 'POST', body: createContainerParams });
@@ -697,7 +722,6 @@
 
             console.log(`[REAL DELETE] Successfully deleted post: ${postId}`);
             res.json({ success: true });
-    x
         } catch (error) {
             console.error('[REAL DELETE] Failed to delete post:', error);
             res.status(500).json({ message: `Failed to delete post: ${error.message}` });
