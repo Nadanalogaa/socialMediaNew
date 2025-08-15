@@ -79,7 +79,7 @@ interface CreatePostViewProps {
 }
 
 const LoadingSpinner: React.FC<{ size?: string }> = ({ size = 'h-5 w-5' }) => (
-    <svg className={`animate-spin ${size} text-white`} xmlns="http://www.w.org/2000/svg" fill="none" viewBox="0 0 24 24">
+    <svg className={`animate-spin ${size} text-white`} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
     </svg>
@@ -119,7 +119,8 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
                 const storedAssets = await getDraftsFromDB();
                 if (storedAssets && storedAssets.length > 0) {
                     const assetsWithPreviews = storedAssets.map(asset => {
-                        if (asset.file) {
+                        // Re-create blob URLs for files that were persisted
+                        if (asset.file && !asset.previewUrl) {
                             return { ...asset, previewUrl: URL.createObjectURL(asset.file) };
                         }
                         return asset;
@@ -145,8 +146,9 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
     
     // Memory management: Cleanup blob URLs to prevent leaks
     useEffect(() => {
+        const currentAssets = assets;
         return () => {
-            assets.forEach(asset => {
+            currentAssets.forEach(asset => {
                 if (asset.previewUrl && asset.previewUrl.startsWith('blob:')) {
                     URL.revokeObjectURL(asset.previewUrl);
                 }
@@ -213,7 +215,8 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
                 console.log('FFmpeg loaded successfully from CDN.');
             } catch (err) {
                 console.error("Failed to load FFmpeg", err);
-                setFfmpegError('The video compression engine failed to load. Please refresh the page. If the problem persists, video uploads may not work correctly.');
+                const errorMessage = err instanceof Error ? err.message : String(err);
+                setFfmpegError(`Critical Error: The video compression engine failed to load. Please refresh the page. If the problem persists, video uploads may not work correctly. Details: ${errorMessage}`);
             }
         };
         loadFfmpeg();
@@ -221,7 +224,16 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
 
 
     const updateAsset = useCallback((id: string, updates: Partial<MediaAsset>) => {
-        setAssets(prev => prev.map(a => a.id === id ? { ...a, ...updates } : a));
+        setAssets(prev => prev.map(a => {
+            if (a.id === id) {
+                // If we're updating the file, revoke the old blob URL to prevent memory leaks
+                if (updates.previewUrl && a.previewUrl && a.previewUrl.startsWith('blob:')) {
+                    URL.revokeObjectURL(a.previewUrl);
+                }
+                return { ...a, ...updates };
+            }
+            return a;
+        }));
     }, []);
 
     const handleCompressVideo = async (assetId: string, file: File) => {
@@ -231,15 +243,13 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
             return;
         }
 
-        updateAsset(assetId, { status: 'compressing', errorMessage: undefined });
-
         try {
             const { fetchFile } = await import('@ffmpeg/util');
             const inputFileName = `input_${file.name}`;
             const outputFileName = 'output.mp4';
 
             await ffmpeg.writeFile(inputFileName, await fetchFile(file));
-            await ffmpeg.exec(['-i', inputFileName, '-vf', 'scale=iw/2:-2', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '28', outputFileName]);
+            await ffmpeg.exec(['-i', inputFileName, '-vcodec', 'libx264', '-crf', '28', '-preset', 'veryfast', outputFileName]);
 
             const data = await ffmpeg.readFile(outputFileName);
             const compressedFileBlob = new Blob([data], { type: 'video/mp4' });
@@ -254,7 +264,7 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
                     file: compressedFile,
                     previewUrl: URL.createObjectURL(compressedFile),
                     status: 'error',
-                    errorMessage: `Video too large (${(compressedFile.size / 1024 / 1024).toFixed(1)}MB). Max size is ~3.5MB. Please use a shorter video.`
+                    errorMessage: `Video still too large after compression (${(compressedFile.size / 1024 / 1024).toFixed(1)}MB). Max size is ~3.5MB. Please use a shorter video.`
                 });
                 return;
             }
@@ -287,8 +297,7 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
 
         const MAX_IMAGE_SIZE_MB = 10;
         const MAX_VIDEO_SIZE_MB = 50;
-        const TARGET_VIDEO_COMPRESSION_MB = 15;
-        const MAX_PAYLOAD_BYTES_RAW = 3.5 * 1024 * 1024;
+        const MAX_PAYLOAD_SIZE_BYTES = 3.5 * 1024 * 1024; // Vercel's limit
         
         const processFile = (file: File, existingAssetId?: string) => {
             const assetId = existingAssetId || `asset_${Date.now()}_${Math.random()}`;
@@ -323,32 +332,28 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
                 }, ...prev]);
             }
             
-            const handleProcessedFile = (processedFile: File, originalFile: File) => {
-                updateAsset(assetId, {
-                    file: processedFile, previewUrl: URL.createObjectURL(processedFile), status: 'idle',
-                    errorMessage: `Optimized from ${(originalFile.size / 1024 / 1024).toFixed(1)}MB to ${(processedFile.size / 1024 / 1024).toFixed(1)}MB`,
-                });
-                setTimeout(() => setAssets(curr => curr.map(a => a.id === assetId && a.errorMessage?.startsWith('Optimized') ? { ...a, errorMessage: undefined } : a)), 5000);
-            };
-
             if (isImage) {
                 updateAsset(assetId, { status: 'compressing', errorMessage: 'Optimizing image...' });
                 compressImage(file, { maxSizeMB: 2, maxWidth: 1920, quality: 0.85 })
-                    .then(compressedFile => handleProcessedFile(compressedFile, file))
+                    .then(compressedFile => {
+                        updateAsset(assetId, {
+                            file: compressedFile, previewUrl: URL.createObjectURL(compressedFile), status: 'idle',
+                            errorMessage: `Optimized from ${(file.size / 1024 / 1024).toFixed(1)}MB to ${(compressedFile.size / 1024 / 1024).toFixed(1)}MB`,
+                        });
+                        setTimeout(() => setAssets(curr => curr.map(a => a.id === assetId && a.errorMessage?.startsWith('Optimized') ? { ...a, errorMessage: undefined } : a)), 5000);
+                    })
                     .catch(err => {
                         console.error('Image compression failed:', err);
                         updateAsset(assetId, { status: 'error', errorMessage: 'Image optimization failed.' });
                     });
             } else if (isVideo) {
-                const needsCompression = file.size > TARGET_VIDEO_COMPRESSION_MB * 1024 * 1024;
-                if (needsCompression) {
+                 if (file.size > MAX_PAYLOAD_SIZE_BYTES) {
                     if (isFfmpegLoaded) {
+                        updateAsset(assetId, { ...commonAssetData, status: 'compressing', errorMessage: 'Video requires compression...' });
                         setTimeout(() => handleCompressVideo(assetId, file), 100);
                     } else {
-                        updateAsset(assetId, { status: 'error', errorMessage: 'Compression engine is loading. Please wait and re-upload.' });
+                        updateAsset(assetId, { ...commonAssetData, status: 'error', errorMessage: 'Video too large & compression engine not ready. Please refresh.' });
                     }
-                } else if (file.size > MAX_PAYLOAD_BYTES_RAW) {
-                     updateAsset(assetId, { status: 'error', errorMessage: `Video is too large (${(file.size / 1024 / 1024).toFixed(1)}MB). Max publish size is ~3.5MB.` });
                 }
             }
         };
@@ -402,13 +407,13 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
 
     const handlePublish = async (assetId: string) => {
         const asset = assets.find(a => a.id === assetId);
-        if (!asset || (!asset.file && !asset.previewUrl?.startsWith('data:'))) {
-            updateAsset(assetId, { status: 'error', errorMessage: 'Please add an image or video before publishing.' });
+        if (!asset || !asset.file) {
+            updateAsset(assetId, { status: 'error', errorMessage: 'Please add a media file before publishing.' });
             return;
         };
         
-        if (asset.status === 'error' && asset.errorMessage?.toLowerCase().includes('too large')) {
-             updateAsset(assetId, { status: 'error', errorMessage: 'Cannot publish, file is too large.' });
+        if (asset.status === 'error') {
+            updateAsset(assetId, { status: 'error', errorMessage: 'Cannot publish, please resolve the error first.' });
             return;
         }
 
@@ -421,19 +426,12 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
         updateAsset(assetId, { status: 'publishing', errorMessage: undefined });
         
         let imageUrlData: string;
-        if (asset.previewUrl?.startsWith('data:')) {
-            imageUrlData = asset.previewUrl;
-        } else if (asset.file) {
-            try {
-                imageUrlData = await toBase64(asset.file);
-            } catch (error) {
-                console.error("Error converting file to base64:", error);
-                updateAsset(assetId, { status: 'error', errorMessage: 'Could not read the media file for upload.' });
-                return;
-            }
-        } else {
-             updateAsset(assetId, { status: 'error', errorMessage: 'Media is missing.' });
-             return;
+        try {
+            imageUrlData = await toBase64(asset.file);
+        } catch (error) {
+            console.error("Error converting file to base64:", error);
+            updateAsset(assetId, { status: 'error', errorMessage: 'Could not read the media file for upload.' });
+            return;
         }
 
         const postToCreate: Omit<Post, 'id' | 'engagement' | 'postedAt'> = {
@@ -485,7 +483,7 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
                 currentPlatforms.add(PlatformEnum.Facebook);
             }
         }
-        updateAsset(assetId, { platforms: Array.from(currentPlatforms), status: 'idle' });
+        updateAsset(assetId, { platforms: Array.from(currentPlatforms), status: 'idle', errorMessage: undefined });
     };
 
     const handleToggleSelect = (assetId: string) => {
@@ -551,7 +549,6 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
 
             {ffmpegError && (
                 <div className="bg-red-900/50 border border-red-700 text-red-300 px-4 py-3 rounded-lg" role="alert">
-                    <h3 className="font-bold">Critical Error</h3>
                     <p>{ffmpegError}</p>
                 </div>
             )}
@@ -621,7 +618,11 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
             </div>
             
             <div className="grid grid-cols-1 xl:grid-cols-2 2xl:grid-cols-3 gap-6">
-            {assets.map((asset) => (
+            {assets.map((asset) => {
+                const isBusy = asset.status === 'generating' || asset.status === 'publishing' || asset.status === 'published' || asset.status === 'compressing';
+                const isPublishDisabled = isBusy || asset.status === 'error' || asset.platforms.length === 0 || !asset.file;
+
+                return (
                 <div key={asset.id} className={`relative bg-dark-card rounded-lg border flex flex-col transition-all duration-500 ${selectedAssets.has(asset.id) ? 'border-brand-primary ring-2 ring-brand-primary' : 'border-dark-border'} ${asset.status === 'published' ? 'opacity-50 scale-95' : ''}`}>
                      {asset.status !== 'published' && (
                         <div className="absolute top-2 left-2 z-10 bg-dark-card/50 p-1 rounded-full backdrop-blur-sm">
@@ -636,10 +637,12 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
                      )}
                      {selectedAssets.has(asset.id) && <div className="absolute inset-0 bg-brand-primary/10 rounded-lg pointer-events-none"></div>}
 
-                    {asset.status === 'compressing' && (
+                    {(asset.status === 'compressing' || asset.status === 'generating') && (
                         <div className="absolute inset-0 bg-dark-card/80 backdrop-blur-sm flex flex-col items-center justify-center z-20 rounded-lg">
                             <LoadingSpinner size="h-10 w-10" />
-                            <p className="mt-4 text-white font-semibold">Processing media...</p>
+                            <p className="mt-4 text-white font-semibold">
+                                {asset.status === 'compressing' ? 'Processing media...' : 'Generating content...'}
+                            </p>
                             <p className="text-sm text-dark-text-secondary">This may take a moment.</p>
                         </div>
                     )}
@@ -647,14 +650,16 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
                     <div className="p-4 flex-grow space-y-4">
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div className="space-y-3">
-                               {asset.previewUrl && (asset.previewUrl.startsWith('data:image') || asset.file?.type.startsWith('image/')) ? (
-                                    <img src={asset.previewUrl} alt="Preview" className="rounded-lg w-full object-cover aspect-video bg-dark-bg" />
-                                ) : asset.previewUrl && (asset.previewUrl.startsWith('data:video') || asset.previewUrl.startsWith('blob:') || asset.file?.type.startsWith('video/')) ? (
-                                    <video src={asset.previewUrl} controls className="rounded-lg w-full aspect-video bg-black"></video>
+                               {asset.previewUrl ? (
+                                    asset.file?.type.startsWith('video/') ? (
+                                        <video src={asset.previewUrl} controls className="rounded-lg w-full aspect-video bg-black"></video>
+                                    ) : (
+                                        <img src={asset.previewUrl} alt="Preview" className="rounded-lg w-full object-cover aspect-video bg-dark-bg" onClick={() => handleAddMediaClick(asset.id)} style={{cursor: 'pointer'}} />
+                                    )
                                 ) : (
                                    <MediaPlaceholder prompt={asset.prompt} onAddMedia={() => handleAddMediaClick(asset.id)} />
                                 )}
-                                <textarea value={asset.prompt} onChange={(e) => updateAsset(asset.id, { prompt: e.target.value, status: 'idle' })} placeholder="e.g., A dancer in a dramatic pose" className="w-full bg-dark-bg border border-dark-border rounded-md p-2 text-sm focus:ring-brand-primary focus:border-brand-primary" rows={2}/>
+                                <textarea value={asset.prompt} onChange={(e) => updateAsset(asset.id, { prompt: e.target.value, status: 'idle', errorMessage: undefined })} placeholder="e.g., A dancer in a dramatic pose" className="w-full bg-dark-bg border border-dark-border rounded-md p-2 text-sm focus:ring-brand-primary focus:border-brand-primary" rows={2}/>
                                 <button onClick={() => handleGenerateContent(asset.id)} disabled={asset.status === 'generating' || !asset.prompt} className="w-full flex justify-center items-center py-2 px-3 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-brand-primary hover:bg-brand-secondary disabled:bg-gray-500 disabled:cursor-not-allowed">
                                     {asset.status === 'generating' ? <LoadingSpinner /> : '✨ Generate AI Content'}
                                 </button>
@@ -695,7 +700,7 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
                          </div>
                     </div>
                     <div className="bg-gray-900/50 p-3 flex items-center gap-4">
-                         <button onClick={() => handlePublish(asset.id)} disabled={(!asset.file && !asset.previewUrl?.startsWith('data:')) || (asset.status !== 'idle' && asset.errorMessage?.startsWith('Compressed') === false && asset.errorMessage?.startsWith('This is a copy') === false && asset.errorMessage?.startsWith('Optimized') === false) || asset.platforms.length === 0} className="w-full flex justify-center items-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 disabled:bg-gray-500 disabled:cursor-not-allowed">
+                         <button onClick={() => handlePublish(asset.id)} disabled={isPublishDisabled} className="w-full flex justify-center items-center py-2 px-4 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-green-600 hover:bg-green-700 disabled:bg-gray-500 disabled:cursor-not-allowed">
                             {asset.status === 'publishing' ? <LoadingSpinner /> : (asset.status === 'published' ? 'Published!' : 'Publish Asset')}
                          </button>
                          <button onClick={() => setAssets(p => p.filter(a => a.id !== asset.id))} className="text-red-400 hover:text-red-300 text-sm font-medium p-2" aria-label="Remove asset">
@@ -708,7 +713,7 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
                         </div>
                     )}
                 </div>
-            ))}
+                )})}
             </div>
             {assets.length === 0 && (
                 <div className="text-center text-dark-text-secondary py-16">
