@@ -2,6 +2,7 @@
 
 
 
+
 import express from 'express';
 import 'dotenv/config';
 import { GoogleGenAI, Type } from '@google/genai';
@@ -452,6 +453,7 @@ app.post('/api/publish-post', async (req, res) => {
                 if (isImage) {
                     createContainerParams.append('image_url', mediaUrlForIg);
                 } else { // isVideo
+                    createContainerParams.append('media_type', 'VIDEO');
                     createContainerParams.append('video_url', mediaUrlForIg);
                 }
 
