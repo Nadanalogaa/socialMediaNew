@@ -28,6 +28,7 @@ export interface Post {
   platforms: Platform[];
   audience: Audience;
   imageUrl?: string;
+  mediaType?: 'IMAGE' | 'VIDEO';
   prompt: string;
   generatedContent: {
       facebook: string;
@@ -96,4 +97,5 @@ export interface MediaAsset {
   platforms: Platform[];
   status: 'idle' | 'generating' | 'publishing' | 'error' | 'published' | 'compressing' | 'uploading';
   errorMessage?: string;
+  mediaType: 'IMAGE' | 'VIDEO';
 }

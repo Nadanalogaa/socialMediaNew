@@ -335,18 +335,19 @@ app.delete('/api/connections/:platform', (req, res) => {
 });
 
 app.post('/api/publish-post', async (req, res) => {
-    const { platforms, generatedContent, imageUrl, audience, prompt, facebook, instagram } = req.body;
+    const { platforms, generatedContent, imageUrl, audience, prompt, facebook, instagram, mediaType } = req.body;
     
     if (!platforms || !generatedContent || !prompt) {
         return res.status(400).json({ message: 'Missing required fields for publishing.' });
     }
     
-    console.log("Received publish request for platforms:", platforms);
+    console.log(`Received publish request for platforms: ${platforms}, mediaType: ${mediaType}`);
     const publishedTo = [];
     const failedToPublish = [];
 
-    const isVideo = imageUrl && imageUrl.startsWith('https://');
-    const isImage = imageUrl && imageUrl.startsWith('data:image');
+    // Use explicit mediaType from client instead of inferring from URL
+    const isImage = mediaType === 'IMAGE';
+    const isVideo = mediaType === 'VIDEO';
 
     let facebookPostId = null;
     let facebookPhotoUrl = null;
@@ -423,7 +424,7 @@ app.post('/api/publish-post', async (req, res) => {
                 failedToPublish.push({ platform, reason: 'Connection details not provided.' });
                 continue;
              }
-             let mediaUrlForIg; // Declared here to be available in the catch block
+             let mediaUrlForIg;
              try {
                 console.log(`[REAL IG] Publishing to Instagram account: ${instagram.username}`);
                 const igCaption = (generatedContent.instagram || generatedContent.description || '') + '\n\n' + (generatedContent.hashtags || []).map(h => `#${h}`).join(' ');
@@ -436,14 +437,12 @@ app.post('/api/publish-post', async (req, res) => {
                 } else if (isVideo) {
                     mediaUrlForIg = imageUrl; // Use Cloudinary URL directly
                 } else {
-                    throw new Error('No valid media URL for Instagram.');
+                    throw new Error(`No valid media or mediaType provided. Received mediaType: ${mediaType}`);
                 }
                 
                 // 1. Create Media Container
                 const createContainerUrl = `https://graph.facebook.com/v23.0/${instagram.igUserId}/media`;
                 
-                // --- SAFER PARAMETER CONSTRUCTION ---
-                // Build a plain JS object first to ensure no conflicting parameters are ever sent.
                 let paramsObject = {
                     caption: igCaption,
                     access_token: facebook.pageAccessToken,
@@ -458,7 +457,6 @@ app.post('/api/publish-post', async (req, res) => {
                 
                 console.log('[REAL IG] Creating container with parameters:', Object.keys(paramsObject).join(', '));
                 const createContainerParams = new URLSearchParams(paramsObject);
-                // --- END SAFER CONSTRUCTION ---
 
                 const containerResponse = await fetch(createContainerUrl, { method: 'POST', body: createContainerParams });
                 const containerData = await containerResponse.json();
@@ -499,7 +497,6 @@ app.post('/api/publish-post', async (req, res) => {
                 console.log('[REAL IG] Successfully posted to Instagram. Media ID:', publishData.id);
                 publishedTo.push(platform);
             } catch (error) {
-                 // --- IMPROVED LOGGING ---
                 console.error('[REAL IG] Failed to publish to Instagram. Details:', {
                     errorMessage: error.message,
                     username: instagram.username,
@@ -528,7 +525,8 @@ app.post('/api/publish-post', async (req, res) => {
         id: facebookPostId || `post_${Date.now()}`,
         platforms: publishedTo,
         audience,
-        imageUrl, // This is now a data URL for images, or a Cloudinary URL for videos
+        imageUrl,
+        mediaType,
         prompt,
         generatedContent,
         postedAt: new Date().toISOString(),
@@ -686,7 +684,7 @@ app.delete('/api/post/:postId', async (req, res) => {
 
         console.log(`[REAL DELETE] Successfully deleted post: ${postId}`);
         res.json({ success: true });
-
+x
     } catch (error) {
         console.error('[REAL DELETE] Failed to delete post:', error);
         res.status(500).json({ message: `Failed to delete post: ${error.message}` });

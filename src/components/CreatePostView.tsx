@@ -1,3 +1,4 @@
+
 /// <reference lib="dom" />
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
@@ -167,6 +168,7 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
                     platforms: post.platforms,
                     status: 'idle',
                     errorMessage: post.imageUrl ? 'This is a copy. To publish, confirm or change the media.' : 'This is a copy. Please add media to publish.',
+                    mediaType: post.mediaType || 'IMAGE',
                 };
             } else { // It's a GeneratedPostIdea
                 const idea = postSeed as GeneratedPostIdea;
@@ -180,6 +182,7 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
                     hashtags: idea.hashtags,
                     platforms: [PlatformEnum.Facebook],
                     status: 'idle',
+                    mediaType: 'IMAGE',
                 };
             }
             setAssets(prev => [newAsset, ...prev]);
@@ -253,26 +256,26 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
         const processFile = (file: File, existingAssetId?: string) => {
             const assetId = existingAssetId || `asset_${Date.now()}_${Math.random()}`;
             const isVideo = file.type.startsWith('video/');
-            const isImage = file.type.startsWith('image/');
-            const createErrorAsset = (message: string) => ({
+            const mediaType = isVideo ? 'VIDEO' : 'IMAGE';
+            const createErrorAsset = (message: string): MediaAsset => ({
                 id: assetId, name: file.name, prompt: 'File Error', description: message,
                 hashtags: [], platforms: [], status: 'error' as const, errorMessage: message, file: undefined,
-                previewUrl: URL.createObjectURL(file)
+                previewUrl: URL.createObjectURL(file), mediaType
             });
 
-            if (isImage && file.size > MAX_IMAGE_SIZE_MB * 1024 * 1024) {
+            if (mediaType === 'IMAGE' && file.size > MAX_IMAGE_SIZE_MB * 1024 * 1024) {
                 const errorAsset = createErrorAsset(`Image is too large (${(file.size / 1024 / 1024).toFixed(1)}MB). Max size is ${MAX_IMAGE_SIZE_MB}MB.`);
                 if (existingAssetId) updateAsset(existingAssetId, errorAsset); else setAssets(p => [errorAsset, ...p]);
                 return;
             }
-            if (isVideo && file.size > MAX_VIDEO_SIZE_MB * 1024 * 1024) {
+            if (mediaType === 'VIDEO' && file.size > MAX_VIDEO_SIZE_MB * 1024 * 1024) {
                 const errorAsset = createErrorAsset(`Video is too large (${(file.size / 1024 / 1024).toFixed(1)}MB). Max size is ${MAX_VIDEO_SIZE_MB}MB.`);
                  if (existingAssetId) updateAsset(existingAssetId, errorAsset); else setAssets(p => [errorAsset, ...p]);
                 return;
             }
 
-            const commonAssetData = {
-                file, previewUrl: URL.createObjectURL(file), status: 'idle' as MediaAsset['status'], errorMessage: undefined
+            const commonAssetData: Partial<MediaAsset> = {
+                file, previewUrl: URL.createObjectURL(file), status: 'idle' as MediaAsset['status'], errorMessage: undefined, mediaType
             };
             if (existingAssetId) {
                  updateAsset(existingAssetId, commonAssetData);
@@ -280,10 +283,10 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
                 setAssets(prev => [{
                     id: assetId, name: file.name.split('.').slice(0, -1).join('.').replace(/[\-_]/g, ' '),
                     prompt: '', description: '', hashtags: [], platforms: [PlatformEnum.Facebook], ...commonAssetData
-                }, ...prev]);
+                } as MediaAsset, ...prev]);
             }
             
-            if (isImage) {
+            if (mediaType === 'IMAGE') {
                 updateAsset(assetId, { status: 'compressing', errorMessage: 'Optimizing image...' });
                 compressImage(file, { maxSizeMB: 2, maxWidth: 1920, quality: 0.85 })
                     .then(compressedFile => {
@@ -297,7 +300,7 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
                         console.error('Image compression failed:', err);
                         updateAsset(assetId, { status: 'error', errorMessage: 'Image optimization failed.' });
                     });
-            } else if (isVideo) {
+            } else if (mediaType === 'VIDEO') {
                  updateAsset(assetId, { status: 'uploading', errorMessage: 'Uploading to cloud...' });
                  handleCloudinaryUpload(assetId, file);
             }
@@ -354,7 +357,10 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
         const asset = assets.find(a => a.id === assetId);
         if (!asset) return;
         
-        const hasMedia = asset.file || (asset.previewUrl && asset.previewUrl.startsWith('https://'));
+        const isImage = asset.mediaType === 'IMAGE';
+        const isVideo = asset.mediaType === 'VIDEO';
+
+        const hasMedia = (isImage && asset.file) || (isVideo && asset.previewUrl?.startsWith('https://'));
         if (!hasMedia) {
             updateAsset(assetId, { status: 'error', errorMessage: 'Please add a media file before publishing.' });
             return;
@@ -375,9 +381,9 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
         
         let imageUrlData: string;
         try {
-            if (asset.file) { // For images
+            if (isImage && asset.file) {
                 imageUrlData = await toBase64(asset.file);
-            } else if (asset.previewUrl && asset.previewUrl.startsWith('https://')) { // For videos from Cloudinary
+            } else if (isVideo && asset.previewUrl) {
                 imageUrlData = asset.previewUrl;
             } else {
                 throw new Error('No media file or URL available for upload.');
@@ -393,6 +399,7 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
             audience,
             imageUrl: imageUrlData,
             prompt: asset.prompt,
+            mediaType: asset.mediaType,
             generatedContent: {
                 facebook: asset.description,
                 instagram: asset.description,
@@ -568,7 +575,7 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
             <div className="grid grid-cols-1 xl:grid-cols-2 2xl:grid-cols-3 gap-6">
             {assets.map((asset) => {
                 const isBusy = asset.status === 'generating' || asset.status === 'publishing' || asset.status === 'published' || asset.status === 'compressing' || asset.status === 'uploading';
-                const hasMedia = asset.file || (asset.previewUrl && asset.previewUrl.startsWith('https://'));
+                const hasMedia = (asset.mediaType === 'IMAGE' && asset.file) || (asset.mediaType === 'VIDEO' && asset.previewUrl?.startsWith('https://'));
                 const isPublishDisabled = isBusy || asset.status === 'error' || asset.platforms.length === 0 || !hasMedia;
 
                 return (
@@ -602,7 +609,7 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div className="space-y-3">
                                {asset.previewUrl ? (
-                                    asset.previewUrl.startsWith('https://res.cloudinary.com') ? (
+                                    asset.mediaType === 'VIDEO' ? (
                                         <video src={asset.previewUrl} controls className="rounded-lg w-full aspect-video bg-black"></video>
                                     ) : (
                                         <img src={asset.previewUrl} alt="Preview" className="rounded-lg w-full object-cover aspect-video bg-dark-bg" onClick={() => handleAddMediaClick(asset.id)} style={{cursor: 'pointer'}} />

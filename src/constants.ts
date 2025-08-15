@@ -8,6 +8,7 @@ export const MOCK_POSTS: Post[] = [
     platforms: [Platform.Facebook, Platform.Instagram],
     audience: Audience.India,
     imageUrl: 'https://picsum.photos/seed/dance1/800/600',
+    mediaType: 'IMAGE',
     prompt: 'Announcing our new Bharatanatyam workshop series for beginners!',
     generatedContent: {
       facebook: "Join us for an immersive journey into the world of Bharatanatyam! Our new workshop series is perfect for beginners. Learn the fundamentals from renowned artists. Visit www.nadanaloga.com to register!",
@@ -28,6 +29,7 @@ export const MOCK_POSTS: Post[] = [
     platforms: [Platform.YouTube],
     audience: Audience.Global,
     imageUrl: 'https://picsum.photos/seed/performance1/800/600',
+    mediaType: 'IMAGE',
     prompt: 'A highlight reel of our annual performance event.',
     generatedContent: {
       facebook: "",
