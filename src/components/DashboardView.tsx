@@ -112,7 +112,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ posts, connectionD
     }
   };
 
-  const filterOptions: { value: Platform | 'All'; label: string; icon: JSX.Element }[] = [
+  const filterOptions: { value: Platform | 'All'; label: string; icon: React.ReactNode }[] = [
     { value: 'All', label: 'All', icon: <AllPlatformsIcon className="w-5 h-5" /> },
     { value: Platform.Facebook, label: 'Facebook', icon: <FacebookIcon className="w-5 h-5" /> },
     { value: Platform.Instagram, label: 'Instagram', icon: <InstagramIcon className="w-5 h-5" /> },

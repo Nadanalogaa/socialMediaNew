@@ -1,3 +1,4 @@
+
 /// <reference lib="dom" />
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
@@ -114,9 +115,19 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
                 const storedAssets = await getDraftsFromDB();
                 if (storedAssets && storedAssets.length > 0) {
                     const assetsWithPreviews = storedAssets.map(asset => {
-                        // Re-create blob URLs for files that were persisted but don't have a final URL yet
-                        if (asset.file && !asset.previewUrl?.startsWith('https://')) {
-                            return { ...asset, previewUrl: URL.createObjectURL(asset.file) };
+                        // When loading from IndexedDB, a File object can be deserialized as a plain object.
+                        // We need to ensure it's a real File instance before using it with APIs like URL.createObjectURL.
+                        if (asset.file && asset.file instanceof File) {
+                            // If it is a valid File, create a blob URL for preview.
+                            if (!asset.previewUrl?.startsWith('https://')) {
+                                return { ...asset, previewUrl: URL.createObjectURL(asset.file) };
+                            }
+                        } else if (asset.file) {
+                            // If asset.file exists but is not a File instance, we can't use it.
+                            // We'll clear it to prevent crashes. The user would need to re-upload.
+                            const newAsset = {...asset};
+                            delete newAsset.file;
+                            return newAsset;
                         }
                         return asset;
                     }).filter(a => a.status !== 'published');

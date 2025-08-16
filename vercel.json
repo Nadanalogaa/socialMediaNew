@@ -1,4 +1,5 @@
 
+
 {
   "version": 2,
   "builds": [
@@ -18,6 +19,10 @@
     },
     {
       "src": "/auth/(.*)",
+      "dest": "/server.js"
+    },
+    {
+      "src": "/callback",
       "dest": "/server.js"
     },
     {

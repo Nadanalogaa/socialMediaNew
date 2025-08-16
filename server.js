@@ -22,6 +22,7 @@
     // --- In-memory store for MOCK DATA purposes ONLY ---
     const TARGET_PAGE_NAME = 'Nadanaloga-chennai'; // The specific page we want to connect to
     const TARGET_IG_USERNAME = 'nadanaloga_chennai'; // The specific IG business account we want to connect to
+    const WEBHOOK_VERIFY_TOKEN = 'IGAAK89cKmt51BZAE9CM29MdkVSdTBqenNoblgtX19qRUFJOV9DNzg0d3ZAkZATg5NENJOERYTFZAzNVpsaDJ1NWpkaUxLZAFZAUalhMak5TUzFUWjFS';
 
     let mockState = {
         YouTube: { connected: false },
@@ -165,6 +166,51 @@
     `;
 
     // --- API Endpoints ---
+
+    // --- Webhook Verification and Event Handling ---
+    // This endpoint is for Facebook/Instagram to verify the webhook URL.
+    app.get('/callback', (req, res) => {
+        const mode = req.query['hub.mode'];
+        const token = req.query['hub.verify_token'];
+        const challenge = req.query['hub.challenge'];
+    
+        // Checks if a token and mode is in the query string of the request
+        if (mode && token) {
+            // Checks the mode and token sent are correct
+            if (mode === 'subscribe' && token === WEBHOOK_VERIFY_TOKEN) {
+                // Responds with the challenge token from the request
+                console.log('WEBHOOK_VERIFIED');
+                res.status(200).send(challenge);
+            } else {
+                // Responds with '403 Forbidden' if verify tokens do not match
+                console.error('Webhook verification failed: Tokens do not match.');
+                res.sendStatus(403);
+            }
+        } else {
+            console.error('Webhook verification failed: Missing mode or token.');
+            res.sendStatus(400);
+        }
+    });
+
+    // This endpoint is for receiving webhook events from Facebook/Instagram.
+    app.post('/callback', (req, res) => {
+        const body = req.body;
+    
+        console.log('Webhook event received:', JSON.stringify(body, null, 2));
+        
+        // Checks this is an event from a page subscription
+        if (body.object === 'page') {
+            // Here you would process the webhook event.
+            // For example, you could check body.entry[0].changes[0].field for 'feed'
+            // and then process the comment or like.
+            
+            // For now, we'll just log it and send a 200 OK
+            res.status(200).send('EVENT_RECEIVED');
+        } else {
+            // Returns a '404 Not Found' if event is not from a page subscription
+            res.sendStatus(404);
+        }
+    });
 
     app.post('/api/generate-asset-content', async (req, res) => {
         const { prompt } = req.body;
