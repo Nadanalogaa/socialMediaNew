@@ -1,5 +1,6 @@
 
 
+
 import express from 'express';
 import 'dotenv/config';
 import { GoogleGenAI, Type } from '@google/genai';
@@ -564,22 +565,35 @@ app.post('/api/publish-post', async (req, res) => {
                 // 2. Poll for container status
                 let containerStatus = '';
                 let attempts = 0;
-                while (containerStatus !== 'FINISHED' && attempts < 20) { // Increased timeout for video
-                    const statusUrl = `https://graph.facebook.com/v23.0/${creationId}?fields=status_code&access_token=${facebook.pageAccessToken}`;
+                const maxAttempts = 20; // 20 attempts * 3s = 1 minute timeout
+                while (containerStatus !== 'FINISHED' && attempts < maxAttempts) {
+                    // Add error_message to the fields to get more details on failure
+                    const statusUrl = `https://graph.facebook.com/v23.0/${creationId}?fields=status_code,error_message&access_token=${facebook.pageAccessToken}`;
                     const statusRes = await fetch(statusUrl);
                     const statusData = await statusRes.json();
-                    if (statusData.error) throw new Error(`IG container status check failed: ${statusData.error.message}`);
+                    
+                    if (statusData.error) {
+                        // This is an error with the status check API call itself, not the container processing
+                        throw new Error(`IG container status check failed: ${statusData.error.message}`);
+                    }
 
                     containerStatus = statusData.status_code;
                     console.log(`[REAL IG] Container status check #${attempts + 1}: ${containerStatus}`);
+                    
+                    if (containerStatus === 'ERROR') {
+                        // We have an error! Let's provide the detailed message.
+                        const detailedError = statusData.error_message || 'Instagram media container failed to process with an unknown error.';
+                        console.error(`[REAL IG] Container processing failed with message: ${detailedError}`);
+                        throw new Error(detailedError);
+                    }
 
-                    if (containerStatus === 'ERROR') throw new Error('Instagram media container failed to process.');
                     if (containerStatus !== 'FINISHED') {
                         await new Promise(resolve => setTimeout(resolve, 3000)); // wait 3s
                         attempts++;
                     }
                 }
-                if (containerStatus !== 'FINISHED') throw new Error('Instagram media container processing timed out.');
+                if (containerStatus !== 'FINISHED') throw new Error(`Instagram media container processing timed out after ${maxAttempts * 3} seconds.`);
+
 
                 // 3. Publish container
                 const publishUrl = `https://graph.facebook.com/v23.0/${instagram.igUserId}/media_publish`;
