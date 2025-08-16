@@ -565,44 +565,39 @@ app.post('/api/publish-post', async (req, res) => {
 
                 // 2. Poll for container status
                 let containerStatus = '';
+                let lastStatusText = '';
                 let attempts = 0;
-                const maxAttempts = 20; // 20 attempts * 3s = 1 minute timeout
+                const maxAttempts = 20; // 20 attempts * 4s = 80 seconds timeout
+                
                 while (containerStatus !== 'FINISHED' && attempts < maxAttempts) {
-                    const statusUrl = `https://graph.facebook.com/v23.0/${creationId}?fields=status_code&access_token=${facebook.pageAccessToken}`;
+                    const statusUrl = `https://graph.facebook.com/v23.0/${creationId}?fields=status_code,status&access_token=${facebook.pageAccessToken}`;
                     const statusRes = await fetch(statusUrl);
                     const statusData = await statusRes.json();
-                    
+
                     if (statusData.error) {
-                        // This is an error with the status check API call itself, not the container processing
                         throw new Error(`IG container status check failed: ${statusData.error.message}`);
                     }
 
                     containerStatus = statusData.status_code;
-                    console.log(`[REAL IG] Container status check #${attempts + 1}: ${containerStatus}`);
-                    
+                    lastStatusText = statusData.status || '';
+                    console.log(`[REAL IG] Container status check #${attempts + 1}: ${containerStatus} (Status: ${lastStatusText})`);
+
                     if (containerStatus === 'ERROR') {
-                        // The container has failed. Now make a second, more detailed request to get the reason.
-                        console.error('[REAL IG] Container processing failed. Fetching error details...');
-                        const errorDetailsUrl = `https://graph.facebook.com/v23.0/${creationId}?fields=error_message&access_token=${facebook.pageAccessToken}`;
-                        const errorDetailsRes = await fetch(errorDetailsUrl);
-                        const errorDetailsData = await errorDetailsRes.json();
-                        let detailedError = errorDetailsData.error_message;
-                        if (!detailedError && errorDetailsData.error) {
-                            detailedError = errorDetailsData.error.error_user_msg || errorDetailsData.error.message;
-                        }
-                        if (!detailedError) {
-                            detailedError = 'Instagram media container failed to process with an unknown error.';
-                        }
-                        console.error(`[REAL IG] Detailed error: ${detailedError}`);
-                        throw new Error(detailedError);
+                        const errorMessage = lastStatusText || 'Instagram media container failed to process with an unknown error.';
+                        console.error(`[REAL IG] Container processing failed. Status: ${containerStatus}, Message: "${errorMessage}"`);
+                        // The 'status' field contains the human-readable error. No need for a second, unreliable request.
+                        throw new Error(errorMessage);
                     }
 
                     if (containerStatus !== 'FINISHED') {
-                        await new Promise(resolve => setTimeout(resolve, 3000)); // wait 3s
+                        await new Promise(resolve => setTimeout(resolve, 4000));
                         attempts++;
                     }
                 }
-                if (containerStatus !== 'FINISHED') throw new Error(`Instagram media container processing timed out after ${maxAttempts * 3} seconds.`);
+
+                if (containerStatus !== 'FINISHED') {
+                    throw new Error(`Instagram media container processing timed out after ${attempts * 4} seconds. Last status: ${containerStatus} - ${lastStatusText}`);
+                }
 
 
                 // 3. Publish container
