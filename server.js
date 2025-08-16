@@ -534,17 +534,15 @@
                             image_url: mediaUrlForIg,
                         });
                     } else { // isVideo is the only other option here
-                        // For videos, media_type and video_url MUST be query parameters according to API docs.
-                        const videoUrlParams = new URLSearchParams({
-                            media_type: 'VIDEO',
-                            video_url: mediaUrlForIg
-                        });
-                        containerRequestUrl = `https://graph.facebook.com/v23.0/${instagram.igUserId}/media?${videoUrlParams.toString()}`;
-                    
-                        // Caption and token go in the body
+                        // Send all parameters in the request body for video uploads.
+                        // Using mixed query/body params was causing IG to reject the request with
+                        // "Invalid parameter" errors.
+                        containerRequestUrl = `https://graph.facebook.com/v23.0/${instagram.igUserId}/media`;
                         containerRequestParamsBody = new URLSearchParams({
                             caption: igCaption,
                             access_token: facebook.pageAccessToken,
+                            media_type: 'VIDEO',
+                            video_url: mediaUrlForIg,
                         });
                     }
 
