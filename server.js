@@ -22,7 +22,7 @@
     // --- In-memory store for MOCK DATA purposes ONLY ---
     const TARGET_PAGE_NAME = 'Nadanaloga-chennai'; // The specific page we want to connect to
     const TARGET_IG_USERNAME = 'nadanaloga_chennai'; // The specific IG business account we want to connect to
-    const WEBHOOK_VERIFY_TOKEN = 'IGAAK89cKmt51BZAE9CM29MdkVSdTBqenNoblgtX19qRUFJOV9DNzg0d3ZAkZATg5NENJOERYTFZAzNVpsaDJ1NWpkaUxLZAFZAUalhMak5TUzFUWjFS';
+    const WEBHOOK_VERIFY_TOKEN = 'IGAAK89cKmt51BZAE9WdFIFRGI0Wnd2YnZAYT0QwTzVwbWx1VUlRkJZAdXZA2ZAGJDcjNyc2dxNzE1VUJSVFh3QThHaHhYMWdiSFdibeE5qa1hoWDh4M';
 
     let mockState = {
         YouTube: { connected: false },
@@ -184,6 +184,8 @@
             } else {
                 // Responds with '403 Forbidden' if verify tokens do not match
                 console.error('Webhook verification failed: Tokens do not match.');
+                console.log(`Received Token: ${token}`);
+                console.log(`Expected Token: ${WEBHOOK_VERIFY_TOKEN}`);
                 res.sendStatus(403);
             }
         } else {
