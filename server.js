@@ -1,6 +1,7 @@
 
 
 
+
 import express from 'express';
 import 'dotenv/config';
 import { GoogleGenAI, Type } from '@google/genai';
@@ -567,8 +568,7 @@ app.post('/api/publish-post', async (req, res) => {
                 let attempts = 0;
                 const maxAttempts = 20; // 20 attempts * 3s = 1 minute timeout
                 while (containerStatus !== 'FINISHED' && attempts < maxAttempts) {
-                    // Add error_message to the fields to get more details on failure
-                    const statusUrl = `https://graph.facebook.com/v23.0/${creationId}?fields=status_code,error_message&access_token=${facebook.pageAccessToken}`;
+                    const statusUrl = `https://graph.facebook.com/v23.0/${creationId}?fields=status_code&access_token=${facebook.pageAccessToken}`;
                     const statusRes = await fetch(statusUrl);
                     const statusData = await statusRes.json();
                     
@@ -581,9 +581,13 @@ app.post('/api/publish-post', async (req, res) => {
                     console.log(`[REAL IG] Container status check #${attempts + 1}: ${containerStatus}`);
                     
                     if (containerStatus === 'ERROR') {
-                        // We have an error! Let's provide the detailed message.
-                        const detailedError = statusData.error_message || 'Instagram media container failed to process with an unknown error.';
-                        console.error(`[REAL IG] Container processing failed with message: ${detailedError}`);
+                        // The container has failed. Now make a second, more detailed request to get the reason.
+                        console.error('[REAL IG] Container processing failed. Fetching error details...');
+                        const errorDetailsUrl = `https://graph.facebook.com/v23.0/${creationId}?fields=error_message&access_token=${facebook.pageAccessToken}`;
+                        const errorDetailsRes = await fetch(errorDetailsUrl);
+                        const errorDetailsData = await errorDetailsRes.json();
+                        const detailedError = errorDetailsData.error_message || 'Instagram media container failed to process with an unknown error.';
+                        console.error(`[REAL IG] Detailed error: ${detailedError}`);
                         throw new Error(detailedError);
                     }
 
