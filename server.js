@@ -1,7 +1,4 @@
 
-
-
-
 import express from 'express';
 import 'dotenv/config';
 import { GoogleGenAI, Type } from '@google/genai';
@@ -23,7 +20,7 @@ const __dirname = path.dirname(__filename);
 
 // --- In-memory store for MOCK DATA purposes ONLY ---
 const TARGET_PAGE_NAME = 'Nadanaloga-chennai'; // The specific page we want to connect to
-const TARGET_IG_USERNAME = 'nadanaloga_chennai'; // The specific IG business account we want to connect to
+const TARGET_IG_USER_ID = '17841405756443727'; // The specific IG business account we want to connect to
 const WEBHOOK_VERIFY_TOKEN = 'IGAAK89cKmt51BZAE9WdFIFRGI0Wnd2YnZAYT0QwTzVwbWx1VUlRkJZAdXZA2ZAGJDcjNyc2dxNzE1VUJSVFh3QThHaHhYMWdiSFdibeE5qa1hoWDh4M';
 
 let mockState = {
@@ -301,14 +298,14 @@ app.post('/api/connect/facebook', async (req, res) => {
             console.warn(`[REAL AUTH] Could not fetch linked Instagram account: ${igData.error.message}`);
         } else if (igData.instagram_business_account) {
             const igAccount = igData.instagram_business_account;
-            if (igAccount.username === TARGET_IG_USERNAME) {
+            if (igAccount.id === TARGET_IG_USER_ID) {
                 instagramDetails = {
                     igUserId: igAccount.id,
                     username: igAccount.username,
                 };
                 console.log(`[REAL AUTH] Successfully got details for Instagram account: ${igAccount.username} (ID: ${igAccount.id})`);
             } else {
-                console.warn(`[REAL AUTH] Found Instagram account '${igAccount.username}', but it does not match target '${TARGET_IG_USERNAME}'.`);
+                console.warn(`[REAL AUTH] Found Instagram account ID '${igAccount.id}', but it does not match target '${TARGET_IG_USER_ID}'.`);
             }
         } else {
             console.log('[REAL AUTH] No Instagram Business Account linked to this Facebook page.');
@@ -563,40 +560,42 @@ app.post('/api/publish-post', async (req, res) => {
                 const creationId = containerData.id;
                 console.log(`[REAL IG] Media container created with ID: ${creationId}`);
 
-                // 2. Poll for container status
-                let containerStatus = '';
-                let lastStatusText = '';
-                let attempts = 0;
-                const maxAttempts = 20; // 20 attempts * 4s = 80 seconds timeout
-                
-                while (containerStatus !== 'FINISHED' && attempts < maxAttempts) {
-                    const statusUrl = `https://graph.facebook.com/v23.0/${creationId}?fields=status_code,status&access_token=${facebook.pageAccessToken}`;
-                    const statusRes = await fetch(statusUrl);
-                    const statusData = await statusRes.json();
-
-                    if (statusData.error) {
-                        throw new Error(`IG container status check failed: ${statusData.error.message}`);
+                // 2. Poll for container status (only for videos)
+                if (isVideo) {
+                    let containerStatus = '';
+                    let lastStatusText = '';
+                    let attempts = 0;
+                    const maxAttempts = 20; // 20 attempts * 4s = 80 seconds timeout
+                    
+                    while (containerStatus !== 'FINISHED' && attempts < maxAttempts) {
+                        const statusUrl = `https://graph.facebook.com/v23.0/${creationId}?fields=status_code,status&access_token=${facebook.pageAccessToken}`;
+                        const statusRes = await fetch(statusUrl);
+                        const statusData = await statusRes.json();
+    
+                        if (statusData.error) {
+                            throw new Error(`IG container status check failed: ${statusData.error.message}`);
+                        }
+    
+                        containerStatus = statusData.status_code;
+                        lastStatusText = statusData.status || '';
+                        console.log(`[REAL IG] Container status check #${attempts + 1}: ${containerStatus} (Status: ${lastStatusText})`);
+    
+                        if (containerStatus === 'ERROR') {
+                            const errorMessage = lastStatusText || 'Instagram media container failed to process with an unknown error.';
+                            console.error(`[REAL IG] Container processing failed. Status: ${containerStatus}, Message: "${errorMessage}"`);
+                            // The 'status' field contains the human-readable error. No need for a second, unreliable request.
+                            throw new Error(errorMessage);
+                        }
+    
+                        if (containerStatus !== 'FINISHED') {
+                            await new Promise(resolve => setTimeout(resolve, 4000));
+                            attempts++;
+                        }
                     }
-
-                    containerStatus = statusData.status_code;
-                    lastStatusText = statusData.status || '';
-                    console.log(`[REAL IG] Container status check #${attempts + 1}: ${containerStatus} (Status: ${lastStatusText})`);
-
-                    if (containerStatus === 'ERROR') {
-                        const errorMessage = lastStatusText || 'Instagram media container failed to process with an unknown error.';
-                        console.error(`[REAL IG] Container processing failed. Status: ${containerStatus}, Message: "${errorMessage}"`);
-                        // The 'status' field contains the human-readable error. No need for a second, unreliable request.
-                        throw new Error(errorMessage);
-                    }
-
+    
                     if (containerStatus !== 'FINISHED') {
-                        await new Promise(resolve => setTimeout(resolve, 4000));
-                        attempts++;
+                        throw new Error(`Instagram media container processing timed out after ${attempts * 4} seconds. Last status: ${containerStatus} - ${lastStatusText}`);
                     }
-                }
-
-                if (containerStatus !== 'FINISHED') {
-                    throw new Error(`Instagram media container processing timed out after ${attempts * 4} seconds. Last status: ${containerStatus} - ${lastStatusText}`);
                 }
 
 
