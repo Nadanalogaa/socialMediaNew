@@ -586,7 +586,13 @@ app.post('/api/publish-post', async (req, res) => {
                         const errorDetailsUrl = `https://graph.facebook.com/v23.0/${creationId}?fields=error_message&access_token=${facebook.pageAccessToken}`;
                         const errorDetailsRes = await fetch(errorDetailsUrl);
                         const errorDetailsData = await errorDetailsRes.json();
-                        const detailedError = errorDetailsData.error_message || 'Instagram media container failed to process with an unknown error.';
+                        let detailedError = errorDetailsData.error_message;
+                        if (!detailedError && errorDetailsData.error) {
+                            detailedError = errorDetailsData.error.error_user_msg || errorDetailsData.error.message;
+                        }
+                        if (!detailedError) {
+                            detailedError = 'Instagram media container failed to process with an unknown error.';
+                        }
                         console.error(`[REAL IG] Detailed error: ${detailedError}`);
                         throw new Error(detailedError);
                     }
