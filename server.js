@@ -755,6 +755,13 @@ app.post('/api/post-insights', async (req, res) => {
 
         if (data.error) {
             const errorMessage = `Graph API error fetching insights: ${data.error.message}`;
+            
+            // Check if the post/object was not found or deleted
+            if (data.error.code === 100 || (data.error.message && data.error.message.toLowerCase().includes('does not exist'))) {
+                console.warn(`[REAL INSIGHTS] Post ${postId} not found on platform.`);
+                return res.status(404).json({ message: `Post with ID ${postId} was not found on the platform. It may have been deleted.` });
+            }
+
             // Check for permission-related errors and return a 403 Forbidden
             if (data.error.code === 200 || data.error.code === 10 || (data.error.message && data.error.message.toLowerCase().includes('permissions'))) {
                 console.warn(`[REAL INSIGHTS] Permission error for post ${postId}: ${data.error.message}`);

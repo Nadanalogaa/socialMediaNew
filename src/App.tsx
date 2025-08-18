@@ -47,8 +47,8 @@ const App: React.FC = () => {
         const postToDelete = posts.find(p => p.id === postId);
         if (!postToDelete) return;
 
-        // Only attempt platform deletion for real posts that were published to Facebook
-        if (!postToDelete.id.startsWith('post_') && postToDelete.platforms.includes(Platform.Facebook)) {
+        // Only attempt platform deletion for real, active posts
+        if (!postToDelete.id.startsWith('post_') && postToDelete.platforms.includes(Platform.Facebook) && postToDelete.status !== 'deleted-on-platform') {
             const pageAccessToken = connectionDetails.facebook?.pageAccessToken;
             if (!pageAccessToken) {
                 throw new Error("Cannot delete post from Facebook: Connection details are missing.");
@@ -56,7 +56,7 @@ const App: React.FC = () => {
             await deletePostOnPlatform(postId, pageAccessToken);
         }
 
-        // If platform deletion is successful (or not applicable), remove from local state
+        // Always remove from local state
         setPosts(prevPosts => prevPosts.filter(p => p.id !== postId));
       } catch (err) {
          const message = err instanceof Error ? err.message : String(err);
@@ -73,7 +73,8 @@ const App: React.FC = () => {
         const realPostsToDelete = posts.filter(p => 
             idsToDelete.has(p.id) && 
             !p.id.startsWith('post_') && 
-            p.platforms.includes(Platform.Facebook)
+            p.platforms.includes(Platform.Facebook) &&
+            p.status !== 'deleted-on-platform'
         );
 
         if (realPostsToDelete.length > 0 && !pageAccessToken) {
@@ -115,6 +116,12 @@ const App: React.FC = () => {
   const updatePostContent = (postId: string, newContent: Partial<Post['generatedContent']>) => {
       setPosts(prevPosts => prevPosts.map(p =>
           p.id === postId ? { ...p, generatedContent: { ...p.generatedContent, ...newContent } } : p
+      ));
+  };
+  
+  const markPostAsDeletedOnPlatform = (postId: string) => {
+      setPosts(prevPosts => prevPosts.map(p => 
+          p.id === postId ? { ...p, status: 'deleted-on-platform' } : p
       ));
   };
 
@@ -272,6 +279,7 @@ const App: React.FC = () => {
                     onUpdatePostEngagement={updatePostEngagement}
                     onUpdatePostContent={updatePostContent}
                     onEditPost={(post) => navigateTo(View.CREATE_POST, post)}
+                    onMarkPostAsDeleted={markPostAsDeletedOnPlatform}
                     onError={setGlobalError}
                 />;
     }

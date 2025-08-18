@@ -43,9 +43,16 @@ export const PostCard: React.FC<PostCardProps> = ({ post, isSelected, connection
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const isFacebookConnected = !!connectionDetails.facebook;
+  const isDeletedOnPlatform = post.status === 'deleted-on-platform';
 
 
   const handleDeleteClick = async () => {
+    // If it's already marked as deleted, just remove it from the dashboard without platform deletion logic.
+    if (isDeletedOnPlatform) {
+        await onDelete(post.id);
+        return;
+    }
+
     const onFacebook = post.platforms.includes(Platform.Facebook);
     const onInstagram = post.platforms.includes(Platform.Instagram);
 
@@ -65,7 +72,7 @@ export const PostCard: React.FC<PostCardProps> = ({ post, isSelected, connection
 
   const handleRefresh = async () => {
     // Only allow refresh for posts with a real FB id, not mock ones.
-    if (!isFacebookConnected || post.id.startsWith('post_')) return;
+    if (!isFacebookConnected || post.id.startsWith('post_') || isDeletedOnPlatform) return;
     setIsRefreshing(true);
     try {
         await onRefreshInsights(post.id);
@@ -84,7 +91,16 @@ export const PostCard: React.FC<PostCardProps> = ({ post, isSelected, connection
   }
 
   return (
-    <div className={`bg-dark-card border rounded-lg overflow-hidden transition-all duration-300 ${isSelected ? 'border-brand-primary' : 'border-dark-border'}`}>
+    <div className={`relative bg-dark-card border rounded-lg overflow-hidden transition-all duration-300 ${isSelected ? 'border-brand-primary' : 'border-dark-border'} ${isDeletedOnPlatform ? 'opacity-60' : ''}`}>
+       {isDeletedOnPlatform && (
+            <div className="absolute inset-0 bg-dark-card/90 backdrop-blur-sm flex flex-col items-center justify-center z-20 rounded-lg animate-fade-in text-center p-4">
+                <svg className="h-10 w-10 text-yellow-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
+                </svg>
+                <p className="mt-2 text-white font-semibold">Post Deleted from Platform</p>
+                <p className="text-sm text-dark-text-secondary">This post could not be found online. You can remove it from your dashboard.</p>
+            </div>
+        )}
       <div className="relative flex flex-col md:flex-row">
         {isDeleting && (
           <div className="absolute inset-0 bg-dark-card/80 backdrop-blur-sm flex flex-col items-center justify-center z-30 rounded-lg animate-fade-in">
@@ -133,16 +149,17 @@ export const PostCard: React.FC<PostCardProps> = ({ post, isSelected, connection
                       <button
                           onClick={() => onEdit(post)}
                           title="Use as Template"
-                          className="p-2 rounded-full text-dark-text-secondary hover:bg-dark-bg hover:text-dark-text transition-colors"
+                          disabled={isDeletedOnPlatform}
+                          className="p-2 rounded-full text-dark-text-secondary hover:bg-dark-bg hover:text-dark-text transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                           aria-label="Use post as template"
                       >
                           <EditIcon className="w-4 h-4" />
                       </button>
                       <button
                           onClick={handleDeleteClick}
-                          title="Delete Post"
+                          title={isDeletedOnPlatform ? "Remove from Dashboard" : "Delete Post"}
                           className="p-2 rounded-full text-dark-text-secondary hover:bg-dark-bg hover:text-red-400 transition-colors"
-                          aria-label="Delete post"
+                          aria-label={isDeletedOnPlatform ? "Remove post from dashboard" : "Delete post"}
                       >
                           <TrashIcon className="w-4 h-4" />
                       </button>
@@ -188,8 +205,8 @@ export const PostCard: React.FC<PostCardProps> = ({ post, isSelected, connection
                <div className="flex items-center gap-4">
                   <button 
                       onClick={handleRefresh} 
-                      disabled={isRefreshing || !isFacebookConnected || post.id.startsWith('post_')}
-                      title={post.id.startsWith('post_') ? 'Cannot refresh mock posts' : (!isFacebookConnected ? 'Connect Facebook to refresh insights' : 'Refresh insights')}
+                      disabled={isRefreshing || !isFacebookConnected || post.id.startsWith('post_') || isDeletedOnPlatform}
+                      title={isDeletedOnPlatform ? 'Post was deleted from the platform' : (post.id.startsWith('post_') ? 'Cannot refresh mock posts' : (!isFacebookConnected ? 'Connect Facebook to refresh insights' : 'Refresh insights'))}
                       className="flex items-center gap-2 text-xs text-dark-text-secondary hover:text-dark-text disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                   >
                       <RefreshIcon className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
@@ -197,8 +214,8 @@ export const PostCard: React.FC<PostCardProps> = ({ post, isSelected, connection
                   </button>
                    <button 
                       onClick={() => setIsExpanded(!isExpanded)}
-                      disabled={post.id.startsWith('post_') || !isFacebookConnected}
-                      title={post.id.startsWith('post_') ? 'Cannot manage mock posts' : (!isFacebookConnected ? 'Connect Facebook to manage post' : 'Manage post')}
+                      disabled={post.id.startsWith('post_') || !isFacebookConnected || isDeletedOnPlatform}
+                      title={isDeletedOnPlatform ? 'Post was deleted from the platform' : (post.id.startsWith('post_') ? 'Cannot manage mock posts' : (!isFacebookConnected ? 'Connect Facebook to manage post' : 'Manage post'))}
                       className="flex items-center gap-2 text-xs px-3 py-1 rounded bg-dark-bg border border-dark-border hover:border-brand-primary disabled:opacity-50 disabled:cursor-not-allowed"
                    >
                      {isExpanded ? 'Close' : 'Manage'}
@@ -207,7 +224,7 @@ export const PostCard: React.FC<PostCardProps> = ({ post, isSelected, connection
           </div>
         </div>
       </div>
-      {isExpanded && !post.id.startsWith('post_') && isFacebookConnected && (
+      {isExpanded && !post.id.startsWith('post_') && isFacebookConnected && !isDeletedOnPlatform && (
         <div className="bg-dark-bg/50 border-t border-dark-border animate-fade-in">
             <PostManager 
               post={post}

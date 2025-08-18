@@ -1,7 +1,6 @@
 
 
 
-
 export enum Platform {
   Facebook = 'Facebook',
   Instagram = 'Instagram',
@@ -46,6 +45,7 @@ export interface Post {
     comments: number;
     shares: number;
   };
+  status?: 'active' | 'deleted-on-platform';
 }
 
 export interface SeoSuggestions {

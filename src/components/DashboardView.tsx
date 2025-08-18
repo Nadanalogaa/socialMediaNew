@@ -1,5 +1,4 @@
 
-
 import React, { useState } from 'react';
 import type { Post, ConnectionDetails } from '../types';
 import { Platform } from '../types';
@@ -20,6 +19,7 @@ interface DashboardViewProps {
   onUpdatePostEngagement: (postId: string, engagement: { likes: number, comments: number, shares: number }) => void;
   onUpdatePostContent: (postId: string, newContent: Partial<Post['generatedContent']>) => void;
   onEditPost: (post: Post) => void;
+  onMarkPostAsDeleted: (postId: string) => void;
   onError: (message: string | null) => void;
 }
 
@@ -30,7 +30,7 @@ const LoadingSpinner: React.FC = () => (
     </svg>
 );
 
-export const DashboardView: React.FC<DashboardViewProps> = ({ posts, connectionDetails, onDeletePost, onDeletePosts, onUpdatePostEngagement, onUpdatePostContent, onEditPost, onError }) => {
+export const DashboardView: React.FC<DashboardViewProps> = ({ posts, connectionDetails, onDeletePost, onDeletePosts, onUpdatePostEngagement, onUpdatePostContent, onEditPost, onMarkPostAsDeleted, onError }) => {
   const [platformFilter, setPlatformFilter] = useState<Platform | 'All'>('All');
   const [selectedPosts, setSelectedPosts] = useState<Set<string>>(new Set());
   const [deletingPosts, setDeletingPosts] = useState<Set<string>>(new Set());
@@ -108,8 +108,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ posts, connectionD
         onUpdatePostEngagement(postId, newEngagement);
     } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        console.error(`Failed to refresh insights for post ${postId}:`, message);
-        onError(`Failed to refresh insights: ${message}`);
+        // Check for the specific "not found" error from our server
+        if (message.includes("not found on the platform")) {
+            console.warn(`Post ${postId} not found on platform. Marking as deleted.`);
+            onMarkPostAsDeleted(postId);
+            // Don't show a global error modal for this specific case
+        } else {
+            console.error(`Failed to refresh insights for post ${postId}:`, message);
+            onError(`Failed to refresh insights for post ${postId}: ${message}`);
+        }
         throw err; // Re-throw to be caught in PostCard
     }
   };
