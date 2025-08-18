@@ -1,5 +1,3 @@
-
-
 /// <reference lib="dom" />
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
@@ -10,7 +8,6 @@ import { FacebookIcon } from './icons/FacebookIcon';
 import { InstagramIcon } from './icons/InstagramIcon';
 import { YoutubeIcon } from './icons/YoutubeIcon';
 import { getDraftsFromDB, saveDraftsToDB } from '../utils/db';
-import { generateThumbnail } from '../utils/ffmpeg';
 
 const toBase64 = (file: File): Promise<string> => new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -247,11 +244,10 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
 
             const data = await response.json();
             updateAsset(assetId, {
-                videoUrl: data.secure_url, // This is the URL we need for publishing
+                videoUrl: data.secure_url,
                 status: 'idle',
-                errorMessage: `Video ready (${(data.bytes / 1024 / 1024).toFixed(1)}MB).`,
+                errorMessage: undefined,
             });
-            setTimeout(() => setAssets(curr => curr.map(a => a.id === assetId && a.errorMessage?.startsWith('Video ready') ? { ...a, errorMessage: undefined } : a)), 5000);
 
         } catch (error) {
             const message = error instanceof Error ? error.message : "An unknown error occurred during upload.";
@@ -295,9 +291,9 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
                 const initialState: Partial<MediaAsset> = {
                     previewUrl: videoPreviewUrl,
                     mediaType,
-                    file: undefined, // Will be set to the thumbnail file later
-                    status: 'thumbnailing',
-                    errorMessage: 'Generating video thumbnail...'
+                    file: undefined,
+                    status: 'uploading',
+                    errorMessage: 'Uploading video to cloud...'
                 };
                  if (existingAssetId) {
                     updateAsset(existingAssetId, initialState);
@@ -309,20 +305,8 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
                         description: '', hashtags: [], platforms: [PlatformEnum.Facebook], ...initialState
                     } as MediaAsset, ...prev]);
                 }
-
-                try {
-                    const thumbnailFile = await generateThumbnail(originalFile);
-                    updateAsset(assetIdToUpdate, {
-                        file: thumbnailFile, // This is the thumbnail for publishing
-                        status: 'uploading',
-                        errorMessage: 'Uploading video to cloud...'
-                    });
-                    await handleCloudinaryUpload(assetIdToUpdate, originalFile); // Upload the original video
-                } catch (err) {
-                    const message = err instanceof Error ? err.message : String(err);
-                    console.error('Thumbnail generation failed:', err);
-                    updateAsset(assetIdToUpdate, { status: 'error', errorMessage: `Video processing failed: ${message}` });
-                }
+                // Upload in the background
+                handleCloudinaryUpload(assetIdToUpdate, originalFile);
             } else { // Is an image
                  const imagePreviewUrl = URL.createObjectURL(originalFile);
                  const initialState: Partial<MediaAsset> = {
@@ -413,9 +397,9 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
         const isImage = asset.mediaType === 'IMAGE';
         const isVideo = asset.mediaType === 'VIDEO';
 
-        const hasMedia = (isImage && (asset.file || asset.previewUrl?.startsWith('https'))) || (isVideo && asset.videoUrl);
+        const hasMedia = (isImage && (asset.file || asset.previewUrl?.startsWith('https'))) || (isVideo && (asset.videoUrl || asset.previewUrl?.startsWith('blob:')));
         if (!hasMedia) {
-            updateAsset(assetId, { status: 'error', errorMessage: 'Please add media and wait for processing before publishing.' });
+            updateAsset(assetId, { status: 'error', errorMessage: 'Please add media before publishing.' });
             return;
         }
         
@@ -439,18 +423,25 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
         
         let imageUrlData: string;
         try {
-            // For both images and videos, the 'file' property holds the image content (original image or thumbnail) for upload.
-            if (asset.file) {
-                 imageUrlData = await toBase64(asset.file);
-            } else if (asset.previewUrl?.startsWith('https')) {
-                 // It's a URL from a copied post, pass it directly.
-                 imageUrlData = asset.previewUrl;
-            } else {
-                throw new Error('No image file or URL available for upload.');
+            if (asset.mediaType === 'VIDEO') {
+                if (!asset.videoUrl) {
+                    throw new Error('Video is still uploading or has failed. Please wait or try re-uploading.');
+                }
+                // Derive thumbnail from Cloudinary URL for the post record
+                imageUrlData = asset.videoUrl.replace(/\.(mp4|mov|avi|wmv|flv|webm|mkv)$/i, '.jpg');
+            } else { // Existing image logic
+                if (asset.file) {
+                     imageUrlData = await toBase64(asset.file);
+                } else if (asset.previewUrl?.startsWith('https')) {
+                     imageUrlData = asset.previewUrl;
+                } else {
+                    throw new Error('No image file or URL available for upload.');
+                }
             }
         } catch (error) {
+            const message = error instanceof Error ? error.message : 'Could not prepare the media file for upload.';
             console.error("Error preparing media for upload:", error);
-            updateAsset(assetId, { status: 'error', errorMessage: 'Could not read the media file for upload.' });
+            updateAsset(assetId, { status: 'error', errorMessage: message });
             return;
         }
 
@@ -636,7 +627,7 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
             <div className="grid grid-cols-1 xl:grid-cols-2 2xl:grid-cols-3 gap-6">
             {assets.map((asset) => {
                 const isBusy = asset.status === 'generating' || asset.status === 'publishing' || asset.status === 'published' || asset.status === 'compressing' || asset.status === 'uploading' || asset.status === 'thumbnailing';
-                const hasMedia = (asset.mediaType === 'IMAGE' && (asset.file || asset.previewUrl?.startsWith('https'))) || (asset.mediaType === 'VIDEO' && asset.videoUrl);
+                const hasMedia = (asset.mediaType === 'IMAGE' && (asset.file || asset.previewUrl?.startsWith('https'))) || (asset.mediaType === 'VIDEO' && (asset.videoUrl || asset.previewUrl?.startsWith('blob:')));
                 const isPublishDisabled = isBusy || asset.status === 'error' || asset.platforms.length === 0 || !hasMedia;
 
                 return (
