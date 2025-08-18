@@ -1,5 +1,4 @@
 
-
 import type { Platform, SeoSuggestions, Post, ConnectionStatus, GeneratedAssetContent, GeneratedPostIdea, ConnectionDetails, Comment } from '../types';
 
 const handleResponse = async (response: Response) => {
@@ -89,11 +88,11 @@ export const publishPost = async (
     return handleResponse(response);
 };
 
-export const getPostInsights = async (postId: string, pageAccessToken: string): Promise<{ likes: number; comments: number; shares: number; }> => {
+export const getPostInsights = async (facebookPostId: string | undefined, instagramPostId: string | undefined, pageAccessToken: string): Promise<{ likes: number; comments: number; shares: number; }> => {
     const response = await fetch('/api/post-insights', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ postId, pageAccessToken }),
+        body: JSON.stringify({ facebookPostId, instagramPostId, pageAccessToken }),
     });
     return handleResponse(response);
 };

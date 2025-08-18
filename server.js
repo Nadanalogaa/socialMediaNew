@@ -1,6 +1,4 @@
 
-
-
 import express from 'express';
 import 'dotenv/config';
 import { GoogleGenAI, Type } from '@google/genai';
@@ -269,7 +267,7 @@ app.post('/api/connect/facebook', async (req, res) => {
 
     try {
         // 1. Use the User Access Token to get a list of pages the user manages
-        const pagesResponse = await fetch(`https://graph.facebook.com/v20.0/me/accounts?access_token=${accessToken}`);
+        const pagesResponse = await fetch(`https://graph.facebook.com/v23.0/me/accounts?access_token=${accessToken}`);
         const pagesData = await pagesResponse.json();
 
         if (pagesData.error) {
@@ -293,7 +291,7 @@ app.post('/api/connect/facebook', async (req, res) => {
 
         // 4. Check for a linked Instagram account
         let instagramDetails = { igUserId: null, username: null };
-        const igResponse = await fetch(`https://graph.facebook.com/v20.0/${targetPage.id}?fields=instagram_business_account{id,username}&access_token=${targetPage.access_token}`);
+        const igResponse = await fetch(`https://graph.facebook.com/v23.0/${targetPage.id}?fields=instagram_business_account{id,username}&access_token=${targetPage.access_token}`);
         const igData = await igResponse.json();
 
         if (igData.error) {
@@ -431,7 +429,7 @@ app.post('/api/publish-post', async (req, res) => {
                     formData.append('caption', caption);
                     formData.append('source', new Blob([imageBuffer], { type: mimeType }), 'upload.jpg');
 
-                    const postUrl = `https://graph.facebook.com/v20.0/${facebook.pageId}/photos`;
+                    const postUrl = `https://graph.facebook.com/v23.0/${facebook.pageId}/photos`;
                     const fbResponse = await fetch(postUrl, { method: 'POST', body: formData });
                     const fbData = await fbResponse.json();
                     if (fbData.error) throw new Error(`Graph API post error: ${fbData.error.message}`);
@@ -440,7 +438,7 @@ app.post('/api/publish-post', async (req, res) => {
                     facebookPostId = fbData.post_id;
 
                     // Fetch the public URL of the just-posted photo for Instagram
-                    const photoDetailsResp = await fetch(`https://graph.facebook.com/v20.0/${fbData.post_id}?fields=full_picture&access_token=${facebook.pageAccessToken}`);
+                    const photoDetailsResp = await fetch(`https://graph.facebook.com/v23.0/${fbData.post_id}?fields=full_picture&access_token=${facebook.pageAccessToken}`);
                     const photoDetailsData = await photoDetailsResp.json();
                     if (photoDetailsData.full_picture) {
                         facebookPhotoUrl = photoDetailsData.full_picture;
@@ -451,7 +449,7 @@ app.post('/api/publish-post', async (req, res) => {
 
                 } else if (isVideo) {
                     console.log(`[REAL FB] Publishing video from URL: ${videoUrl.substring(0, 70)}...`);
-                    const postUrl = `https://graph.facebook.com/v20.0/${facebook.pageId}/videos`;
+                    const postUrl = `https://graph.facebook.com/v23.0/${facebook.pageId}/videos`;
                     const videoParams = new URLSearchParams({
                         access_token: facebook.pageAccessToken,
                         file_url: videoUrl,
@@ -529,7 +527,7 @@ app.post('/api/publish-post', async (req, res) => {
                 let containerRequestParamsBody;
 
                 if (isImage) {
-                    containerRequestUrl = `https://graph.facebook.com/v20.0/${instagram.igUserId}/media`;
+                    containerRequestUrl = `https://graph.facebook.com/v23.0/${instagram.igUserId}/media`;
                     containerRequestParamsBody = new URLSearchParams({
                         caption: igCaption,
                         access_token: facebook.pageAccessToken,
@@ -539,7 +537,7 @@ app.post('/api/publish-post', async (req, res) => {
                     // Send all parameters in the request body for video uploads.
                     // Using mixed query/body params was causing IG to reject the request with
                     // "Invalid parameter" errors.
-                    containerRequestUrl = `https://graph.facebook.com/v20.0/${instagram.igUserId}/media`;
+                    containerRequestUrl = `https://graph.facebook.com/v23.0/${instagram.igUserId}/media`;
                     containerRequestParamsBody = new URLSearchParams({
                         caption: igCaption,
                         access_token: facebook.pageAccessToken,
@@ -571,7 +569,7 @@ app.post('/api/publish-post', async (req, res) => {
                     const maxAttempts = 20; // 20 attempts * 4s = 80 seconds timeout
                     
                     while (containerStatus !== 'FINISHED' && attempts < maxAttempts) {
-                        const statusUrl = `https://graph.facebook.com/v20.0/${creationId}?fields=status_code,status&access_token=${facebook.pageAccessToken}`;
+                        const statusUrl = `https://graph.facebook.com/v23.0/${creationId}?fields=status_code,status&access_token=${facebook.pageAccessToken}`;
                         const statusRes = await fetch(statusUrl);
                         const statusData = await statusRes.json();
     
@@ -603,7 +601,7 @@ app.post('/api/publish-post', async (req, res) => {
 
 
                 // 3. Publish container
-                const publishUrl = `https://graph.facebook.com/v20.0/${instagram.igUserId}/media_publish`;
+                const publishUrl = `https://graph.facebook.com/v23.0/${instagram.igUserId}/media_publish`;
                 const publishParams = new URLSearchParams({
                     creation_id: creationId,
                     access_token: facebook.pageAccessToken
@@ -742,184 +740,99 @@ app.post('/api/generate-post-from-idea', async (req, res) => {
 });
 
 app.post('/api/post-insights', async (req, res) => {
-    const { postId, pageAccessToken } = req.body;
-    if (!postId || !pageAccessToken) {
-        return res.status(400).json({ message: 'Missing required fields: postId, pageAccessToken' });
+    const { facebookPostId, instagramPostId, pageAccessToken } = req.body;
+
+    if ((!facebookPostId && !instagramPostId) || !pageAccessToken) {
+        return res.status(400).json({ message: 'Missing required fields: pageAccessToken and at least one postId' });
     }
 
     try {
-        console.log(`[REAL INSIGHTS] Fetching insights for post: ${postId}`);
-        const insightsUrl = `https://graph.facebook.com/v20.0/${postId}?fields=likes.summary(true),comments.summary(true),shares&access_token=${pageAccessToken}`;
+        let totalLikes = 0;
+        let totalComments = 0;
+        let totalShares = 0;
+        let fbPostNotFound = false;
+        let igPostNotFound = false;
 
-        const response = await fetch(insightsUrl);
-        const data = await response.json();
+        // Fetch Facebook Insights
+        if (facebookPostId) {
+            console.log(`[REAL INSIGHTS] Fetching insights for Facebook post: ${facebookPostId}`);
+            const fbInsightsUrl = `https://graph.facebook.com/v23.0/${facebookPostId}?fields=likes.summary(true),comments.summary(true),shares&access_token=${pageAccessToken}`;
+            const fbResponse = await fetch(fbInsightsUrl);
+            const fbData = await fbResponse.json();
 
-        if (data.error) {
-            const errorMessage = `Graph API error fetching insights: ${data.error.message}`;
-            
-            // Check if the post/object was not found or deleted
-            if (data.error.code === 100 || (data.error.message && data.error.message.toLowerCase().includes('does not exist'))) {
-                console.warn(`[REAL INSIGHTS] Post ${postId} not found on platform.`);
-                return res.status(404).json({ message: `Post with ID ${postId} was not found on the platform. It may have been deleted.` });
+            if (fbData.error) {
+                const errorMessage = `Graph API error fetching FB insights: ${fbData.error.message}`;
+                if (fbData.error.code === 100 || (fbData.error.message && fbData.error.message.toLowerCase().includes('does not exist'))) {
+                    console.warn(`[REAL INSIGHTS] Facebook post ${facebookPostId} not found.`);
+                    fbPostNotFound = true;
+                } else {
+                    console.error(errorMessage);
+                }
+            } else {
+                totalLikes += fbData.likes?.summary?.total_count || 0;
+                totalComments += fbData.comments?.summary?.total_count || 0;
+                totalShares += fbData.shares?.count || 0;
+                console.log(`[REAL INSIGHTS] FB Insights: ${fbData.likes?.summary?.total_count || 0} likes, ${fbData.comments?.summary?.total_count || 0} comments, ${fbData.shares?.count || 0} shares`);
             }
-
-            // Check for permission-related errors and return a 403 Forbidden
-            if (data.error.code === 200 || data.error.code === 10 || (data.error.message && data.error.message.toLowerCase().includes('permissions'))) {
-                console.warn(`[REAL INSIGHTS] Permission error for post ${postId}: ${data.error.message}`);
-                return res.status(403).json({ message: errorMessage });
-            }
-            throw new Error(errorMessage);
         }
 
-        const insights = {
-            likes: data.likes?.summary?.total_count || 0,
-            comments: data.comments?.summary?.total_count || 0,
-            shares: data.shares?.count || 0,
-        };
+        // Fetch Instagram Insights
+        if (instagramPostId) {
+            console.log(`[REAL INSIGHTS] Fetching insights for Instagram media: ${instagramPostId}`);
+            const igInsightsUrl = `https://graph.facebook.com/v23.0/${instagramPostId}?fields=like_count,comments_count&access_token=${pageAccessToken}`;
+            const igResponse = await fetch(igInsightsUrl);
+            const igData = await igResponse.json();
 
-        console.log(`[REAL INSIGHTS] Successfully fetched insights:`, insights);
-        res.json(insights);
-
-    } catch (error) {
-        console.error('[REAL INSIGHTS] Failed to fetch post insights:', error);
-        res.status(500).json({ message: `Failed to fetch post insights: ${error.message}` });
-    }
-});
-
-app.delete('/api/post/:postId', async (req, res) => {
-    const { postId } = req.params;
-    const { pageAccessToken } = req.body;
-
-    if (!postId || !pageAccessToken) {
-        return res.status(400).json({ message: 'Missing required fields: postId, pageAccessToken' });
-    }
-
-    if (postId.startsWith('post_')) {
-        return res.status(400).json({ message: 'Cannot delete mock posts from the platform.' });
-    }
-
-    try {
-        console.log(`[REAL DELETE] Attempting to delete post: ${postId}`);
-        const deleteUrl = `https://graph.facebook.com/v20.0/${postId}?access_token=${pageAccessToken}`;
-
-        const response = await fetch(deleteUrl, { method: 'DELETE' });
-        const data = await response.json();
-
-        if (data.error) {
-            if (data.error.code === 100 && data.error.error_subcode === 33) {
-                console.warn(`[REAL DELETE] Post ${postId} might have been already deleted. Message: ${data.error.message}`);
-                return res.json({ success: true, message: "Post already deleted." });
+            if (igData.error) {
+                const errorMessage = `Graph API error fetching IG insights: ${igData.error.message}`;
+                if (igData.error.code === 100 || (igData.error.message && igData.error.message.toLowerCase().includes('does not exist'))) {
+                    console.warn(`[REAL INSIGHTS] Instagram media ${instagramPostId} not found.`);
+                    igPostNotFound = true;
+                } else {
+                    console.error(errorMessage);
+                }
+            } else {
+                const igLikes = igData.like_count || 0;
+                const igComments = igData.comments_count || 0;
+                totalLikes += igLikes;
+                totalComments += igComments;
+                console.log(`[REAL INSIGHTS] IG Insights: ${igLikes} likes, ${igComments} comments. Total now: ${totalLikes} likes, ${totalComments} comments`);
             }
-            throw new Error(`Graph API error deleting post: ${data.error.message}`);
         }
 
-        if (data.success === false) {
-            console.error('[REAL DELETE] Facebook API indicated failure without an error object:', data);
-            throw new Error('Facebook API indicated deletion was unsuccessful.');
+        const platformsPostedTo = [];
+        if (facebookPostId) platformsPostedTo.push('Facebook');
+        if (instagramPostId) platformsPostedTo.push('Instagram');
+
+        const platformsNotFoundOn = [];
+        if (facebookPostId && fbPostNotFound) platformsNotFoundOn.push('Facebook');
+        if (instagramPostId && igPostNotFound) platformsNotFoundOn.push('Instagram');
+        
+        if (platformsPostedTo.length > 0 && platformsPostedTo.length === platformsNotFoundOn.length) {
+            return res.status(404).json({ message: 'This post was not found on the platform(s) it was posted to. It may have been deleted.' });
         }
 
-        console.log(`[REAL DELETE] Successfully deleted post: ${postId}`);
-        res.json({ success: true });
-    } catch (error) {
-        console.error('[REAL DELETE] Failed to delete post:', error);
-        res.status(500).json({ message: `Failed to delete post: ${error.message}` });
-    }
-});
-
-// EDIT POST
-app.put('/api/post/:postId', async (req, res) => {
-    const { postId } = req.params;
-    const { message, pageAccessToken } = req.body;
-
-    if (!postId || !message || !pageAccessToken) {
-        return res.status(400).json({ message: 'Missing required fields: postId, message, pageAccessToken' });
-    }
-
-    try {
-        console.log(`[REAL UPDATE] Attempting to update post: ${postId}`);
-        const updateUrl = `https://graph.facebook.com/v20.0/${postId}`;
-        const updateParams = new URLSearchParams({
-            message: message,
-            access_token: pageAccessToken
+        res.json({
+            likes: totalLikes,
+            comments: totalComments,
+            shares: totalShares,
         });
-
-        const response = await fetch(updateUrl, { method: 'POST', body: updateParams });
-        const data = await response.json();
-
-        if (data.error) {
-            throw new Error(`Graph API error updating post: ${data.error.message}`);
-        }
-        
-        console.log(`[REAL UPDATE] Successfully updated post ${postId}.`);
-        res.json({ success: true });
-
     } catch (error) {
-        console.error(`[REAL UPDATE] Failed to update post ${postId}:`, error);
-        res.status(500).json({ message: `Failed to update post: ${error.message}` });
+        console.error('Error fetching post insights:', error);
+        res.status(500).json({ message: `Failed to fetch post insights: ${error.message || 'Please check server logs.'}` });
     }
 });
 
 
-// GET COMMENTS
-app.get('/api/post/:postId/comments', async (req, res) => {
-    const { postId } = req.params;
-    const { pageAccessToken } = req.query;
+// Serve static files from the React app in production
+if (process.env.NODE_ENV === 'production') {
+    app.use(express.static(path.join(__dirname, 'dist')));
 
-    if (!postId || !pageAccessToken) {
-        return res.status(400).json({ message: 'Missing required fields: postId, pageAccessToken' });
-    }
+    app.get('*', (req, res) => {
+        res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+    });
+}
 
-    try {
-        const commentsUrl = `https://graph.facebook.com/v20.0/${postId}/comments?fields=id,message,from{id,name,picture},created_time&access_token=${pageAccessToken}`;
-        const response = await fetch(commentsUrl);
-        const data = await response.json();
-
-        if (data.error) {
-            throw new Error(`Graph API error fetching comments: ${data.error.message}`);
-        }
-
-        res.json(data.data || []);
-    } catch (error) {
-        console.error(`[REAL COMMENTS] Failed to fetch comments for post ${postId}:`, error);
-        res.status(500).json({ message: `Failed to fetch comments: ${error.message}` });
-    }
+app.listen(port, () => {
+    console.log(`Server listening on port ${port}`);
 });
-
-
-// REPLY TO COMMENT
-app.post('/api/comment/:commentId/reply', async (req, res) => {
-    const { commentId } = req.params;
-    const { message, pageAccessToken } = req.body;
-    
-    if (!commentId || !message || !pageAccessToken) {
-        return res.status(400).json({ message: 'Missing required fields: commentId, message, pageAccessToken' });
-    }
-
-    try {
-        console.log(`[REAL REPLY] Replying to comment ${commentId}`);
-        const replyUrl = `https://graph.facebook.com/v20.0/${commentId}/replies`;
-        const replyParams = new URLSearchParams({
-            message: message,
-            access_token: pageAccessToken
-        });
-        
-        const response = await fetch(replyUrl, { method: 'POST', body: replyParams });
-        const data = await response.json();
-        
-        if (data.error) {
-            throw new Error(`Graph API error replying to comment: ${data.error.message}`);
-        }
-        
-        console.log(`[REAL REPLY] Successfully replied to comment. Reply ID: ${data.id}`);
-        res.json({ success: true, id: data.id });
-        
-    } catch (error) {
-        console.error(`[REAL REPLY] Failed to reply to comment ${commentId}:`, error);
-        res.status(500).json({ message: `Failed to reply to comment: ${error.message}` });
-    }
-});
-
-
-
-// Export the Express app for Vercel to use as a serverless function
-export default app;

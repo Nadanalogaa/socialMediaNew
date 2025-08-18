@@ -102,9 +102,21 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ posts, connectionD
         onError("Cannot refresh insights: Facebook not connected or token missing.");
         throw new Error("Facebook connection details not found.");
     }
+    const postToRefresh = posts.find(p => p.id === postId);
+    if (!postToRefresh) {
+        const errorMessage = `Could not find post with ID ${postId} to refresh its insights.`;
+        console.error(errorMessage);
+        onError(errorMessage);
+        throw new Error(errorMessage);
+    }
+    
     onError(null);
     try {
-        const newEngagement = await getPostInsights(postId, connectionDetails.facebook.pageAccessToken);
+        const newEngagement = await getPostInsights(
+            postToRefresh.platformPostIds?.Facebook, 
+            postToRefresh.platformPostIds?.Instagram, 
+            connectionDetails.facebook.pageAccessToken
+        );
         onUpdatePostEngagement(postId, newEngagement);
     } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
