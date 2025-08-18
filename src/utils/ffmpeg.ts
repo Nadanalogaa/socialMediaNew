@@ -8,7 +8,7 @@ export const loadFFmpeg = async (): Promise<FFmpeg> => {
         return ffmpeg;
     }
     ffmpeg = new FFmpeg();
-    const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd';
+    const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.10/dist/umd';
     // Use a dynamic import for fetchFile to accommodate both browser and test environments.
     const { fetchFile } = await import('@ffmpeg/util');
     await ffmpeg.load({
@@ -35,6 +35,16 @@ export const generateThumbnail = async (videoFile: File): Promise<File> => {
     await ffmpegInstance.deleteFile(inputFileName);
     await ffmpegInstance.deleteFile(outputFileName);
     
-    const thumbnailBlob = new Blob([data], { type: 'image/jpeg' });
+    // The `readFile` method returns `FileData` (string | Uint8Array). We expect a `Uint8Array` for a binary
+    // file. This type guard satisfies TypeScript and ensures we handle the correct data type.
+    if (!(data instanceof Uint8Array)) {
+        throw new Error('FFmpeg did not return a Uint8Array for the generated thumbnail.');
+    }
+
+    // The `data` is a Uint8Array. If it's backed by a SharedArrayBuffer (which can happen
+    // with ffmpeg.wasm when using threading), the Blob constructor may not accept it directly.
+    // Creating a new Uint8Array from it creates a copy with a standard ArrayBuffer,
+    // ensuring compatibility.
+    const thumbnailBlob = new Blob([new Uint8Array(data)], { type: 'image/jpeg' });
     return new File([thumbnailBlob], 'thumbnail.jpg', { type: 'image/jpeg' });
 };

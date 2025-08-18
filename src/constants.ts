@@ -45,5 +45,27 @@ export const MOCK_POSTS: Post[] = [
       comments: 0,
       shares: 0
     }
+  },
+  {
+    id: 'post_3',
+    platforms: [Platform.Facebook],
+    audience: Audience.Global,
+    imageUrl: 'https://picsum.photos/seed/video1/800/600', // This is the video thumbnail
+    videoUrl: '', // No actual video URL for mock data to prevent 404s
+    mediaType: 'VIDEO',
+    prompt: 'Behind the scenes footage of our dance practice.',
+    generatedContent: {
+      facebook: "A sneak peek into our practice sessions! See the dedication and hard work that goes into every performance. #DancePractice #BehindTheScenes #Nadanaloga",
+      instagram: "Practice makes perfect! ✨ Go behind the scenes with us. #DanceLife #Rehearsal #IndianDance #Nadanaloga",
+      youtubeTitle: "Nadanaloga Practice Session - Behind the Scenes",
+      youtubeDescription: "Watch our talented dancers rehearse for their upcoming show.",
+      hashtags: ["DancePractice", "BehindTheScenes", "Nadanaloga", "DanceLife", "Rehearsal"]
+    },
+    postedAt: new Date('2024-08-11T14:00:00Z').toISOString(),
+    engagement: {
+      likes: 0,
+      comments: 0,
+      shares: 0
+    }
   }
 ];
