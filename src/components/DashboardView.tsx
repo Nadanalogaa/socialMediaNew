@@ -108,11 +108,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ posts, connectionD
         onUpdatePostEngagement(postId, newEngagement);
     } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        // Check for the specific "not found" error from our server
         if (message.includes("not found on the platform")) {
             console.warn(`Post ${postId} not found on platform. Marking as deleted.`);
             onMarkPostAsDeleted(postId);
-            // Don't show a global error modal for this specific case
+        } else if (message.toLowerCase().includes('permission')) {
+            const userFriendlyMessage = `Could not get insights due to missing permissions.\n\nPlease go to the 'Connections' page, 'Disconnect' Facebook, and then 'Connect' again to grant the required permissions (e.g., 'pages_read_engagement').`;
+            onError(userFriendlyMessage);
         } else {
             console.error(`Failed to refresh insights for post ${postId}:`, message);
             onError(`Failed to refresh insights for post ${postId}: ${message}`);
