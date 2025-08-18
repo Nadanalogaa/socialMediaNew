@@ -1,5 +1,6 @@
 
 
+
 import express from 'express';
 import 'dotenv/config';
 import { GoogleGenAI, Type } from '@google/genai';
@@ -268,7 +269,7 @@ app.post('/api/connect/facebook', async (req, res) => {
 
     try {
         // 1. Use the User Access Token to get a list of pages the user manages
-        const pagesResponse = await fetch(`https://graph.facebook.com/v23.0/me/accounts?access_token=${accessToken}`);
+        const pagesResponse = await fetch(`https://graph.facebook.com/v20.0/me/accounts?access_token=${accessToken}`);
         const pagesData = await pagesResponse.json();
 
         if (pagesData.error) {
@@ -292,7 +293,7 @@ app.post('/api/connect/facebook', async (req, res) => {
 
         // 4. Check for a linked Instagram account
         let instagramDetails = { igUserId: null, username: null };
-        const igResponse = await fetch(`https://graph.facebook.com/v23.0/${targetPage.id}?fields=instagram_business_account{id,username}&access_token=${targetPage.access_token}`);
+        const igResponse = await fetch(`https://graph.facebook.com/v20.0/${targetPage.id}?fields=instagram_business_account{id,username}&access_token=${targetPage.access_token}`);
         const igData = await igResponse.json();
 
         if (igData.error) {
@@ -430,7 +431,7 @@ app.post('/api/publish-post', async (req, res) => {
                     formData.append('caption', caption);
                     formData.append('source', new Blob([imageBuffer], { type: mimeType }), 'upload.jpg');
 
-                    const postUrl = `https://graph.facebook.com/v23.0/${facebook.pageId}/photos`;
+                    const postUrl = `https://graph.facebook.com/v20.0/${facebook.pageId}/photos`;
                     const fbResponse = await fetch(postUrl, { method: 'POST', body: formData });
                     const fbData = await fbResponse.json();
                     if (fbData.error) throw new Error(`Graph API post error: ${fbData.error.message}`);
@@ -439,7 +440,7 @@ app.post('/api/publish-post', async (req, res) => {
                     facebookPostId = fbData.post_id;
 
                     // Fetch the public URL of the just-posted photo for Instagram
-                    const photoDetailsResp = await fetch(`https://graph.facebook.com/v23.0/${fbData.post_id}?fields=full_picture&access_token=${facebook.pageAccessToken}`);
+                    const photoDetailsResp = await fetch(`https://graph.facebook.com/v20.0/${fbData.post_id}?fields=full_picture&access_token=${facebook.pageAccessToken}`);
                     const photoDetailsData = await photoDetailsResp.json();
                     if (photoDetailsData.full_picture) {
                         facebookPhotoUrl = photoDetailsData.full_picture;
@@ -450,7 +451,7 @@ app.post('/api/publish-post', async (req, res) => {
 
                 } else if (isVideo) {
                     console.log(`[REAL FB] Publishing video from URL: ${videoUrl.substring(0, 70)}...`);
-                    const postUrl = `https://graph.facebook.com/v23.0/${facebook.pageId}/videos`;
+                    const postUrl = `https://graph.facebook.com/v20.0/${facebook.pageId}/videos`;
                     const videoParams = new URLSearchParams({
                         access_token: facebook.pageAccessToken,
                         file_url: videoUrl,
@@ -528,7 +529,7 @@ app.post('/api/publish-post', async (req, res) => {
                 let containerRequestParamsBody;
 
                 if (isImage) {
-                    containerRequestUrl = `https://graph.facebook.com/v23.0/${instagram.igUserId}/media`;
+                    containerRequestUrl = `https://graph.facebook.com/v20.0/${instagram.igUserId}/media`;
                     containerRequestParamsBody = new URLSearchParams({
                         caption: igCaption,
                         access_token: facebook.pageAccessToken,
@@ -538,7 +539,7 @@ app.post('/api/publish-post', async (req, res) => {
                     // Send all parameters in the request body for video uploads.
                     // Using mixed query/body params was causing IG to reject the request with
                     // "Invalid parameter" errors.
-                    containerRequestUrl = `https://graph.facebook.com/v23.0/${instagram.igUserId}/media`;
+                    containerRequestUrl = `https://graph.facebook.com/v20.0/${instagram.igUserId}/media`;
                     containerRequestParamsBody = new URLSearchParams({
                         caption: igCaption,
                         access_token: facebook.pageAccessToken,
@@ -570,7 +571,7 @@ app.post('/api/publish-post', async (req, res) => {
                     const maxAttempts = 20; // 20 attempts * 4s = 80 seconds timeout
                     
                     while (containerStatus !== 'FINISHED' && attempts < maxAttempts) {
-                        const statusUrl = `https://graph.facebook.com/v23.0/${creationId}?fields=status_code,status&access_token=${facebook.pageAccessToken}`;
+                        const statusUrl = `https://graph.facebook.com/v20.0/${creationId}?fields=status_code,status&access_token=${facebook.pageAccessToken}`;
                         const statusRes = await fetch(statusUrl);
                         const statusData = await statusRes.json();
     
@@ -602,7 +603,7 @@ app.post('/api/publish-post', async (req, res) => {
 
 
                 // 3. Publish container
-                const publishUrl = `https://graph.facebook.com/v23.0/${instagram.igUserId}/media_publish`;
+                const publishUrl = `https://graph.facebook.com/v20.0/${instagram.igUserId}/media_publish`;
                 const publishParams = new URLSearchParams({
                     creation_id: creationId,
                     access_token: facebook.pageAccessToken
@@ -748,7 +749,7 @@ app.post('/api/post-insights', async (req, res) => {
 
     try {
         console.log(`[REAL INSIGHTS] Fetching insights for post: ${postId}`);
-        const insightsUrl = `https://graph.facebook.com/v23.0/${postId}?fields=likes.summary(true),comments.summary(true),shares&access_token=${pageAccessToken}`;
+        const insightsUrl = `https://graph.facebook.com/v20.0/${postId}?fields=likes.summary(true),comments.summary(true),shares&access_token=${pageAccessToken}`;
 
         const response = await fetch(insightsUrl);
         const data = await response.json();
@@ -799,7 +800,7 @@ app.delete('/api/post/:postId', async (req, res) => {
 
     try {
         console.log(`[REAL DELETE] Attempting to delete post: ${postId}`);
-        const deleteUrl = `https://graph.facebook.com/v23.0/${postId}?access_token=${pageAccessToken}`;
+        const deleteUrl = `https://graph.facebook.com/v20.0/${postId}?access_token=${pageAccessToken}`;
 
         const response = await fetch(deleteUrl, { method: 'DELETE' });
         const data = await response.json();
@@ -836,7 +837,7 @@ app.put('/api/post/:postId', async (req, res) => {
 
     try {
         console.log(`[REAL UPDATE] Attempting to update post: ${postId}`);
-        const updateUrl = `https://graph.facebook.com/v23.0/${postId}`;
+        const updateUrl = `https://graph.facebook.com/v20.0/${postId}`;
         const updateParams = new URLSearchParams({
             message: message,
             access_token: pageAccessToken
@@ -869,7 +870,7 @@ app.get('/api/post/:postId/comments', async (req, res) => {
     }
 
     try {
-        const commentsUrl = `https://graph.facebook.com/v23.0/${postId}/comments?fields=id,message,from{id,name,picture},created_time&access_token=${pageAccessToken}`;
+        const commentsUrl = `https://graph.facebook.com/v20.0/${postId}/comments?fields=id,message,from{id,name,picture},created_time&access_token=${pageAccessToken}`;
         const response = await fetch(commentsUrl);
         const data = await response.json();
 
@@ -896,7 +897,7 @@ app.post('/api/comment/:commentId/reply', async (req, res) => {
 
     try {
         console.log(`[REAL REPLY] Replying to comment ${commentId}`);
-        const replyUrl = `https://graph.facebook.com/v23.0/${commentId}/replies`;
+        const replyUrl = `https://graph.facebook.com/v20.0/${commentId}/replies`;
         const replyParams = new URLSearchParams({
             message: message,
             access_token: pageAccessToken

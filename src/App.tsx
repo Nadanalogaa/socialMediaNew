@@ -1,5 +1,6 @@
 
 
+
 /// <reference lib="dom" />
 
 import React, { useState, useCallback, useEffect } from 'react';
@@ -238,7 +239,7 @@ const App: React.FC = () => {
             appId: import.meta.env.VITE_FACEBOOK_APP_ID, 
             cookie: true,
             xfbml: true,
-            version: 'v23.0'
+            version: 'v20.0'
         });
         setIsFbSdkInitialized(true);
         window.FB.AppEvents.logPageView();
