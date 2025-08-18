@@ -888,12 +888,22 @@ app.delete('/api/post/:postId', async (req, res) => {
 app.get('/api/post/:postId/comments', async (req, res) => {
     const originalPostId = req.params.postId;
     const postId = originalPostId.split(':')[0]; // Sanitize ID
-    const { pageAccessToken } = req.query;
-    if (!postId || !pageAccessToken) {
-        return res.status(400).json({ message: 'Missing postId or pageAccessToken' });
+    const { pageAccessToken, platform } = req.query;
+    if (!postId || !pageAccessToken || !platform) {
+        return res.status(400).json({ message: 'Missing postId, pageAccessToken, or platform' });
     }
     try {
-        const url = `https://graph.facebook.com/v23.0/${postId}/comments?fields=id,message,from{id,name,picture},created_time&access_token=${pageAccessToken}`;
+        let url;
+        const isInstagram = platform === 'Instagram';
+
+        if (isInstagram) {
+            // Use fields compatible with Instagram Graph API
+            url = `https://graph.facebook.com/v23.0/${postId}/comments?fields=id,text,timestamp,from{id,username}&access_token=${pageAccessToken}`;
+        } else {
+            // Original fields for Facebook
+            url = `https://graph.facebook.com/v23.0/${postId}/comments?fields=id,message,from{id,name,picture},created_time&access_token=${pageAccessToken}`;
+        }
+        
         const response = await fetch(url);
         if (!response.ok) { // Catch non-JSON responses
             const text = await response.text();
@@ -901,9 +911,31 @@ app.get('/api/post/:postId/comments', async (req, res) => {
         }
         const data = await response.json();
         if (data.error) throw new Error(data.error.message);
-        res.json(data.data || []); // The comments are in the `data` property
+        
+        let comments = data.data || [];
+
+        // If it's Instagram, transform the data to match the client's expected structure
+        if (isInstagram) {
+            comments = comments.map(comment => ({
+                id: comment.id,
+                message: comment.text,
+                created_time: comment.timestamp,
+                from: {
+                    id: comment.from.id,
+                    name: comment.from.username, // Use username for name
+                    picture: {
+                        data: {
+                            // Provide a placeholder since profile_pic is not available here
+                            url: `https://ui-avatars.com/api/?name=${encodeURIComponent(comment.from.username)}&background=random&color=fff`
+                        }
+                    }
+                }
+            }));
+        }
+
+        res.json(comments);
     } catch (error) {
-        console.error(`[REAL COMMENTS] Failed to get comments for post ${postId}:`, error);
+        console.error(`[REAL COMMENTS] Failed to get comments for post ${postId} on ${platform}:`, error);
         res.status(500).json({ message: `Failed to get comments: ${error.message}` });
     }
 });

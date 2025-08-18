@@ -1,5 +1,6 @@
 
 
+
 import type { Platform, SeoSuggestions, Post, ConnectionStatus, GeneratedAssetContent, GeneratedPostIdea, ConnectionDetails, Comment, FacebookUser } from '../types';
 
 const handleResponse = async (response: Response) => {
@@ -119,8 +120,8 @@ export const getLikes = async (postId: string, pageAccessToken: string): Promise
     return handleResponse(response);
 };
 
-export const getComments = async (postId: string, pageAccessToken: string): Promise<Comment[]> => {
-    const response = await fetch(`/api/post/${postId}/comments?pageAccessToken=${pageAccessToken}`);
+export const getComments = async (postId: string, pageAccessToken: string, platform: Platform): Promise<Comment[]> => {
+    const response = await fetch(`/api/post/${postId}/comments?pageAccessToken=${pageAccessToken}&platform=${platform}`);
     return handleResponse(response);
 };
 

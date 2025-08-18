@@ -1,6 +1,7 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import type { Post, ConnectionDetails, Comment } from '../types';
+import { Platform } from '../types';
 import { getComments, replyToComment } from '../services/geminiService';
 import { timeAgo } from '../utils/time';
 
@@ -82,7 +83,7 @@ const CommentsTab: React.FC<{ post: Post, pageAccessToken: string }> = ({ post, 
         setIsLoading(true);
         setError(null);
         try {
-            const fetchedComments = await getComments(post.id, pageAccessToken);
+            const fetchedComments = await getComments(post.id, pageAccessToken, Platform.Facebook);
             setComments(fetchedComments);
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Failed to load comments.');

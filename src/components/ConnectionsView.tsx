@@ -37,6 +37,7 @@ const FacebookTroubleshooter: React.FC = () => (
              <ul className="list-disc list-inside space-y-2 text-blue-200">
                 <li><strong className="text-white">`instagram_content_publish`</strong>: Allows the app to post to your Instagram account.</li>
                 <li><strong className="text-white">`pages_manage_posts`</strong>: Allows the app to post to your connected Facebook Page.</li>
+                <li><strong className="text-white">`instagram_manage_comments`</strong>: Allows the app to reply to comments on your Instagram posts.</li>
                 <li><strong className="text-white">`instagram_basic`</strong> & <strong className="text-white">`pages_show_list`</strong>: Allows the app to find your accounts.</li>
                 <li><strong className="text-white">`pages_read_engagement`</strong>: Allows the app to fetch likes and comments for your posts.</li>
                 <li><strong className="text-white">`read_insights`</strong>: Allows fetching of more detailed analytics and post performance data.</li>
@@ -174,7 +175,7 @@ export const ConnectionsView: React.FC<ConnectionsViewProps> = ({ connections, s
                 }
             }
 
-            const required_scope = 'public_profile,pages_show_list,pages_manage_posts,pages_read_engagement,instagram_basic,instagram_content_publish,read_insights';
+            const required_scope = 'public_profile,pages_show_list,pages_manage_posts,pages_read_engagement,instagram_basic,instagram_content_publish,read_insights,instagram_manage_comments';
             console.log(`Requesting Facebook permissions with scope: ${required_scope}`);
 
             window.FB.login(loginCallback, {

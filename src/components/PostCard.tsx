@@ -64,7 +64,7 @@ const EngagementModal: React.FC<EngagementModalProps> = ({ post, type, platform,
         try {
             let result;
             if (type === 'comments') {
-                result = await getComments(postIdForPlatform, pageAccessToken);
+                result = await getComments(postIdForPlatform, pageAccessToken, platform);
             } else {
                 result = await getLikes(postIdForPlatform, pageAccessToken);
             }
@@ -74,7 +74,7 @@ const EngagementModal: React.FC<EngagementModalProps> = ({ post, type, platform,
         } finally {
             setIsLoading(false);
         }
-    }, [type, postIdForPlatform, pageAccessToken]);
+    }, [type, postIdForPlatform, pageAccessToken, platform]);
 
     useEffect(() => {
         if (type === 'likes' && platform === PlatformEnum.Instagram) {
@@ -345,8 +345,9 @@ export const PostCard: React.FC<PostCardProps> = ({ post, isSelected, connection
               alt="Post visual"
               className="w-full h-full object-cover"
               onError={(e) => {
-                  // If even the corrected URL fails, show a placeholder
-                  (e.target as HTMLImageElement).src = 'https://placehold.co/800x600/1f2937/9ca3af?text=Image+Not+Found';
+                  const target = e.target as HTMLImageElement;
+                  target.onerror = null; // Prevent infinite loop if placeholder fails
+                  target.src = 'https://placehold.co/800x600/1f2937/9ca3af?text=Media+Not+Found';
               }}
             />
             {post.mediaType === 'VIDEO' && (
