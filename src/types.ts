@@ -31,7 +31,7 @@ export interface Post {
   audience: Audience;
   imageUrl?: string; // Thumbnail for videos, image for images
   videoUrl?: string; // Actual video URL from Cloudinary etc.
-  mediaType?: 'IMAGE' | 'VIDEO';
+  mediaType: 'IMAGE' | 'VIDEO';
   prompt: string;
   generatedContent: {
       facebook: string;

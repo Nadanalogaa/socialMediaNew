@@ -50,9 +50,13 @@ export const saveDraftsToDB = async (assets: MediaAsset[]): Promise<void> => {
              // Add or update assets
             for (const asset of assets) {
                 // Create a clone to avoid mutating state and prepare for storage.
-                const storableAsset = { ...asset };
+                const storableAsset: Partial<MediaAsset> = { ...asset };
                 if (storableAsset.previewUrl?.startsWith('blob:')) {
                     delete storableAsset.previewUrl;
+                }
+                // Don't store the large file object in DB if we have a videoUrl
+                if(storableAsset.videoUrl) {
+                    delete storableAsset.file;
                 }
                 store.put(storableAsset);
             }

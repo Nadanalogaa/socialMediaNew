@@ -121,7 +121,8 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
                         // We need to ensure it's a real File instance before using it with APIs like URL.createObjectURL.
                         if (asset.file && asset.file instanceof File) {
                             // If it is a valid File, create a blob URL for preview.
-                            if (!asset.previewUrl?.startsWith('https://')) {
+                            // For videos, the previewUrl is handled differently (it's the video itself).
+                            if (asset.mediaType !== 'VIDEO' && !asset.previewUrl?.startsWith('https://')) {
                                 return { ...asset, previewUrl: URL.createObjectURL(asset.file) };
                             }
                         } else if (asset.file) {
@@ -247,7 +248,6 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
             const data = await response.json();
             updateAsset(assetId, {
                 videoUrl: data.secure_url, // This is the URL we need for publishing
-                file: undefined, // Clear the original video file from state after upload
                 status: 'idle',
                 errorMessage: `Video ready (${(data.bytes / 1024 / 1024).toFixed(1)}MB).`,
             });
@@ -264,72 +264,97 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
         if (!files || files.length === 0) return;
 
         const MAX_IMAGE_SIZE_MB = 10;
-        const MAX_VIDEO_SIZE_MB = 100; // Increased limit for direct upload
+        const MAX_VIDEO_SIZE_MB = 100;
         
-        const processFile = async (file: File, existingAssetId?: string) => {
+        const processFile = async (originalFile: File, existingAssetId?: string) => {
             const assetId = existingAssetId || `asset_${Date.now()}_${Math.random()}`;
-            const isVideo = file.type.startsWith('video/');
+            const isVideo = originalFile.type.startsWith('video/');
             const mediaType = isVideo ? 'VIDEO' : 'IMAGE';
-            const createErrorAsset = (message: string): MediaAsset => ({
-                id: assetId, name: file.name, prompt: 'File Error', description: message,
-                hashtags: [], platforms: [], status: 'error' as const, errorMessage: message, file: undefined,
-                previewUrl: URL.createObjectURL(file), mediaType
+            
+            const createErrorState = (message: string): Partial<MediaAsset> => ({
+                 status: 'error', errorMessage: message, file: undefined,
             });
 
-            if (mediaType === 'IMAGE' && file.size > MAX_IMAGE_SIZE_MB * 1024 * 1024) {
-                const errorAsset = createErrorAsset(`Image is too large (${(file.size / 1024 / 1024).toFixed(1)}MB). Max size is ${MAX_IMAGE_SIZE_MB}MB.`);
-                if (existingAssetId) updateAsset(existingAssetId, errorAsset); else setAssets(p => [errorAsset, ...p]);
+            if (mediaType === 'IMAGE' && originalFile.size > MAX_IMAGE_SIZE_MB * 1024 * 1024) {
+                const errorState = createErrorState(`Image is too large (${(originalFile.size / 1024 / 1024).toFixed(1)}MB). Max size is ${MAX_IMAGE_SIZE_MB}MB.`);
+                if (existingAssetId) updateAsset(existingAssetId, errorState);
+                else setAssets(p => [{ ...errorState, id: assetId, name: originalFile.name, mediaType} as MediaAsset, ...p]);
                 return;
             }
-            if (mediaType === 'VIDEO' && file.size > MAX_VIDEO_SIZE_MB * 1024 * 1024) {
-                const errorAsset = createErrorAsset(`Video is too large (${(file.size / 1024 / 1024).toFixed(1)}MB). Max size is ${MAX_VIDEO_SIZE_MB}MB.`);
-                 if (existingAssetId) updateAsset(existingAssetId, errorAsset); else setAssets(p => [errorAsset, ...p]);
+            if (mediaType === 'VIDEO' && originalFile.size > MAX_VIDEO_SIZE_MB * 1024 * 1024) {
+                 const errorState = createErrorState(`Video is too large (${(originalFile.size / 1024 / 1024).toFixed(1)}MB). Max size is ${MAX_VIDEO_SIZE_MB}MB.`);
+                 if (existingAssetId) updateAsset(existingAssetId, errorState);
+                 else setAssets(p => [{ ...errorState, id: assetId, name: originalFile.name, mediaType} as MediaAsset, ...p]);
                 return;
             }
-
-            const commonAssetData: Partial<MediaAsset> = {
-                file, previewUrl: URL.createObjectURL(file), status: 'idle' as MediaAsset['status'], errorMessage: undefined, mediaType
-            };
 
             const assetIdToUpdate = existingAssetId || assetId;
 
-            if (existingAssetId) {
-                 updateAsset(existingAssetId, commonAssetData);
-            } else {
-                setAssets(prev => [{
-                    id: assetId, name: file.name.split('.').slice(0, -1).join('.').replace(/[\-_]/g, ' '),
-                    prompt: '', description: '', hashtags: [], platforms: [PlatformEnum.Facebook], ...commonAssetData
-                } as MediaAsset, ...prev]);
-            }
-            
-            if (mediaType === 'IMAGE') {
-                updateAsset(assetIdToUpdate, { status: 'compressing', errorMessage: 'Optimizing image...' });
-                compressImage(file, { maxSizeMB: 2, maxWidth: 1920, quality: 0.85 })
-                    .then(compressedFile => {
-                        updateAsset(assetIdToUpdate, {
-                            file: compressedFile, previewUrl: URL.createObjectURL(compressedFile), status: 'idle',
-                            errorMessage: `Optimized from ${(file.size / 1024 / 1024).toFixed(1)}MB to ${(compressedFile.size / 1024 / 1024).toFixed(1)}MB`,
-                        });
-                        setTimeout(() => setAssets(curr => curr.map(a => a.id === assetIdToUpdate && a.errorMessage?.startsWith('Optimized') ? { ...a, errorMessage: undefined } : a)), 5000);
-                    })
-                    .catch(err => {
-                        console.error('Image compression failed:', err);
-                        updateAsset(assetIdToUpdate, { status: 'error', errorMessage: 'Image optimization failed.' });
-                    });
-            } else if (mediaType === 'VIDEO') {
-                updateAsset(assetIdToUpdate, { status: 'thumbnailing', errorMessage: 'Generating video thumbnail...' });
+            if (isVideo) {
+                const videoPreviewUrl = URL.createObjectURL(originalFile);
+                const initialState: Partial<MediaAsset> = {
+                    previewUrl: videoPreviewUrl,
+                    mediaType,
+                    file: undefined, // Will be set to the thumbnail file later
+                    status: 'thumbnailing',
+                    errorMessage: 'Generating video thumbnail...'
+                };
+                 if (existingAssetId) {
+                    updateAsset(existingAssetId, initialState);
+                } else {
+                    setAssets(prev => [{
+                        id: assetIdToUpdate,
+                        name: originalFile.name.split('.').slice(0, -1).join('.').replace(/[\-_]/g, ' '),
+                        prompt: 'Video of ' + originalFile.name.split('.').slice(0, -1).join(' ').replace(/[\-_]/g, ' '),
+                        description: '', hashtags: [], platforms: [PlatformEnum.Facebook], ...initialState
+                    } as MediaAsset, ...prev]);
+                }
+
                 try {
-                    const thumbnailFile = await generateThumbnail(file);
-                    updateAsset(assetIdToUpdate, { 
-                        file: thumbnailFile, // Store thumbnail file for upload
-                        previewUrl: URL.createObjectURL(thumbnailFile),
-                        status: 'uploading', 
-                        errorMessage: 'Uploading video to cloud...' 
+                    const thumbnailFile = await generateThumbnail(originalFile);
+                    updateAsset(assetIdToUpdate, {
+                        file: thumbnailFile, // This is the thumbnail for publishing
+                        status: 'uploading',
+                        errorMessage: 'Uploading video to cloud...'
                     });
-                    await handleCloudinaryUpload(assetIdToUpdate, file);
+                    await handleCloudinaryUpload(assetIdToUpdate, originalFile); // Upload the original video
                 } catch (err) {
+                    const message = err instanceof Error ? err.message : String(err);
                     console.error('Thumbnail generation failed:', err);
-                    updateAsset(assetIdToUpdate, { status: 'error', errorMessage: 'Could not generate video thumbnail.' });
+                    updateAsset(assetIdToUpdate, { status: 'error', errorMessage: `Video processing failed: ${message}` });
+                }
+            } else { // Is an image
+                 const imagePreviewUrl = URL.createObjectURL(originalFile);
+                 const initialState: Partial<MediaAsset> = {
+                    file: originalFile,
+                    previewUrl: imagePreviewUrl,
+                    status: 'compressing',
+                    errorMessage: 'Optimizing image...',
+                    mediaType
+                };
+
+                if (existingAssetId) {
+                    updateAsset(existingAssetId, initialState);
+                } else {
+                    setAssets(prev => [{
+                        id: assetIdToUpdate,
+                        name: originalFile.name.split('.').slice(0, -1).join('.').replace(/[\-_]/g, ' '),
+                        prompt: '', description: '', hashtags: [], platforms: [PlatformEnum.Facebook], ...initialState
+                    } as MediaAsset, ...prev]);
+                }
+                
+                try {
+                    const compressedFile = await compressImage(originalFile, { maxSizeMB: 2, maxWidth: 1920, quality: 0.85 });
+                    updateAsset(assetIdToUpdate, {
+                        file: compressedFile,
+                        previewUrl: URL.createObjectURL(compressedFile),
+                        status: 'idle',
+                        errorMessage: `Optimized from ${(originalFile.size / 1024 / 1024).toFixed(1)}MB to ${(compressedFile.size / 1024 / 1024).toFixed(1)}MB`,
+                    });
+                    setTimeout(() => setAssets(curr => curr.map(a => a.id === assetIdToUpdate && a.errorMessage?.startsWith('Optimized') ? { ...a, errorMessage: undefined } : a)), 5000);
+                } catch (err) {
+                     console.error('Image compression failed:', err);
+                     updateAsset(assetIdToUpdate, { status: 'error', errorMessage: 'Image optimization failed.' });
                 }
             }
         };
@@ -388,9 +413,9 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
         const isImage = asset.mediaType === 'IMAGE';
         const isVideo = asset.mediaType === 'VIDEO';
 
-        const hasMedia = (isImage && asset.file) || (isVideo && asset.videoUrl);
+        const hasMedia = (isImage && (asset.file || asset.previewUrl?.startsWith('https'))) || (isVideo && asset.videoUrl);
         if (!hasMedia) {
-            updateAsset(assetId, { status: 'error', errorMessage: 'Please add a media file before publishing.' });
+            updateAsset(assetId, { status: 'error', errorMessage: 'Please add media and wait for processing before publishing.' });
             return;
         }
         
@@ -611,7 +636,7 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
             <div className="grid grid-cols-1 xl:grid-cols-2 2xl:grid-cols-3 gap-6">
             {assets.map((asset) => {
                 const isBusy = asset.status === 'generating' || asset.status === 'publishing' || asset.status === 'published' || asset.status === 'compressing' || asset.status === 'uploading' || asset.status === 'thumbnailing';
-                const hasMedia = (asset.mediaType === 'IMAGE' && asset.file) || (asset.mediaType === 'VIDEO' && asset.videoUrl);
+                const hasMedia = (asset.mediaType === 'IMAGE' && (asset.file || asset.previewUrl?.startsWith('https'))) || (asset.mediaType === 'VIDEO' && asset.videoUrl);
                 const isPublishDisabled = isBusy || asset.status === 'error' || asset.platforms.length === 0 || !hasMedia;
 
                 return (
@@ -647,13 +672,14 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
                             <div className="space-y-3">
                                {asset.previewUrl ? (
                                     <div className="relative w-full aspect-video cursor-pointer" onClick={() => handleAddMediaClick(asset.id)}>
-                                        <img src={asset.previewUrl} alt="Preview" className="rounded-lg w-full h-full object-cover bg-dark-bg" />
-                                        {asset.mediaType === 'VIDEO' && (
-                                            <div className="absolute inset-0 flex items-center justify-center bg-black/30 pointer-events-none rounded-lg">
-                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 text-white/80" viewBox="0 0 20 20" fill="currentColor">
-                                                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
-                                                </svg>
-                                            </div>
+                                        {asset.mediaType === 'VIDEO' ? (
+                                            <video 
+                                                src={asset.previewUrl} 
+                                                controls 
+                                                className="rounded-lg w-full h-full object-cover bg-dark-bg" 
+                                            />
+                                        ) : (
+                                            <img src={asset.previewUrl} alt="Preview" className="rounded-lg w-full h-full object-cover bg-dark-bg" />
                                         )}
                                     </div>
                                 ) : (
