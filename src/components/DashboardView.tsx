@@ -41,9 +41,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ posts, connectionD
     return post.platforms.includes(platformFilter);
   });
   
-  const totalLikes = filteredPosts.reduce((sum, post) => sum + post.engagement.total.likes, 0);
-  const totalComments = filteredPosts.reduce((sum, post) => sum + post.engagement.total.comments, 0);
-  const totalShares = filteredPosts.reduce((sum, post) => sum + post.engagement.total.shares, 0);
+  const totalLikes = filteredPosts.reduce((sum, post) => sum + (post.engagement?.total?.likes || 0), 0);
+  const totalComments = filteredPosts.reduce((sum, post) => sum + (post.engagement?.total?.comments || 0), 0);
+  const totalShares = filteredPosts.reduce((sum, post) => sum + (post.engagement?.total?.shares || 0), 0);
 
   const handleSelectPost = (postId: string) => {
     setSelectedPosts(prev => {
@@ -237,7 +237,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ posts, connectionD
                 )}
             </div>
         )}
-        <div className="space-y-6">
+        <div className="space-y-4">
           {filteredPosts.length > 0 ? (
             filteredPosts.map(post => 
                 <PostCard 

@@ -837,7 +837,8 @@ app.post('/api/post-insights', async (req, res) => {
 
 // DELETE Post
 app.delete('/api/post/:postId', async (req, res) => {
-    const { postId } = req.params;
+    const originalPostId = req.params.postId;
+    const postId = originalPostId.split(':')[0]; // Sanitize ID
     const { pageAccessToken } = req.body;
     if (!postId || !pageAccessToken) {
         return res.status(400).json({ message: 'Missing postId or pageAccessToken' });
@@ -859,7 +860,8 @@ app.delete('/api/post/:postId', async (req, res) => {
 
 // UPDATE Post
 app.put('/api/post/:postId', async (req, res) => {
-    const { postId } = req.params;
+    const originalPostId = req.params.postId;
+    const postId = originalPostId.split(':')[0]; // Sanitize ID
     const { message, pageAccessToken } = req.body;
     if (!postId || !message || !pageAccessToken) {
         return res.status(400).json({ message: 'Missing postId, message, or pageAccessToken' });
@@ -883,7 +885,8 @@ app.put('/api/post/:postId', async (req, res) => {
 
 // GET Comments
 app.get('/api/post/:postId/comments', async (req, res) => {
-    const { postId } = req.params;
+    const originalPostId = req.params.postId;
+    const postId = originalPostId.split(':')[0]; // Sanitize ID
     const { pageAccessToken } = req.query;
     if (!postId || !pageAccessToken) {
         return res.status(400).json({ message: 'Missing postId or pageAccessToken' });
@@ -906,7 +909,8 @@ app.get('/api/post/:postId/comments', async (req, res) => {
 
 // POST Reply to Comment
 app.post('/api/comment/:commentId/reply', async (req, res) => {
-    const { commentId } = req.params;
+    const originalCommentId = req.params.commentId;
+    const commentId = originalCommentId.split(':')[0]; // Sanitize ID
     const { message, pageAccessToken } = req.body;
      if (!commentId || !message || !pageAccessToken) {
         return res.status(400).json({ message: 'Missing commentId, message, or pageAccessToken' });

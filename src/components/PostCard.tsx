@@ -41,42 +41,39 @@ const PlatformIcons: React.FC<{ platforms: Platform[] }> = ({ platforms }) => (
 );
 
 const EngagementDisplay: React.FC<{ post: Post }> = ({ post }) => {
-    const availablePlatforms = [Platform.Facebook, Platform.Instagram].filter(p => post.platforms.includes(p)) as Platform[];
-    
-    // Default to the first available platform, or Facebook if none (edge case)
-    const [activeTab, setActiveTab] = useState<Platform>(availablePlatforms[0] || Platform.Facebook);
+    const fbEngagement = post.engagement?.facebook;
+    const igEngagement = post.engagement?.instagram;
 
-    if (availablePlatforms.length === 0) {
-        // For platforms like YouTube with no separate engagement view
+    // Don't render if no detailed data is available, or for platforms like YouTube
+    if (!fbEngagement && !igEngagement) {
         return (
-            <div className="flex space-x-4 text-xs text-dark-text-secondary">
-                <span>❤️ {post.engagement.total.likes} Likes</span>
-                <span>💬 {post.engagement.total.comments} Comments</span>
-                <span>🔁 {post.engagement.total.shares} Shares</span>
+             <div className="text-xs text-dark-text-secondary flex items-center gap-3">
+                <span>❤️ {post.engagement?.total?.likes || 0}</span>
+                <span>💬 {post.engagement?.total?.comments || 0}</span>
+                <span>🔁 {post.engagement?.total?.shares || 0}</span>
             </div>
         );
     }
-    
-    const engagementData = activeTab === Platform.Facebook ? post.engagement.facebook : post.engagement.instagram;
 
     return (
-        <div className="text-sm">
-            <div className="flex border-b border-dark-border mb-2">
-                {availablePlatforms.map(p => (
-                    <button 
-                        key={p} 
-                        onClick={() => setActiveTab(p)}
-                        className={`px-3 py-1 text-xs font-medium -mb-px ${activeTab === p ? 'text-white border-b-2 border-brand-primary' : 'text-dark-text-secondary border-b-2 border-transparent hover:text-white'}`}
-                    >
-                        {p}
-                    </button>
-                ))}
-            </div>
-            {engagementData && (
-                 <div className="flex space-x-4 text-xs text-dark-text-secondary">
-                    <span>❤️ {engagementData.likes} Likes</span>
-                    <span>💬 {engagementData.comments} Comments</span>
-                    {activeTab === Platform.Facebook && <span>🔁 {engagementData.shares} Shares</span>}
+        <div className="space-y-2 text-xs text-dark-text-secondary">
+            {fbEngagement && (
+                <div className="flex items-center gap-2">
+                    <FacebookIcon className="w-4 h-4 text-blue-500 flex-shrink-0" />
+                    <div className="flex items-center gap-3 flex-wrap">
+                        <span><span className="font-sans">❤️</span> {fbEngagement.likes}</span>
+                        <span><span className="font-sans">💬</span> {fbEngagement.comments}</span>
+                        <span><span className="font-sans">🔁</span> {fbEngagement.shares}</span>
+                    </div>
+                </div>
+            )}
+            {igEngagement && (
+                <div className="flex items-center gap-2">
+                    <InstagramIcon className="w-4 h-4 text-pink-500 flex-shrink-0" />
+                    <div className="flex items-center gap-3 flex-wrap">
+                        <span><span className="font-sans">❤️</span> {igEngagement.likes}</span>
+                        <span><span className="font-sans">💬</span> {igEngagement.comments}</span>
+                    </div>
                 </div>
             )}
         </div>
@@ -149,28 +146,28 @@ export const PostCard: React.FC<PostCardProps> = ({ post, isSelected, connection
                 <p className="text-sm text-dark-text-secondary">This post could not be found online. You can remove it from your dashboard.</p>
             </div>
         )}
-      <div className="relative flex flex-col md:flex-row">
+      <div className="relative flex items-stretch">
         {isDeleting && (
           <div className="absolute inset-0 bg-dark-card/80 backdrop-blur-sm flex flex-col items-center justify-center z-30 rounded-lg animate-fade-in">
               <LoadingSpinner />
               <p className="mt-4 text-white font-semibold">Deleting post...</p>
           </div>
         )}
-        <div className="p-2 pl-4 flex items-center justify-center bg-dark-card md:bg-gray-900/50">
+        <div className="pl-3 pr-2 py-3 flex items-start justify-center bg-dark-card">
           <input
               type="checkbox"
-              className="h-5 w-5 rounded bg-dark-bg border-dark-border text-brand-primary focus:ring-brand-primary"
+              className="h-5 w-5 mt-1 rounded bg-dark-bg border-dark-border text-brand-primary focus:ring-brand-primary"
               checked={isSelected}
               onChange={() => onSelect(post.id)}
               aria-label={`Select post: ${post.prompt}`}
           />
         </div>
         {displayImageUrl && (
-          <div className="md:w-48 md:flex-shrink-0 relative">
+          <div className="w-24 sm:w-32 flex-shrink-0 relative">
             <img
               src={displayImageUrl}
               alt="Post visual"
-              className="w-full h-48 md:h-full object-cover"
+              className="w-full h-full object-cover"
               onError={(e) => {
                   // If even the corrected URL fails, show a placeholder
                   (e.target as HTMLImageElement).src = 'https://placehold.co/800x600/1f2937/9ca3af?text=Image+Not+Found';
@@ -178,15 +175,15 @@ export const PostCard: React.FC<PostCardProps> = ({ post, isSelected, connection
             />
             {post.mediaType === 'VIDEO' && (
                 <div className="absolute inset-0 flex items-center justify-center bg-black/30 pointer-events-none">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 text-white/80" viewBox="0 0 20 20" fill="currentColor">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-white/80" viewBox="0 0 20 20" fill="currentColor">
                         <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
                     </svg>
                 </div>
             )}
           </div>
         )}
-        <div className={`p-4 flex flex-col flex-grow min-w-0`}>
-          <div className="flex justify-between items-start mb-2">
+        <div className={`p-3 flex flex-col flex-grow min-w-0`}>
+          <div className="flex justify-between items-start mb-1">
               <div>
                    <p className="text-xs text-dark-text-secondary">Posted to <span className="font-semibold text-dark-text">{post.audience}</span> {timeAgo(post.postedAt)}</p>
               </div>
@@ -214,31 +211,33 @@ export const PostCard: React.FC<PostCardProps> = ({ post, isSelected, connection
               </div>
           </div>
           
-          <p className="text-sm text-dark-text-secondary italic mb-2 truncate">Prompt: "{post.prompt}"</p>
+          <p className="text-xs text-dark-text-secondary italic mb-2 truncate">Prompt: "{post.prompt}"</p>
 
           <p className="text-dark-text text-sm mb-3 flex-grow">{mainContent}</p>
 
-          <div className="mt-auto pt-3 border-t border-dark-border flex items-end justify-between">
-              <EngagementDisplay post={post} />
-              <div className="flex items-center gap-4">
-                  <button 
-                      onClick={handleRefresh} 
-                      disabled={isRefreshing || !isFacebookConnected || post.id.startsWith('post_') || isDeletedOnPlatform}
-                      title={isDeletedOnPlatform ? 'Post was deleted from the platform' : (post.id.startsWith('post_') ? 'Cannot refresh mock posts' : (!isFacebookConnected ? 'Connect Facebook to refresh insights' : 'Refresh insights'))}
-                      className="flex items-center gap-2 text-xs text-dark-text-secondary hover:text-dark-text disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                  >
-                      <RefreshIcon className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
-                      {isRefreshing ? 'Refreshing...' : 'Refresh'}
-                  </button>
-                   <button 
-                      onClick={() => setIsExpanded(!isExpanded)}
-                      disabled={post.id.startsWith('post_') || !isFacebookConnected || isDeletedOnPlatform}
-                      title={isDeletedOnPlatform ? 'Post was deleted from the platform' : (post.id.startsWith('post_') ? 'Cannot manage mock posts' : (!isFacebookConnected ? 'Connect Facebook to manage post' : 'Manage post'))}
-                      className="flex items-center gap-2 text-xs px-3 py-1 rounded bg-dark-bg border border-dark-border hover:border-brand-primary disabled:opacity-50 disabled:cursor-not-allowed"
-                   >
-                     {isExpanded ? 'Close' : 'Manage'}
-                   </button>
-               </div>
+          <div className="mt-auto pt-2 border-t border-dark-border">
+              <div className="flex items-end justify-between">
+                <EngagementDisplay post={post} />
+                <div className="flex items-center gap-4">
+                    <button 
+                        onClick={handleRefresh} 
+                        disabled={isRefreshing || !isFacebookConnected || post.id.startsWith('post_') || isDeletedOnPlatform}
+                        title={isDeletedOnPlatform ? 'Post was deleted from the platform' : (post.id.startsWith('post_') ? 'Cannot refresh mock posts' : (!isFacebookConnected ? 'Connect Facebook to refresh insights' : 'Refresh insights'))}
+                        className="flex items-center gap-2 text-xs text-dark-text-secondary hover:text-dark-text disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    >
+                        <RefreshIcon className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+                        <span className="hidden sm:inline">{isRefreshing ? 'Refreshing...' : 'Refresh'}</span>
+                    </button>
+                     <button 
+                        onClick={() => setIsExpanded(!isExpanded)}
+                        disabled={post.id.startsWith('post_') || !isFacebookConnected || isDeletedOnPlatform}
+                        title={isDeletedOnPlatform ? 'Post was deleted from the platform' : (post.id.startsWith('post_') ? 'Cannot manage mock posts' : (!isFacebookConnected ? 'Connect Facebook to manage post' : 'Manage post'))}
+                        className="flex items-center gap-2 text-xs px-3 py-1 rounded bg-dark-bg border border-dark-border hover:border-brand-primary disabled:opacity-50 disabled:cursor-not-allowed"
+                     >
+                       {isExpanded ? 'Close' : 'Manage'}
+                     </button>
+                 </div>
+              </div>
           </div>
         </div>
       </div>

@@ -188,7 +188,7 @@ export const PostManager: React.FC<PostManagerProps> = ({ post, connectionDetail
                     onClick={() => setActiveTab('comments')}
                     className={`px-4 py-2 text-sm font-medium ${activeTab === 'comments' ? 'text-white border-b-2 border-brand-primary' : 'text-dark-text-secondary'}`}
                 >
-                    Comments ({post.engagement.total.comments})
+                    Comments ({post.engagement?.total?.comments || 0})
                 </button>
             </div>
             <div>
