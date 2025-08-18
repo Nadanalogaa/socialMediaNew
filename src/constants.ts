@@ -1,4 +1,5 @@
 
+
 import type { Post } from './types';
 import { Platform, Audience } from './types';
 
@@ -19,9 +20,9 @@ export const MOCK_POSTS: Post[] = [
     },
     postedAt: new Date('2024-08-12T18:30:00Z').toISOString(),
     engagement: {
-      likes: 125,
-      comments: 15,
-      shares: 8
+      likes: 0,
+      comments: 0,
+      shares: 0
     }
   },
   {
@@ -40,9 +41,9 @@ export const MOCK_POSTS: Post[] = [
     },
     postedAt: new Date('2024-08-10T09:00:00Z').toISOString(),
     engagement: {
-      likes: 340,
-      comments: 45,
-      shares: 22
+      likes: 0,
+      comments: 0,
+      shares: 0
     }
   }
 ];

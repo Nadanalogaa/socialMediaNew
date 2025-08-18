@@ -1,7 +1,8 @@
+
 /// <reference lib="dom" />
 
 import React, { useState } from 'react';
-import type { Post } from '../types';
+import type { Post, ConnectionDetails } from '../types';
 import { Platform } from '../types';
 import { FacebookIcon } from './icons/FacebookIcon';
 import { InstagramIcon } from './icons/InstagramIcon';
@@ -9,16 +10,18 @@ import { YoutubeIcon } from './icons/YoutubeIcon';
 import { EditIcon } from './icons/EditIcon';
 import { TrashIcon } from './icons/TrashIcon';
 import { RefreshIcon } from './icons/RefreshIcon';
+import { PostManager } from './PostManager';
 
 interface PostCardProps {
   post: Post;
   isSelected: boolean;
-  isFacebookConnected: boolean;
+  connectionDetails: ConnectionDetails;
   isDeleting: boolean;
   onSelect: (postId: string) => void;
   onDelete: (postId: string) => Promise<void>;
-  onEdit: (post: Post) => void;
+  onEdit: (post: Post) => void; // For "Use as Template"
   onRefreshInsights: (postId: string) => Promise<void>;
+  onUpdatePost: (post: Post, newContent: Post['generatedContent']) => Promise<void>;
 }
 
 const LoadingSpinner: React.FC<{ size?: string }> = ({ size = 'h-8 w-8' }) => (
@@ -53,8 +56,11 @@ const timeAgo = (dateString: string): string => {
     return Math.floor(seconds) + " seconds ago";
 }
 
-export const PostCard: React.FC<PostCardProps> = ({ post, isSelected, isFacebookConnected, isDeleting, onSelect, onDelete, onEdit, onRefreshInsights }) => {
+export const PostCard: React.FC<PostCardProps> = ({ post, isSelected, connectionDetails, isDeleting, onSelect, onDelete, onEdit, onRefreshInsights, onUpdatePost }) => {
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false);
+  const isFacebookConnected = !!connectionDetails.facebook;
+
 
   const handleDeleteClick = async () => {
     const onFacebook = post.platforms.includes(Platform.Facebook);
@@ -88,106 +94,134 @@ export const PostCard: React.FC<PostCardProps> = ({ post, isSelected, isFacebook
   }
 
   return (
-    <div className={`relative bg-dark-card border rounded-lg overflow-hidden flex flex-col md:flex-row transition-colors ${isSelected ? 'border-brand-primary' : 'border-dark-border'}`}>
-      {isDeleting && (
-        <div className="absolute inset-0 bg-dark-card/80 backdrop-blur-sm flex flex-col items-center justify-center z-30 rounded-lg animate-fade-in">
-            <LoadingSpinner />
-            <p className="mt-4 text-white font-semibold">Deleting post...</p>
-        </div>
-      )}
-      <div className="p-2 pl-4 flex items-center justify-center bg-dark-card md:bg-gray-900/50">
-        <input
-            type="checkbox"
-            className="h-5 w-5 rounded bg-dark-bg border-dark-border text-brand-primary focus:ring-brand-primary"
-            checked={isSelected}
-            onChange={() => onSelect(post.id)}
-            aria-label={`Select post: ${post.prompt}`}
-        />
-      </div>
-      {post.imageUrl && (
-        <div className="md:w-1/3">
-          <img
-            src={post.imageUrl}
-            alt="Post visual"
-            className="w-full h-48 md:h-full object-cover"
+    <div className={`bg-dark-card border rounded-lg overflow-hidden transition-all duration-300 ${isSelected ? 'border-brand-primary' : 'border-dark-border'}`}>
+      <div className="relative flex flex-col md:flex-row">
+        {isDeleting && (
+          <div className="absolute inset-0 bg-dark-card/80 backdrop-blur-sm flex flex-col items-center justify-center z-30 rounded-lg animate-fade-in">
+              <LoadingSpinner />
+              <p className="mt-4 text-white font-semibold">Deleting post...</p>
+          </div>
+        )}
+        <div className="p-2 pl-4 flex items-center justify-center bg-dark-card md:bg-gray-900/50">
+          <input
+              type="checkbox"
+              className="h-5 w-5 rounded bg-dark-bg border-dark-border text-brand-primary focus:ring-brand-primary"
+              checked={isSelected}
+              onChange={() => onSelect(post.id)}
+              aria-label={`Select post: ${post.prompt}`}
           />
         </div>
-      )}
-      <div className={`p-6 ${post.imageUrl ? 'md:w-2/3' : 'w-full'}`}>
-        <div className="flex justify-between items-start mb-3">
-            <div>
-                 <p className="text-sm text-dark-text-secondary">Posted to <span className="font-semibold text-dark-text">{post.audience}</span></p>
-                 <p className="text-xs text-dark-text-secondary">{timeAgo(post.postedAt)}</p>
-            </div>
-            <div className="flex items-center gap-4">
-                <PlatformIcons platforms={post.platforms} />
-                <div className="flex items-center gap-1 border-l border-dark-border pl-3 ml-1">
-                    <button
-                        onClick={() => onEdit(post)}
-                        title="Use as Template"
-                        className="p-2 rounded-full text-dark-text-secondary hover:bg-dark-bg hover:text-dark-text transition-colors"
-                        aria-label="Use post as template"
-                    >
-                        <EditIcon className="w-4 h-4" />
-                    </button>
-                    <button
-                        onClick={handleDeleteClick}
-                        title="Delete Post"
-                        className="p-2 rounded-full text-dark-text-secondary hover:bg-dark-bg hover:text-red-400 transition-colors"
-                        aria-label="Delete post"
-                    >
-                        <TrashIcon className="w-4 h-4" />
-                    </button>
+        {post.imageUrl && (
+          <div className="md:w-1/3 relative">
+            <img
+              src={post.imageUrl}
+              alt="Post visual"
+              className="w-full h-48 md:h-full object-cover"
+            />
+            {post.mediaType === 'VIDEO' && (
+                <div className="absolute inset-0 flex items-center justify-center bg-black/30 pointer-events-none">
+                    <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 text-white/80" viewBox="0 0 20 20" fill="currentColor">
+                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
+                    </svg>
                 </div>
-            </div>
-        </div>
-        
-        <p className="text-sm text-dark-text-secondary italic mb-4">Prompt: "{post.prompt}"</p>
+            )}
+          </div>
+        )}
+        <div className={`p-6 ${post.imageUrl ? 'md:w-2/3' : 'w-full'}`}>
+          <div className="flex justify-between items-start mb-3">
+              <div>
+                   <p className="text-sm text-dark-text-secondary">Posted to <span className="font-semibold text-dark-text">{post.audience}</span></p>
+                   <p className="text-xs text-dark-text-secondary">{timeAgo(post.postedAt)}</p>
+              </div>
+              <div className="flex items-center gap-4">
+                  <PlatformIcons platforms={post.platforms} />
+                  <div className="flex items-center gap-1 border-l border-dark-border pl-3 ml-1">
+                      <button
+                          onClick={() => onEdit(post)}
+                          title="Use as Template"
+                          className="p-2 rounded-full text-dark-text-secondary hover:bg-dark-bg hover:text-dark-text transition-colors"
+                          aria-label="Use post as template"
+                      >
+                          <EditIcon className="w-4 h-4" />
+                      </button>
+                      <button
+                          onClick={handleDeleteClick}
+                          title="Delete Post"
+                          className="p-2 rounded-full text-dark-text-secondary hover:bg-dark-bg hover:text-red-400 transition-colors"
+                          aria-label="Delete post"
+                      >
+                          <TrashIcon className="w-4 h-4" />
+                      </button>
+                  </div>
+              </div>
+          </div>
+          
+          <p className="text-sm text-dark-text-secondary italic mb-4">Prompt: "{post.prompt}"</p>
 
-        <div className="space-y-4 text-sm">
-            {post.platforms.includes(Platform.Facebook) && post.generatedContent.facebook && (
-                <div>
-                    <h4 className="font-bold text-blue-400">Facebook Post</h4>
-                    <p className="text-dark-text">{post.generatedContent.facebook}</p>
-                </div>
-            )}
-            {post.platforms.includes(Platform.Instagram) && post.generatedContent.instagram && (
-                <div>
-                    <h4 className="font-bold text-pink-400">Instagram Caption</h4>
-                    <p className="text-dark-text">{post.generatedContent.instagram}</p>
-                </div>
-            )}
-            {post.platforms.includes(Platform.YouTube) && post.generatedContent.youtubeTitle && (
-                 <div>
-                    <h4 className="font-bold text-red-500">YouTube</h4>
-                    <p className="text-dark-text font-semibold">{post.generatedContent.youtubeTitle}</p>
-                    <p className="text-dark-text-secondary whitespace-pre-wrap">{post.generatedContent.youtubeDescription}</p>
-                </div>
-            )}
-             {post.generatedContent.hashtags && post.generatedContent.hashtags.length > 0 && (
-                 <p className="text-brand-secondary text-xs">
-                    {post.generatedContent.hashtags.map(h => `#${h}`).join(' ')}
-                 </p>
-             )}
-        </div>
+          <div className="space-y-4 text-sm">
+              {post.platforms.includes(Platform.Facebook) && post.generatedContent.facebook && (
+                  <div>
+                      <h4 className="font-bold text-blue-400">Facebook Post</h4>
+                      <p className="text-dark-text">{post.generatedContent.facebook}</p>
+                  </div>
+              )}
+              {post.platforms.includes(Platform.Instagram) && post.generatedContent.instagram && (
+                  <div>
+                      <h4 className="font-bold text-pink-400">Instagram Caption</h4>
+                      <p className="text-dark-text">{post.generatedContent.instagram}</p>
+                  </div>
+              )}
+              {post.platforms.includes(Platform.YouTube) && post.generatedContent.youtubeTitle && (
+                   <div>
+                      <h4 className="font-bold text-red-500">YouTube</h4>
+                      <p className="text-dark-text font-semibold">{post.generatedContent.youtubeTitle}</p>
+                      <p className="text-dark-text-secondary whitespace-pre-wrap">{post.generatedContent.youtubeDescription}</p>
+                  </div>
+              )}
+               {post.generatedContent.hashtags && post.generatedContent.hashtags.length > 0 && (
+                   <p className="text-brand-secondary text-xs">
+                      {post.generatedContent.hashtags.map(h => `#${h}`).join(' ')}
+                   </p>
+               )}
+          </div>
 
-        <div className="mt-6 pt-4 border-t border-dark-border flex items-center justify-between text-sm text-dark-text-secondary">
-            <div className="flex space-x-6">
-                <span>❤️ {post.engagement.likes} Likes</span>
-                <span>💬 {post.engagement.comments} Comments</span>
-                <span>🔁 {post.engagement.shares} Shares</span>
-            </div>
-             <button 
-                onClick={handleRefresh} 
-                disabled={isRefreshing || !isFacebookConnected || post.id.startsWith('post_')}
-                title={post.id.startsWith('post_') ? 'Cannot refresh mock posts' : (!isFacebookConnected ? 'Connect Facebook to refresh insights' : 'Refresh insights')}
-                className="flex items-center gap-2 text-xs text-dark-text-secondary hover:text-dark-text disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-             >
-                <RefreshIcon className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
-                {isRefreshing ? 'Refreshing...' : 'Refresh'}
-             </button>
+          <div className="mt-6 pt-4 border-t border-dark-border flex items-center justify-between text-sm text-dark-text-secondary">
+              <div className="flex space-x-6">
+                  <span>❤️ {post.engagement.likes} Likes</span>
+                  <span>💬 {post.engagement.comments} Comments</span>
+                  <span>🔁 {post.engagement.shares} Shares</span>
+              </div>
+               <div className="flex items-center gap-4">
+                  <button 
+                      onClick={handleRefresh} 
+                      disabled={isRefreshing || !isFacebookConnected || post.id.startsWith('post_')}
+                      title={post.id.startsWith('post_') ? 'Cannot refresh mock posts' : (!isFacebookConnected ? 'Connect Facebook to refresh insights' : 'Refresh insights')}
+                      className="flex items-center gap-2 text-xs text-dark-text-secondary hover:text-dark-text disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                      <RefreshIcon className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+                      {isRefreshing ? 'Refreshing...' : 'Refresh'}
+                  </button>
+                   <button 
+                      onClick={() => setIsExpanded(!isExpanded)}
+                      disabled={post.id.startsWith('post_') || !isFacebookConnected}
+                      title={post.id.startsWith('post_') ? 'Cannot manage mock posts' : (!isFacebookConnected ? 'Connect Facebook to manage post' : 'Manage post')}
+                      className="flex items-center gap-2 text-xs px-3 py-1 rounded bg-dark-bg border border-dark-border hover:border-brand-primary disabled:opacity-50 disabled:cursor-not-allowed"
+                   >
+                     {isExpanded ? 'Close' : 'Manage'}
+                   </button>
+               </div>
+          </div>
         </div>
       </div>
+      {isExpanded && !post.id.startsWith('post_') && isFacebookConnected && (
+        <div className="bg-dark-bg/50 border-t border-dark-border animate-fade-in">
+            <PostManager 
+              post={post}
+              connectionDetails={connectionDetails}
+              onUpdatePost={onUpdatePost}
+            />
+        </div>
+      )}
     </div>
   );
 };

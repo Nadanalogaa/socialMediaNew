@@ -1,5 +1,6 @@
 
-import type { Platform, SeoSuggestions, Post, ConnectionStatus, GeneratedAssetContent, GeneratedPostIdea, ConnectionDetails } from '../types';
+
+import type { Platform, SeoSuggestions, Post, ConnectionStatus, GeneratedAssetContent, GeneratedPostIdea, ConnectionDetails, Comment } from '../types';
 
 const handleResponse = async (response: Response) => {
     if (!response.ok) {
@@ -75,7 +76,7 @@ export const disconnectPlatform = async (platform: Platform): Promise<Connection
 };
 
 export const publishPost = async (
-    postData: Omit<Post, 'id' | 'engagement' | 'postedAt'>,
+    postData: Omit<Post, 'id' | 'engagement' | 'postedAt' | 'platformPostIds'>,
     connectionDetails: ConnectionDetails
 ): Promise<Post> => {
     const response = await fetch('/api/publish-post', {
@@ -107,6 +108,29 @@ export const deletePost = async (postId: string, pageAccessToken: string): Promi
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pageAccessToken }),
+    });
+    return handleResponse(response);
+};
+
+export const updatePost = async (postId: string, message: string, pageAccessToken: string): Promise<{ success: boolean }> => {
+    const response = await fetch(`/api/post/${postId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message, pageAccessToken }),
+    });
+    return handleResponse(response);
+};
+
+export const getComments = async (postId: string, pageAccessToken: string): Promise<Comment[]> => {
+    const response = await fetch(`/api/post/${postId}/comments?pageAccessToken=${pageAccessToken}`);
+    return handleResponse(response);
+};
+
+export const replyToComment = async (commentId: string, message: string, pageAccessToken: string): Promise<{ success: boolean, id: string }> => {
+    const response = await fetch(`/api/comment/${commentId}/reply`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message, pageAccessToken }),
     });
     return handleResponse(response);
 };

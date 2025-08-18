@@ -1,4 +1,5 @@
 
+
 /// <reference lib="dom" />
 
 import React, { useState, useCallback, useRef, useEffect } from 'react';
@@ -9,6 +10,7 @@ import { FacebookIcon } from './icons/FacebookIcon';
 import { InstagramIcon } from './icons/InstagramIcon';
 import { YoutubeIcon } from './icons/YoutubeIcon';
 import { getDraftsFromDB, saveDraftsToDB } from '../utils/db';
+import { generateThumbnail } from '../utils/ffmpeg';
 
 const toBase64 = (file: File): Promise<string> => new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -171,6 +173,7 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
                     id: `asset_${Date.now()}`,
                     file: undefined,
                     previewUrl: post.imageUrl,
+                    videoUrl: post.videoUrl,
                     name: post.generatedContent.youtubeTitle || "Copied Post",
                     prompt: post.prompt,
                     description: post.generatedContent.facebook || post.generatedContent.instagram || post.generatedContent.youtubeDescription || '',
@@ -243,8 +246,8 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
 
             const data = await response.json();
             updateAsset(assetId, {
-                previewUrl: data.secure_url, // This is the URL we need
-                file: undefined, // Clear the file from state after upload
+                videoUrl: data.secure_url, // This is the URL we need for publishing
+                file: undefined, // Clear the original video file from state after upload
                 status: 'idle',
                 errorMessage: `Video ready (${(data.bytes / 1024 / 1024).toFixed(1)}MB).`,
             });
@@ -263,7 +266,7 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
         const MAX_IMAGE_SIZE_MB = 10;
         const MAX_VIDEO_SIZE_MB = 100; // Increased limit for direct upload
         
-        const processFile = (file: File, existingAssetId?: string) => {
+        const processFile = async (file: File, existingAssetId?: string) => {
             const assetId = existingAssetId || `asset_${Date.now()}_${Math.random()}`;
             const isVideo = file.type.startsWith('video/');
             const mediaType = isVideo ? 'VIDEO' : 'IMAGE';
@@ -287,6 +290,9 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
             const commonAssetData: Partial<MediaAsset> = {
                 file, previewUrl: URL.createObjectURL(file), status: 'idle' as MediaAsset['status'], errorMessage: undefined, mediaType
             };
+
+            const assetIdToUpdate = existingAssetId || assetId;
+
             if (existingAssetId) {
                  updateAsset(existingAssetId, commonAssetData);
             } else {
@@ -297,22 +303,34 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
             }
             
             if (mediaType === 'IMAGE') {
-                updateAsset(assetId, { status: 'compressing', errorMessage: 'Optimizing image...' });
+                updateAsset(assetIdToUpdate, { status: 'compressing', errorMessage: 'Optimizing image...' });
                 compressImage(file, { maxSizeMB: 2, maxWidth: 1920, quality: 0.85 })
                     .then(compressedFile => {
-                        updateAsset(assetId, {
+                        updateAsset(assetIdToUpdate, {
                             file: compressedFile, previewUrl: URL.createObjectURL(compressedFile), status: 'idle',
                             errorMessage: `Optimized from ${(file.size / 1024 / 1024).toFixed(1)}MB to ${(compressedFile.size / 1024 / 1024).toFixed(1)}MB`,
                         });
-                        setTimeout(() => setAssets(curr => curr.map(a => a.id === assetId && a.errorMessage?.startsWith('Optimized') ? { ...a, errorMessage: undefined } : a)), 5000);
+                        setTimeout(() => setAssets(curr => curr.map(a => a.id === assetIdToUpdate && a.errorMessage?.startsWith('Optimized') ? { ...a, errorMessage: undefined } : a)), 5000);
                     })
                     .catch(err => {
                         console.error('Image compression failed:', err);
-                        updateAsset(assetId, { status: 'error', errorMessage: 'Image optimization failed.' });
+                        updateAsset(assetIdToUpdate, { status: 'error', errorMessage: 'Image optimization failed.' });
                     });
             } else if (mediaType === 'VIDEO') {
-                 updateAsset(assetId, { status: 'uploading', errorMessage: 'Uploading to cloud...' });
-                 handleCloudinaryUpload(assetId, file);
+                updateAsset(assetIdToUpdate, { status: 'thumbnailing', errorMessage: 'Generating video thumbnail...' });
+                try {
+                    const thumbnailFile = await generateThumbnail(file);
+                    updateAsset(assetIdToUpdate, { 
+                        file: thumbnailFile, // Store thumbnail file for upload
+                        previewUrl: URL.createObjectURL(thumbnailFile),
+                        status: 'uploading', 
+                        errorMessage: 'Uploading video to cloud...' 
+                    });
+                    await handleCloudinaryUpload(assetIdToUpdate, file);
+                } catch (err) {
+                    console.error('Thumbnail generation failed:', err);
+                    updateAsset(assetIdToUpdate, { status: 'error', errorMessage: 'Could not generate video thumbnail.' });
+                }
             }
         };
 
@@ -370,7 +388,7 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
         const isImage = asset.mediaType === 'IMAGE';
         const isVideo = asset.mediaType === 'VIDEO';
 
-        const hasMedia = (isImage && asset.file) || (isVideo && asset.previewUrl?.startsWith('https://'));
+        const hasMedia = (isImage && asset.file) || (isVideo && asset.videoUrl);
         if (!hasMedia) {
             updateAsset(assetId, { status: 'error', errorMessage: 'Please add a media file before publishing.' });
             return;
@@ -396,12 +414,14 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
         
         let imageUrlData: string;
         try {
-            if (isImage && asset.file) {
-                imageUrlData = await toBase64(asset.file);
-            } else if (isVideo && asset.previewUrl) {
-                imageUrlData = asset.previewUrl;
+            // For both images and videos, the 'file' property holds the image content (original image or thumbnail) for upload.
+            if (asset.file) {
+                 imageUrlData = await toBase64(asset.file);
+            } else if (asset.previewUrl?.startsWith('https')) {
+                 // It's a URL from a copied post, pass it directly.
+                 imageUrlData = asset.previewUrl;
             } else {
-                throw new Error('No media file or URL available for upload.');
+                throw new Error('No image file or URL available for upload.');
             }
         } catch (error) {
             console.error("Error preparing media for upload:", error);
@@ -413,6 +433,7 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
             platforms: asset.platforms,
             audience,
             imageUrl: imageUrlData,
+            videoUrl: asset.videoUrl,
             prompt: asset.prompt,
             mediaType: asset.mediaType,
             generatedContent: {
@@ -589,8 +610,8 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
             
             <div className="grid grid-cols-1 xl:grid-cols-2 2xl:grid-cols-3 gap-6">
             {assets.map((asset) => {
-                const isBusy = asset.status === 'generating' || asset.status === 'publishing' || asset.status === 'published' || asset.status === 'compressing' || asset.status === 'uploading';
-                const hasMedia = (asset.mediaType === 'IMAGE' && asset.file) || (asset.mediaType === 'VIDEO' && asset.previewUrl?.startsWith('https://'));
+                const isBusy = asset.status === 'generating' || asset.status === 'publishing' || asset.status === 'published' || asset.status === 'compressing' || asset.status === 'uploading' || asset.status === 'thumbnailing';
+                const hasMedia = (asset.mediaType === 'IMAGE' && asset.file) || (asset.mediaType === 'VIDEO' && asset.videoUrl);
                 const isPublishDisabled = isBusy || asset.status === 'error' || asset.platforms.length === 0 || !hasMedia;
 
                 return (
@@ -608,12 +629,13 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
                      )}
                      {selectedAssets.has(asset.id) && <div className="absolute inset-0 bg-brand-primary/10 rounded-lg pointer-events-none"></div>}
 
-                    {(asset.status === 'compressing' || asset.status === 'generating' || asset.status === 'uploading') && (
+                    {(asset.status === 'compressing' || asset.status === 'generating' || asset.status === 'uploading' || asset.status === 'thumbnailing') && (
                         <div className="absolute inset-0 bg-dark-card/80 backdrop-blur-sm flex flex-col items-center justify-center z-20 rounded-lg">
                             <LoadingSpinner size="h-10 w-10" />
                             <p className="mt-4 text-white font-semibold">
                                 {asset.status === 'compressing' ? 'Processing media...' : 
-                                 asset.status === 'uploading' ? 'Uploading to cloud...' : 
+                                 asset.status === 'uploading' ? 'Uploading to cloud...' :
+                                 asset.status === 'thumbnailing' ? 'Generating thumbnail...' :
                                  'Generating content...'}
                             </p>
                             <p className="text-sm text-dark-text-secondary">This may take a moment.</p>
@@ -624,11 +646,16 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div className="space-y-3">
                                {asset.previewUrl ? (
-                                    asset.mediaType === 'VIDEO' ? (
-                                        <video src={asset.previewUrl} controls className="rounded-lg w-full aspect-video bg-black"></video>
-                                    ) : (
-                                        <img src={asset.previewUrl} alt="Preview" className="rounded-lg w-full object-cover aspect-video bg-dark-bg" onClick={() => handleAddMediaClick(asset.id)} style={{cursor: 'pointer'}} />
-                                    )
+                                    <div className="relative w-full aspect-video cursor-pointer" onClick={() => handleAddMediaClick(asset.id)}>
+                                        <img src={asset.previewUrl} alt="Preview" className="rounded-lg w-full h-full object-cover bg-dark-bg" />
+                                        {asset.mediaType === 'VIDEO' && (
+                                            <div className="absolute inset-0 flex items-center justify-center bg-black/30 pointer-events-none rounded-lg">
+                                                <svg xmlns="http://www.w3.org/2000/svg" className="h-12 w-12 text-white/80" viewBox="0 0 20 20" fill="currentColor">
+                                                    <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
+                                                </svg>
+                                            </div>
+                                        )}
+                                    </div>
                                 ) : (
                                    <MediaPlaceholder prompt={asset.prompt} onAddMedia={() => handleAddMediaClick(asset.id)} />
                                 )}

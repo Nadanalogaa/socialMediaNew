@@ -1,6 +1,7 @@
 
 
 
+
 export enum Platform {
   Facebook = 'Facebook',
   Instagram = 'Instagram',
@@ -26,8 +27,10 @@ export enum View {
 export interface Post {
   id: string;
   platforms: Platform[];
+  platformPostIds?: { [key in Platform]?: string };
   audience: Audience;
-  imageUrl?: string;
+  imageUrl?: string; // Thumbnail for videos, image for images
+  videoUrl?: string; // Actual video URL from Cloudinary etc.
   mediaType?: 'IMAGE' | 'VIDEO';
   prompt: string;
   generatedContent: {
@@ -89,13 +92,31 @@ export interface GeneratedPostIdea {
 export interface MediaAsset {
   id: string;
   file?: File;
-  previewUrl?: string;
+  previewUrl?: string; // Thumbnail for videos, image for images
+  videoUrl?: string; // Cloudinary URL for videos
   name:string;
   prompt: string;
   description: string;
   hashtags: string[];
   platforms: Platform[];
-  status: 'idle' | 'generating' | 'publishing' | 'error' | 'published' | 'compressing' | 'uploading';
+  status: 'idle' | 'generating' | 'publishing' | 'error' | 'published' | 'compressing' | 'uploading' | 'thumbnailing';
   errorMessage?: string;
   mediaType: 'IMAGE' | 'VIDEO';
+}
+
+export interface FacebookUser {
+    id: string;
+    name: string;
+    picture?: {
+        data: {
+            url: string;
+        }
+    };
+}
+
+export interface Comment {
+    id: string;
+    message: string;
+    from: FacebookUser;
+    created_time: string;
 }

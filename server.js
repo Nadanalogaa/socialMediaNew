@@ -1,4 +1,5 @@
 
+
 import express from 'express';
 import 'dotenv/config';
 import { GoogleGenAI, Type } from '@google/genai';
@@ -383,7 +384,7 @@ app.delete('/api/connections/:platform', (req, res) => {
 });
 
 app.post('/api/publish-post', async (req, res) => {
-    const { platforms, generatedContent, imageUrl, audience, prompt, facebook, instagram, mediaType } = req.body;
+    const { platforms, generatedContent, imageUrl, videoUrl, audience, prompt, facebook, instagram, mediaType } = req.body;
 
     if (!platforms || !generatedContent || !prompt) {
         return res.status(400).json({ message: 'Missing required fields for publishing.' });
@@ -398,6 +399,7 @@ app.post('/api/publish-post', async (req, res) => {
     const isVideo = mediaType === 'VIDEO';
 
     let facebookPostId = null;
+    let instagramPostId = null;
     let facebookPhotoUrl = null;
 
     // Ensure Facebook is processed first if present, as Instagram depends on it for IMAGE posts
@@ -447,11 +449,11 @@ app.post('/api/publish-post', async (req, res) => {
                     }
 
                 } else if (isVideo) {
-                    console.log(`[REAL FB] Publishing video from URL: ${imageUrl.substring(0, 70)}...`);
+                    console.log(`[REAL FB] Publishing video from URL: ${videoUrl.substring(0, 70)}...`);
                     const postUrl = `https://graph.facebook.com/v23.0/${facebook.pageId}/videos`;
                     const videoParams = new URLSearchParams({
                         access_token: facebook.pageAccessToken,
-                        file_url: imageUrl,
+                        file_url: videoUrl,
                         description: caption
                     });
                     const fbResponse = await fetch(postUrl, { method: 'POST', body: videoParams });
@@ -504,7 +506,7 @@ app.post('/api/publish-post', async (req, res) => {
                     await new Promise(resolve => setTimeout(resolve, 2000));
                     mediaUrlForIg = facebookPhotoUrl;
                 } else if (isVideo) {
-                    mediaUrlForIg = imageUrl; // Use Cloudinary URL directly
+                    mediaUrlForIg = videoUrl; // Use Cloudinary URL directly
                     // Pre-flight check for video URL accessibility
                     console.log(`[REAL IG] Verifying accessibility of video URL: ${mediaUrlForIg.substring(0, 70)}...`);
                     try {
@@ -610,6 +612,7 @@ app.post('/api/publish-post', async (req, res) => {
 
                 if (publishData.error) throw new Error(`IG publish failed: ${publishData.error.message}`);
                 console.log('[REAL IG] Successfully posted to Instagram. Media ID:', publishData.id);
+                instagramPostId = publishData.id;
                 publishedTo.push(platform);
             } catch (error) {
                 console.error('[REAL IG] Failed to publish to Instagram. Details:', {
@@ -639,8 +642,13 @@ app.post('/api/publish-post', async (req, res) => {
     const newPost = {
         id: facebookPostId || `post_${Date.now()}`,
         platforms: publishedTo,
+        platformPostIds: {
+            Facebook: facebookPostId,
+            Instagram: instagramPostId,
+        },
         audience,
-        imageUrl,
+        imageUrl, // Thumbnail for videos, image for images
+        videoUrl, // Link to video if it exists
         mediaType,
         prompt,
         generatedContent,
@@ -655,7 +663,6 @@ app.post('/api/publish-post', async (req, res) => {
         res.status(200).json(newPost);
     }, hasMockPlatform ? 1500 : 0);
 });
-
 
 // --- SEO Assistant Endpoint ---
 app.post('/api/generate-seo', async (req, res) => {
@@ -804,6 +811,100 @@ app.delete('/api/post/:postId', async (req, res) => {
         res.status(500).json({ message: `Failed to delete post: ${error.message}` });
     }
 });
+
+// EDIT POST
+app.put('/api/post/:postId', async (req, res) => {
+    const { postId } = req.params;
+    const { message, pageAccessToken } = req.body;
+
+    if (!postId || !message || !pageAccessToken) {
+        return res.status(400).json({ message: 'Missing required fields: postId, message, pageAccessToken' });
+    }
+
+    try {
+        console.log(`[REAL UPDATE] Attempting to update post: ${postId}`);
+        const updateUrl = `https://graph.facebook.com/v23.0/${postId}`;
+        const updateParams = new URLSearchParams({
+            message: message,
+            access_token: pageAccessToken
+        });
+
+        const response = await fetch(updateUrl, { method: 'POST', body: updateParams });
+        const data = await response.json();
+
+        if (data.error) {
+            throw new Error(`Graph API error updating post: ${data.error.message}`);
+        }
+        
+        console.log(`[REAL UPDATE] Successfully updated post ${postId}.`);
+        res.json({ success: true });
+
+    } catch (error) {
+        console.error(`[REAL UPDATE] Failed to update post ${postId}:`, error);
+        res.status(500).json({ message: `Failed to update post: ${error.message}` });
+    }
+});
+
+
+// GET COMMENTS
+app.get('/api/post/:postId/comments', async (req, res) => {
+    const { postId } = req.params;
+    const { pageAccessToken } = req.query;
+
+    if (!postId || !pageAccessToken) {
+        return res.status(400).json({ message: 'Missing required fields: postId, pageAccessToken' });
+    }
+
+    try {
+        const commentsUrl = `https://graph.facebook.com/v23.0/${postId}/comments?fields=id,message,from{id,name,picture},created_time&access_token=${pageAccessToken}`;
+        const response = await fetch(commentsUrl);
+        const data = await response.json();
+
+        if (data.error) {
+            throw new Error(`Graph API error fetching comments: ${data.error.message}`);
+        }
+
+        res.json(data.data || []);
+    } catch (error) {
+        console.error(`[REAL COMMENTS] Failed to fetch comments for post ${postId}:`, error);
+        res.status(500).json({ message: `Failed to fetch comments: ${error.message}` });
+    }
+});
+
+
+// REPLY TO COMMENT
+app.post('/api/comment/:commentId/reply', async (req, res) => {
+    const { commentId } = req.params;
+    const { message, pageAccessToken } = req.body;
+    
+    if (!commentId || !message || !pageAccessToken) {
+        return res.status(400).json({ message: 'Missing required fields: commentId, message, pageAccessToken' });
+    }
+
+    try {
+        console.log(`[REAL REPLY] Replying to comment ${commentId}`);
+        const replyUrl = `https://graph.facebook.com/v23.0/${commentId}/replies`;
+        const replyParams = new URLSearchParams({
+            message: message,
+            access_token: pageAccessToken
+        });
+        
+        const response = await fetch(replyUrl, { method: 'POST', body: replyParams });
+        const data = await response.json();
+        
+        if (data.error) {
+            throw new Error(`Graph API error replying to comment: ${data.error.message}`);
+        }
+        
+        console.log(`[REAL REPLY] Successfully replied to comment. Reply ID: ${data.id}`);
+        res.json({ success: true, id: data.id });
+        
+    } catch (error) {
+        console.error(`[REAL REPLY] Failed to reply to comment ${commentId}:`, error);
+        res.status(500).json({ message: `Failed to reply to comment: ${error.message}` });
+    }
+});
+
 
 
 // Export the Express app for Vercel to use as a serverless function
