@@ -125,7 +125,7 @@ export const PostCard: React.FC<PostCardProps> = ({ post, isSelected, connection
               className="w-full h-48 md:h-full object-cover"
               onError={(e) => {
                   // If even the corrected URL fails, show a placeholder
-                  (e.target as HTMLImageElement).src = 'https://picsum.photos/seed/placeholder/800/600';
+                  (e.target as HTMLImageElement).src = 'https://placehold.co/800x600/1f2937/9ca3af?text=Image+Not+Found';
               }}
             />
             {post.mediaType === 'VIDEO' && (

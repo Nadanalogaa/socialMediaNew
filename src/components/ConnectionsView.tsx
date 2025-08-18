@@ -32,13 +32,14 @@ const FacebookTroubleshooter: React.FC = () => (
         <div className="space-y-4 bg-dark-bg p-4 rounded-md mb-6 border border-blue-500">
              <h4 className="font-bold text-md text-white">Required Permissions Checklist</h4>
              <p className="text-xs text-blue-200 mb-3">
-                The screenshot you provided shows <strong className="text-white">messaging</strong> permissions. For this app to publish content, it needs <strong className="text-white">publishing</strong> permissions. Please go to your Facebook App's "App Review → Permissions and Features" page and search for the following:
+                For this app to publish content and read engagement, it needs several permissions. Please go to your Facebook App's "App Review → Permissions and Features" page and ensure you have requested and been granted access for the following:
              </p>
              <ul className="list-disc list-inside space-y-2 text-blue-200">
-                <li><strong className="text-white">`instagram_content_publish`</strong>: This is the most important one. It allows the app to post to your Instagram account.</li>
+                <li><strong className="text-white">`instagram_content_publish`</strong>: Allows the app to post to your Instagram account.</li>
                 <li><strong className="text-white">`pages_manage_posts`</strong>: Allows the app to post to your connected Facebook Page.</li>
                 <li><strong className="text-white">`instagram_basic`</strong> & <strong className="text-white">`pages_show_list`</strong>: Allows the app to find your accounts.</li>
                 <li><strong className="text-white">`pages_read_engagement`</strong>: Allows the app to fetch likes and comments for your posts.</li>
+                <li><strong className="text-white">`read_insights`</strong>: Allows fetching of more detailed analytics and post performance data.</li>
              </ul>
         </div>
 
@@ -173,7 +174,7 @@ export const ConnectionsView: React.FC<ConnectionsViewProps> = ({ connections, s
                 }
             }
 
-            const required_scope = 'public_profile,pages_show_list,pages_manage_posts,pages_read_engagement,instagram_basic,instagram_content_publish';
+            const required_scope = 'public_profile,pages_show_list,pages_manage_posts,pages_read_engagement,instagram_basic,instagram_content_publish,read_insights';
             console.log(`Requesting Facebook permissions with scope: ${required_scope}`);
 
             window.FB.login(loginCallback, {

@@ -748,7 +748,7 @@ app.post('/api/post-insights', async (req, res) => {
 
     try {
         console.log(`[REAL INSIGHTS] Fetching insights for post: ${postId}`);
-        const insightsUrl = `https://graph.facebook.com/v23.0/${postId}?fields=likes.summary(true),comments.summary(true)&access_token=${pageAccessToken}`;
+        const insightsUrl = `https://graph.facebook.com/v23.0/${postId}?fields=likes.summary(true),comments.summary(true),shares&access_token=${pageAccessToken}`;
 
         const response = await fetch(insightsUrl);
         const data = await response.json();
@@ -773,7 +773,7 @@ app.post('/api/post-insights', async (req, res) => {
         const insights = {
             likes: data.likes?.summary?.total_count || 0,
             comments: data.comments?.summary?.total_count || 0,
-            shares: 0, // Shares field is not reliably available for all post types. Defaulting to 0.
+            shares: data.shares?.count || 0,
         };
 
         console.log(`[REAL INSIGHTS] Successfully fetched insights:`, insights);
