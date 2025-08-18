@@ -1,6 +1,5 @@
 
 
-
 /// <reference lib="dom" />
 
 import React, { useState, useCallback, useEffect } from 'react';
@@ -108,7 +107,7 @@ const App: React.FC = () => {
     }
   };
 
-  const updatePostEngagement = (postId: string, newEngagement: { likes: number, comments: number, shares: number }) => {
+  const updatePostEngagement = (postId: string, newEngagement: Post['engagement']) => {
       setPosts(prevPosts => prevPosts.map(p =>
           p.id === postId ? { ...p, engagement: newEngagement } : p
       ));
@@ -239,7 +238,7 @@ const App: React.FC = () => {
             appId: import.meta.env.VITE_FACEBOOK_APP_ID, 
             cookie: true,
             xfbml: true,
-            version: 'v20.0'
+            version: 'v23.0'
         });
         setIsFbSdkInitialized(true);
         window.FB.AppEvents.logPageView();

@@ -23,7 +23,9 @@ const handleResponse = async (response: Response) => {
         console.error("API Error:", errorMessage);
         throw new Error(errorMessage);
     }
-    return response.json();
+    // Handle cases where the server returns a 200 OK but with an empty body
+    const text = await response.text();
+    return text ? JSON.parse(text) : {};
 }
 
 export const generateAssetContent = async (prompt: string): Promise<GeneratedAssetContent> => {
@@ -75,7 +77,7 @@ export const disconnectPlatform = async (platform: Platform): Promise<Connection
 };
 
 export const publishPost = async (
-    postData: Omit<Post, 'id' | 'engagement' | 'postedAt' | 'platformPostIds'>,
+    postData: Omit<Post, 'id' | 'engagement' | 'postedAt' | 'platformPostIds' | 'status'>,
     connectionDetails: ConnectionDetails
 ): Promise<Post> => {
     const response = await fetch('/api/publish-post', {
@@ -88,7 +90,7 @@ export const publishPost = async (
     return handleResponse(response);
 };
 
-export const getPostInsights = async (facebookPostId: string | undefined, instagramPostId: string | undefined, pageAccessToken: string): Promise<{ likes: number; comments: number; shares: number; }> => {
+export const getPostInsights = async (facebookPostId: string | undefined, instagramPostId: string | undefined, pageAccessToken: string): Promise<Post['engagement']> => {
     const response = await fetch('/api/post-insights', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

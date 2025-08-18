@@ -41,9 +41,21 @@ export interface Post {
   };
   postedAt: string;
   engagement: {
-    likes: number;
-    comments: number;
-    shares: number;
+    total: {
+      likes: number;
+      comments: number;
+      shares: number;
+    };
+    facebook?: {
+      likes: number;
+      comments: number;
+      shares: number;
+    };
+    instagram?: {
+      likes: number;
+      comments: number;
+      shares: 0; // Instagram API for media doesn't provide shares.
+    };
   };
   status?: 'active' | 'deleted-on-platform';
 }

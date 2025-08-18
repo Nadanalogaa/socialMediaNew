@@ -20,10 +20,11 @@ export const MOCK_POSTS: Post[] = [
     },
     postedAt: new Date('2024-08-12T18:30:00Z').toISOString(),
     engagement: {
-      likes: 0,
-      comments: 0,
-      shares: 0
-    }
+      total: { likes: 0, comments: 0, shares: 0 },
+      facebook: { likes: 0, comments: 0, shares: 0 },
+      instagram: { likes: 0, comments: 0, shares: 0 }
+    },
+    status: 'active',
   },
   {
     id: 'post_2',
@@ -41,10 +42,9 @@ export const MOCK_POSTS: Post[] = [
     },
     postedAt: new Date('2024-08-10T09:00:00Z').toISOString(),
     engagement: {
-      likes: 0,
-      comments: 0,
-      shares: 0
-    }
+      total: { likes: 0, comments: 0, shares: 0 }
+    },
+    status: 'active',
   },
   {
     id: 'post_3',
@@ -63,9 +63,9 @@ export const MOCK_POSTS: Post[] = [
     },
     postedAt: new Date('2024-08-11T14:00:00Z').toISOString(),
     engagement: {
-      likes: 0,
-      comments: 0,
-      shares: 0
-    }
+      total: { likes: 0, comments: 0, shares: 0 },
+      facebook: { likes: 0, comments: 0, shares: 0 }
+    },
+    status: 'active',
   }
 ];

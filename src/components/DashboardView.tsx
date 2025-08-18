@@ -16,7 +16,7 @@ interface DashboardViewProps {
   connectionDetails: ConnectionDetails;
   onDeletePost: (postId: string) => Promise<void>;
   onDeletePosts: (postIds: string[]) => Promise<void>;
-  onUpdatePostEngagement: (postId: string, engagement: { likes: number, comments: number, shares: number }) => void;
+  onUpdatePostEngagement: (postId: string, engagement: Post['engagement']) => void;
   onUpdatePostContent: (postId: string, newContent: Partial<Post['generatedContent']>) => void;
   onEditPost: (post: Post) => void;
   onMarkPostAsDeleted: (postId: string) => void;
@@ -41,9 +41,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ posts, connectionD
     return post.platforms.includes(platformFilter);
   });
   
-  const totalLikes = filteredPosts.reduce((sum, post) => sum + post.engagement.likes, 0);
-  const totalComments = filteredPosts.reduce((sum, post) => sum + post.engagement.comments, 0);
-  const totalShares = filteredPosts.reduce((sum, post) => sum + post.engagement.shares, 0);
+  const totalLikes = filteredPosts.reduce((sum, post) => sum + post.engagement.total.likes, 0);
+  const totalComments = filteredPosts.reduce((sum, post) => sum + post.engagement.total.comments, 0);
+  const totalShares = filteredPosts.reduce((sum, post) => sum + post.engagement.total.shares, 0);
 
   const handleSelectPost = (postId: string) => {
     setSelectedPosts(prev => {

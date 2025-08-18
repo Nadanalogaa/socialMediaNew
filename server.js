@@ -652,7 +652,12 @@ app.post('/api/publish-post', async (req, res) => {
         prompt,
         generatedContent,
         postedAt: new Date().toISOString(),
-        engagement: { likes: 0, comments: 0, shares: 0 }, // Real engagement would be fetched later
+        engagement: {
+            total: { likes: 0, comments: 0, shares: 0 },
+            facebook: facebookPostId ? { likes: 0, comments: 0, shares: 0 } : undefined,
+            instagram: instagramPostId ? { likes: 0, comments: 0, shares: 0 } : undefined,
+        },
+        status: 'active',
     };
 
     // Simulate network delay for mock platforms if they were part of the request
@@ -747,9 +752,8 @@ app.post('/api/post-insights', async (req, res) => {
     }
 
     try {
-        let totalLikes = 0;
-        let totalComments = 0;
-        let totalShares = 0;
+        let fbInsights = { likes: 0, comments: 0, shares: 0 };
+        let igInsights = { likes: 0, comments: 0, shares: 0 }; // IG API doesn't provide shares for media
         let fbPostNotFound = false;
         let igPostNotFound = false;
 
@@ -769,10 +773,10 @@ app.post('/api/post-insights', async (req, res) => {
                     console.error(errorMessage);
                 }
             } else {
-                totalLikes += fbData.likes?.summary?.total_count || 0;
-                totalComments += fbData.comments?.summary?.total_count || 0;
-                totalShares += fbData.shares?.count || 0;
-                console.log(`[REAL INSIGHTS] FB Insights: ${fbData.likes?.summary?.total_count || 0} likes, ${fbData.comments?.summary?.total_count || 0} comments, ${fbData.shares?.count || 0} shares`);
+                fbInsights.likes = fbData.likes?.summary?.total_count || 0;
+                fbInsights.comments = fbData.comments?.summary?.total_count || 0;
+                fbInsights.shares = fbData.shares?.count || 0;
+                console.log(`[REAL INSIGHTS] FB Insights: ${fbInsights.likes} likes, ${fbInsights.comments} comments, ${fbInsights.shares} shares`);
             }
         }
 
@@ -792,11 +796,9 @@ app.post('/api/post-insights', async (req, res) => {
                     console.error(errorMessage);
                 }
             } else {
-                const igLikes = igData.like_count || 0;
-                const igComments = igData.comments_count || 0;
-                totalLikes += igLikes;
-                totalComments += igComments;
-                console.log(`[REAL INSIGHTS] IG Insights: ${igLikes} likes, ${igComments} comments. Total now: ${totalLikes} likes, ${totalComments} comments`);
+                igInsights.likes = igData.like_count || 0;
+                igInsights.comments = igData.comments_count || 0;
+                console.log(`[REAL INSIGHTS] IG Insights: ${igInsights.likes} likes, ${igInsights.comments} comments.`);
             }
         }
 
@@ -811,15 +813,118 @@ app.post('/api/post-insights', async (req, res) => {
         if (platformsPostedTo.length > 0 && platformsPostedTo.length === platformsNotFoundOn.length) {
             return res.status(404).json({ message: 'This post was not found on the platform(s) it was posted to. It may have been deleted.' });
         }
+        
+        const total = {
+            likes: fbInsights.likes + igInsights.likes,
+            comments: fbInsights.comments + igInsights.comments,
+            shares: fbInsights.shares + igInsights.shares, // IG shares is 0
+        };
 
         res.json({
-            likes: totalLikes,
-            comments: totalComments,
-            shares: totalShares,
+            total,
+            facebook: fbInsights,
+            instagram: igInsights,
         });
+
     } catch (error) {
         console.error('Error fetching post insights:', error);
         res.status(500).json({ message: `Failed to fetch post insights: ${error.message || 'Please check server logs.'}` });
+    }
+});
+
+
+// --- Post Management Endpoints (Delete, Update, Comments) ---
+
+// DELETE Post
+app.delete('/api/post/:postId', async (req, res) => {
+    const { postId } = req.params;
+    const { pageAccessToken } = req.body;
+    if (!postId || !pageAccessToken) {
+        return res.status(400).json({ message: 'Missing postId or pageAccessToken' });
+    }
+    try {
+        const url = `https://graph.facebook.com/v23.0/${postId}?access_token=${pageAccessToken}`;
+        const response = await fetch(url, { method: 'DELETE' });
+        const data = await response.json();
+        if (data.error && !data.success) { // Some delete calls return `success: true` with a minor error
+             throw new Error(data.error.message);
+        }
+        console.log(`[REAL DELETE] Successfully deleted post ${postId}`);
+        res.json({ success: true });
+    } catch (error) {
+        console.error(`[REAL DELETE] Failed to delete post ${postId}:`, error);
+        res.status(500).json({ message: `Failed to delete post: ${error.message}` });
+    }
+});
+
+// UPDATE Post
+app.put('/api/post/:postId', async (req, res) => {
+    const { postId } = req.params;
+    const { message, pageAccessToken } = req.body;
+    if (!postId || !message || !pageAccessToken) {
+        return res.status(400).json({ message: 'Missing postId, message, or pageAccessToken' });
+    }
+    try {
+        const url = `https://graph.facebook.com/v23.0/${postId}`;
+        const body = new URLSearchParams({
+            message,
+            access_token: pageAccessToken
+        });
+        const response = await fetch(url, { method: 'POST', body }); // Update is a POST in Graph API
+        const data = await response.json();
+        if (data.error) throw new Error(data.error.message);
+        console.log(`[REAL UPDATE] Successfully updated post ${postId}`);
+        res.json({ success: true });
+    } catch (error) {
+        console.error(`[REAL UPDATE] Failed to update post ${postId}:`, error);
+        res.status(500).json({ message: `Failed to update post: ${error.message}` });
+    }
+});
+
+// GET Comments
+app.get('/api/post/:postId/comments', async (req, res) => {
+    const { postId } = req.params;
+    const { pageAccessToken } = req.query;
+    if (!postId || !pageAccessToken) {
+        return res.status(400).json({ message: 'Missing postId or pageAccessToken' });
+    }
+    try {
+        const url = `https://graph.facebook.com/v23.0/${postId}/comments?fields=id,message,from{id,name,picture},created_time&access_token=${pageAccessToken}`;
+        const response = await fetch(url);
+        if (!response.ok) { // Catch non-JSON responses
+            const text = await response.text();
+            throw new Error(`Graph API error: ${response.status} ${response.statusText} - ${text}`);
+        }
+        const data = await response.json();
+        if (data.error) throw new Error(data.error.message);
+        res.json(data.data || []); // The comments are in the `data` property
+    } catch (error) {
+        console.error(`[REAL COMMENTS] Failed to get comments for post ${postId}:`, error);
+        res.status(500).json({ message: `Failed to get comments: ${error.message}` });
+    }
+});
+
+// POST Reply to Comment
+app.post('/api/comment/:commentId/reply', async (req, res) => {
+    const { commentId } = req.params;
+    const { message, pageAccessToken } = req.body;
+     if (!commentId || !message || !pageAccessToken) {
+        return res.status(400).json({ message: 'Missing commentId, message, or pageAccessToken' });
+    }
+    try {
+        const url = `https://graph.facebook.com/v23.0/${commentId}/replies`;
+        const body = new URLSearchParams({
+            message,
+            access_token: pageAccessToken
+        });
+        const response = await fetch(url, { method: 'POST', body });
+        const data = await response.json();
+        if (data.error) throw new Error(data.error.message);
+        console.log(`[REAL REPLY] Successfully replied to comment ${commentId}`);
+        res.json({ success: true, id: data.id });
+    } catch (error) {
+        console.error(`[REAL REPLY] Failed to reply to comment ${commentId}:`, error);
+        res.status(500).json({ message: `Failed to reply: ${error.message}` });
     }
 });
 

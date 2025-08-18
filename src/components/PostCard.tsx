@@ -1,3 +1,4 @@
+
 /// <reference lib="dom" />
 
 import React, { useState } from 'react';
@@ -38,6 +39,50 @@ const PlatformIcons: React.FC<{ platforms: Platform[] }> = ({ platforms }) => (
         {platforms.includes(Platform.YouTube) && <YoutubeIcon className="w-5 h-5 text-red-600" />}
     </div>
 );
+
+const EngagementDisplay: React.FC<{ post: Post }> = ({ post }) => {
+    const availablePlatforms = [Platform.Facebook, Platform.Instagram].filter(p => post.platforms.includes(p)) as Platform[];
+    
+    // Default to the first available platform, or Facebook if none (edge case)
+    const [activeTab, setActiveTab] = useState<Platform>(availablePlatforms[0] || Platform.Facebook);
+
+    if (availablePlatforms.length === 0) {
+        // For platforms like YouTube with no separate engagement view
+        return (
+            <div className="flex space-x-4 text-xs text-dark-text-secondary">
+                <span>❤️ {post.engagement.total.likes} Likes</span>
+                <span>💬 {post.engagement.total.comments} Comments</span>
+                <span>🔁 {post.engagement.total.shares} Shares</span>
+            </div>
+        );
+    }
+    
+    const engagementData = activeTab === Platform.Facebook ? post.engagement.facebook : post.engagement.instagram;
+
+    return (
+        <div className="text-sm">
+            <div className="flex border-b border-dark-border mb-2">
+                {availablePlatforms.map(p => (
+                    <button 
+                        key={p} 
+                        onClick={() => setActiveTab(p)}
+                        className={`px-3 py-1 text-xs font-medium -mb-px ${activeTab === p ? 'text-white border-b-2 border-brand-primary' : 'text-dark-text-secondary border-b-2 border-transparent hover:text-white'}`}
+                    >
+                        {p}
+                    </button>
+                ))}
+            </div>
+            {engagementData && (
+                 <div className="flex space-x-4 text-xs text-dark-text-secondary">
+                    <span>❤️ {engagementData.likes} Likes</span>
+                    <span>💬 {engagementData.comments} Comments</span>
+                    {activeTab === Platform.Facebook && <span>🔁 {engagementData.shares} Shares</span>}
+                </div>
+            )}
+        </div>
+    );
+}
+
 
 export const PostCard: React.FC<PostCardProps> = ({ post, isSelected, connectionDetails, isDeleting, onSelect, onDelete, onEdit, onRefreshInsights, onUpdatePost }) => {
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -89,6 +134,9 @@ export const PostCard: React.FC<PostCardProps> = ({ post, isSelected, connection
   if (post.mediaType === 'VIDEO' && post.imageUrl && !/\.(jpe?g|png|gif|webp)$/i.test(post.imageUrl)) {
       displayImageUrl = post.imageUrl.replace(/\.(mp4|mov|avi|wmv|flv|webm|mkv)$/i, '.jpg');
   }
+  
+  const mainContent = post.generatedContent.facebook || post.generatedContent.instagram || post.generatedContent.youtubeTitle || "No content available.";
+
 
   return (
     <div className={`relative bg-dark-card border rounded-lg overflow-hidden transition-all duration-300 ${isSelected ? 'border-brand-primary' : 'border-dark-border'} ${isDeletedOnPlatform ? 'opacity-60' : ''}`}>
@@ -118,7 +166,7 @@ export const PostCard: React.FC<PostCardProps> = ({ post, isSelected, connection
           />
         </div>
         {displayImageUrl && (
-          <div className="md:w-1/3 relative">
+          <div className="md:w-48 md:flex-shrink-0 relative">
             <img
               src={displayImageUrl}
               alt="Post visual"
@@ -137,20 +185,19 @@ export const PostCard: React.FC<PostCardProps> = ({ post, isSelected, connection
             )}
           </div>
         )}
-        <div className={`p-6 ${displayImageUrl ? 'md:w-2/3' : 'w-full'}`}>
-          <div className="flex justify-between items-start mb-3">
+        <div className={`p-4 flex flex-col flex-grow min-w-0`}>
+          <div className="flex justify-between items-start mb-2">
               <div>
-                   <p className="text-sm text-dark-text-secondary">Posted to <span className="font-semibold text-dark-text">{post.audience}</span></p>
-                   <p className="text-xs text-dark-text-secondary">{timeAgo(post.postedAt)}</p>
+                   <p className="text-xs text-dark-text-secondary">Posted to <span className="font-semibold text-dark-text">{post.audience}</span> {timeAgo(post.postedAt)}</p>
               </div>
-              <div className="flex items-center gap-4">
+              <div className="flex items-center gap-1">
                   <PlatformIcons platforms={post.platforms} />
-                  <div className="flex items-center gap-1 border-l border-dark-border pl-3 ml-1">
+                  <div className="flex items-center gap-0 border-l border-dark-border pl-2 ml-2">
                       <button
                           onClick={() => onEdit(post)}
                           title="Use as Template"
                           disabled={isDeletedOnPlatform}
-                          className="p-2 rounded-full text-dark-text-secondary hover:bg-dark-bg hover:text-dark-text transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                          className="p-1.5 rounded-full text-dark-text-secondary hover:bg-dark-bg hover:text-dark-text transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                           aria-label="Use post as template"
                       >
                           <EditIcon className="w-4 h-4" />
@@ -158,7 +205,7 @@ export const PostCard: React.FC<PostCardProps> = ({ post, isSelected, connection
                       <button
                           onClick={handleDeleteClick}
                           title={isDeletedOnPlatform ? "Remove from Dashboard" : "Delete Post"}
-                          className="p-2 rounded-full text-dark-text-secondary hover:bg-dark-bg hover:text-red-400 transition-colors"
+                          className="p-1.5 rounded-full text-dark-text-secondary hover:bg-dark-bg hover:text-red-400 transition-colors"
                           aria-label={isDeletedOnPlatform ? "Remove post from dashboard" : "Delete post"}
                       >
                           <TrashIcon className="w-4 h-4" />
@@ -167,42 +214,13 @@ export const PostCard: React.FC<PostCardProps> = ({ post, isSelected, connection
               </div>
           </div>
           
-          <p className="text-sm text-dark-text-secondary italic mb-4">Prompt: "{post.prompt}"</p>
+          <p className="text-sm text-dark-text-secondary italic mb-2 truncate">Prompt: "{post.prompt}"</p>
 
-          <div className="space-y-4 text-sm">
-              {post.platforms.includes(Platform.Facebook) && post.generatedContent.facebook && (
-                  <div>
-                      <h4 className="font-bold text-blue-400">Facebook Post</h4>
-                      <p className="text-dark-text">{post.generatedContent.facebook}</p>
-                  </div>
-              )}
-              {post.platforms.includes(Platform.Instagram) && post.generatedContent.instagram && (
-                  <div>
-                      <h4 className="font-bold text-pink-400">Instagram Caption</h4>
-                      <p className="text-dark-text">{post.generatedContent.instagram}</p>
-                  </div>
-              )}
-              {post.platforms.includes(Platform.YouTube) && post.generatedContent.youtubeTitle && (
-                   <div>
-                      <h4 className="font-bold text-red-500">YouTube</h4>
-                      <p className="text-dark-text font-semibold">{post.generatedContent.youtubeTitle}</p>
-                      <p className="text-dark-text-secondary whitespace-pre-wrap">{post.generatedContent.youtubeDescription}</p>
-                  </div>
-              )}
-               {post.generatedContent.hashtags && post.generatedContent.hashtags.length > 0 && (
-                   <p className="text-brand-secondary text-xs">
-                      {post.generatedContent.hashtags.map(h => `#${h}`).join(' ')}
-                   </p>
-               )}
-          </div>
+          <p className="text-dark-text text-sm mb-3 flex-grow">{mainContent}</p>
 
-          <div className="mt-6 pt-4 border-t border-dark-border flex items-center justify-between text-sm text-dark-text-secondary">
-              <div className="flex space-x-6">
-                  <span>❤️ {post.engagement.likes} Likes</span>
-                  <span>💬 {post.engagement.comments} Comments</span>
-                  <span>🔁 {post.engagement.shares} Shares</span>
-              </div>
-               <div className="flex items-center gap-4">
+          <div className="mt-auto pt-3 border-t border-dark-border flex items-end justify-between">
+              <EngagementDisplay post={post} />
+              <div className="flex items-center gap-4">
                   <button 
                       onClick={handleRefresh} 
                       disabled={isRefreshing || !isFacebookConnected || post.id.startsWith('post_') || isDeletedOnPlatform}

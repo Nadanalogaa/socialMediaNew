@@ -12,9 +12,9 @@ export const AnalyticsChart: React.FC<AnalyticsChartProps> = ({ posts }) => {
 
   const data = sortedPosts.map(post => ({
     name: new Date(post.postedAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-    likes: post.engagement.likes,
-    comments: post.engagement.comments,
-    shares: post.engagement.shares,
+    likes: post.engagement.total.likes,
+    comments: post.engagement.total.comments,
+    shares: post.engagement.total.shares,
   }));
 
   return (
