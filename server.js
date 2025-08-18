@@ -1,5 +1,6 @@
 
 
+
 import express from 'express';
 import 'dotenv/config';
 import { GoogleGenAI, Type } from '@google/genai';
@@ -880,31 +881,6 @@ app.delete('/api/post/:postId', async (req, res) => {
     } catch (error) {
         console.error(`[REAL DELETE] Failed to delete post ${postId}:`, error);
         res.status(500).json({ message: `Failed to delete post: ${error.message}` });
-    }
-});
-
-// UPDATE Post
-app.put('/api/post/:postId', async (req, res) => {
-    const originalPostId = req.params.postId;
-    const postId = originalPostId.split(':')[0]; // Sanitize ID
-    const { message, pageAccessToken } = req.body;
-    if (!postId || !message || !pageAccessToken) {
-        return res.status(400).json({ message: 'Missing postId, message, or pageAccessToken' });
-    }
-    try {
-        const url = `https://graph.facebook.com/v23.0/${postId}`;
-        const body = new URLSearchParams({
-            message,
-            access_token: pageAccessToken
-        });
-        const response = await fetch(url, { method: 'POST', body }); // Update is a POST in Graph API
-        const data = await response.json();
-        if (data.error) throw new Error(data.error.message);
-        console.log(`[REAL UPDATE] Successfully updated post ${postId}`);
-        res.json({ success: true });
-    } catch (error) {
-        console.error(`[REAL UPDATE] Failed to update post ${postId}:`, error);
-        res.status(500).json({ message: `Failed to update post: ${error.message}` });
     }
 });
 

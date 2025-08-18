@@ -53,7 +53,11 @@ const App: React.FC = () => {
             if (!pageAccessToken) {
                 throw new Error("Cannot delete post from Facebook: Connection details are missing.");
             }
-            await deletePostOnPlatform(postId, pageAccessToken);
+            // Use the specific Facebook post ID for deletion
+            const fbPostId = postToDelete.platformPostIds?.Facebook;
+            if (fbPostId) {
+                await deletePostOnPlatform(fbPostId, pageAccessToken);
+            }
         }
 
         // Always remove from local state
@@ -83,7 +87,11 @@ const App: React.FC = () => {
 
         let failedDeletions: string[] = [];
         if (pageAccessToken) {
-            const deletePromises = realPostsToDelete.map(post => deletePostOnPlatform(post.id, pageAccessToken));
+            const deletePromises = realPostsToDelete
+                .map(post => post.platformPostIds?.Facebook)
+                .filter((id): id is string => !!id)
+                .map(fbPostId => deletePostOnPlatform(fbPostId, pageAccessToken));
+
             const results = await Promise.allSettled(deletePromises);
             
             failedDeletions = results.reduce((acc, result, index) => {

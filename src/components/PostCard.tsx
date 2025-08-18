@@ -1,8 +1,8 @@
 /// <reference lib="dom" />
 
 import React, { useState, useCallback, useEffect } from 'react';
-import type { Post, ConnectionDetails, Platform, Comment, FacebookUser } from '../types';
-import { Platform as PlatformEnum } from '../types';
+import type { Post, ConnectionDetails, Comment, FacebookUser } from '../types';
+import { Platform as PlatformEnum, type Platform } from '../types';
 import { FacebookIcon } from './icons/FacebookIcon';
 import { InstagramIcon } from './icons/InstagramIcon';
 import { YoutubeIcon } from './icons/YoutubeIcon';
@@ -77,8 +77,13 @@ const EngagementModal: React.FC<EngagementModalProps> = ({ post, type, platform,
     }, [type, postIdForPlatform, pageAccessToken]);
 
     useEffect(() => {
-        fetchData();
-    }, [fetchData]);
+        if (type === 'likes' && platform === PlatformEnum.Instagram) {
+            setError("Viewing the list of users who liked an Instagram post is not supported by the Instagram API.");
+            setIsLoading(false);
+        } else {
+            fetchData();
+        }
+    }, [fetchData, type, platform]);
 
     const handleReplySubmit = async (commentId: string) => {
         if (!replyText.trim() || !pageAccessToken) return;

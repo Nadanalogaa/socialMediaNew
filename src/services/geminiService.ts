@@ -1,4 +1,5 @@
 
+
 import type { Platform, SeoSuggestions, Post, ConnectionStatus, GeneratedAssetContent, GeneratedPostIdea, ConnectionDetails, Comment, FacebookUser } from '../types';
 
 const handleResponse = async (response: Response) => {
@@ -109,15 +110,6 @@ export const deletePost = async (postId: string, pageAccessToken: string): Promi
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ pageAccessToken }),
-    });
-    return handleResponse(response);
-};
-
-export const updatePost = async (postId: string, message: string, pageAccessToken: string): Promise<{ success: boolean }> => {
-    const response = await fetch(`/api/post/${postId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message, pageAccessToken }),
     });
     return handleResponse(response);
 };
