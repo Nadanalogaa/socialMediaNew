@@ -1,4 +1,3 @@
-
 /// <reference lib="dom" />
 
 import React, { useState } from 'react';
@@ -76,6 +75,13 @@ export const PostCard: React.FC<PostCardProps> = ({ post, isSelected, connection
         setIsRefreshing(false);
     }
   }
+  
+  // Defensive coding: Correct the image URL if it's a video post with a video URL in the imageUrl field.
+  // This handles legacy data that might be stored in the user's IndexedDB.
+  let displayImageUrl = post.imageUrl;
+  if (post.mediaType === 'VIDEO' && post.imageUrl && !/\.(jpe?g|png|gif|webp)$/i.test(post.imageUrl)) {
+      displayImageUrl = post.imageUrl.replace(/\.(mp4|mov|avi|wmv|flv|webm|mkv)$/i, '.jpg');
+  }
 
   return (
     <div className={`bg-dark-card border rounded-lg overflow-hidden transition-all duration-300 ${isSelected ? 'border-brand-primary' : 'border-dark-border'}`}>
@@ -95,12 +101,16 @@ export const PostCard: React.FC<PostCardProps> = ({ post, isSelected, connection
               aria-label={`Select post: ${post.prompt}`}
           />
         </div>
-        {post.imageUrl && (
+        {displayImageUrl && (
           <div className="md:w-1/3 relative">
             <img
-              src={post.imageUrl}
+              src={displayImageUrl}
               alt="Post visual"
               className="w-full h-48 md:h-full object-cover"
+              onError={(e) => {
+                  // If even the corrected URL fails, show a placeholder
+                  (e.target as HTMLImageElement).src = 'https://picsum.photos/seed/placeholder/800/600';
+              }}
             />
             {post.mediaType === 'VIDEO' && (
                 <div className="absolute inset-0 flex items-center justify-center bg-black/30 pointer-events-none">
@@ -111,7 +121,7 @@ export const PostCard: React.FC<PostCardProps> = ({ post, isSelected, connection
             )}
           </div>
         )}
-        <div className={`p-6 ${post.imageUrl ? 'md:w-2/3' : 'w-full'}`}>
+        <div className={`p-6 ${displayImageUrl ? 'md:w-2/3' : 'w-full'}`}>
           <div className="flex justify-between items-start mb-3">
               <div>
                    <p className="text-sm text-dark-text-secondary">Posted to <span className="font-semibold text-dark-text">{post.audience}</span></p>

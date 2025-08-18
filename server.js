@@ -748,15 +748,19 @@ app.post('/api/post-insights', async (req, res) => {
 
     try {
         console.log(`[REAL INSIGHTS] Fetching insights for post: ${postId}`);
-        // The `shares` field is not available for all object types (e.g., videos).
-        // Requesting it can cause an error. We will fetch only likes and comments.
         const insightsUrl = `https://graph.facebook.com/v23.0/${postId}?fields=likes.summary(true),comments.summary(true)&access_token=${pageAccessToken}`;
 
         const response = await fetch(insightsUrl);
         const data = await response.json();
 
         if (data.error) {
-            throw new Error(`Graph API error fetching insights: ${data.error.message}`);
+            const errorMessage = `Graph API error fetching insights: ${data.error.message}`;
+            // Check for permission-related errors and return a 403 Forbidden
+            if (data.error.code === 200 || data.error.code === 10 || (data.error.message && data.error.message.toLowerCase().includes('permissions'))) {
+                console.warn(`[REAL INSIGHTS] Permission error for post ${postId}: ${data.error.message}`);
+                return res.status(403).json({ message: errorMessage });
+            }
+            throw new Error(errorMessage);
         }
 
         const insights = {
