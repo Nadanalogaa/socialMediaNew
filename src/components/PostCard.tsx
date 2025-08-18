@@ -1,17 +1,16 @@
-
 /// <reference lib="dom" />
 
-import React, { useState } from 'react';
-import type { Post, ConnectionDetails } from '../types';
-import { Platform } from '../types';
+import React, { useState, useCallback, useEffect } from 'react';
+import type { Post, ConnectionDetails, Platform, Comment, FacebookUser } from '../types';
+import { Platform as PlatformEnum } from '../types';
 import { FacebookIcon } from './icons/FacebookIcon';
 import { InstagramIcon } from './icons/InstagramIcon';
 import { YoutubeIcon } from './icons/YoutubeIcon';
 import { EditIcon } from './icons/EditIcon';
 import { TrashIcon } from './icons/TrashIcon';
 import { RefreshIcon } from './icons/RefreshIcon';
-import { PostManager } from './PostManager';
 import { timeAgo } from '../utils/time';
+import { getComments, getLikes, replyToComment } from '../services/geminiService';
 
 interface PostCardProps {
   post: Post;
@@ -22,7 +21,6 @@ interface PostCardProps {
   onDelete: (postId: string) => Promise<void>;
   onEdit: (post: Post) => void; // For "Use as Template"
   onRefreshInsights: (postId: string) => Promise<void>;
-  onUpdatePost: (post: Post, newContent: Post['generatedContent']) => Promise<void>;
 }
 
 const LoadingSpinner: React.FC<{ size?: string }> = ({ size = 'h-8 w-8' }) => (
@@ -32,58 +30,177 @@ const LoadingSpinner: React.FC<{ size?: string }> = ({ size = 'h-8 w-8' }) => (
     </svg>
 );
 
+
+interface EngagementModalProps {
+    post: Post;
+    type: 'likes' | 'comments';
+    platform: Platform;
+    connectionDetails: ConnectionDetails;
+    onClose: () => void;
+}
+
+const EngagementModal: React.FC<EngagementModalProps> = ({ post, type, platform, connectionDetails, onClose }) => {
+    const [data, setData] = useState<(Comment[] | FacebookUser[])>([]);
+    const [isLoading, setIsLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+    
+    // For comments logic
+    const [replyingTo, setReplyingTo] = useState<string | null>(null);
+    const [replyText, setReplyText] = useState('');
+    const [isSubmitting, setIsSubmitting] = useState(false);
+
+    const pageAccessToken = connectionDetails.facebook?.pageAccessToken;
+    const postIdForPlatform = platform === 'Instagram' ? post.platformPostIds?.Instagram : post.platformPostIds?.Facebook;
+
+    const fetchData = useCallback(async () => {
+        if (!pageAccessToken || !postIdForPlatform) {
+            setError('Connection details are missing or this post is not on the selected platform.');
+            setIsLoading(false);
+            return;
+        }
+
+        setIsLoading(true);
+        setError(null);
+        try {
+            let result;
+            if (type === 'comments') {
+                result = await getComments(postIdForPlatform, pageAccessToken);
+            } else {
+                result = await getLikes(postIdForPlatform, pageAccessToken);
+            }
+            setData(result);
+        } catch (err) {
+            setError(err instanceof Error ? err.message : `Failed to load ${type}.`);
+        } finally {
+            setIsLoading(false);
+        }
+    }, [type, postIdForPlatform, pageAccessToken]);
+
+    useEffect(() => {
+        fetchData();
+    }, [fetchData]);
+
+    const handleReplySubmit = async (commentId: string) => {
+        if (!replyText.trim() || !pageAccessToken) return;
+        setIsSubmitting(true);
+        setError(null);
+        try {
+            await replyToComment(commentId, replyText, pageAccessToken);
+            setReplyText('');
+            setReplyingTo(null);
+            await fetchData(); // Refresh comments
+        } catch(err) {
+            setError(err instanceof Error ? err.message : 'Failed to post reply.');
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+    
+    const platformConfig = {
+        Facebook: { icon: <FacebookIcon className="w-5 h-5" />, name: "Facebook" },
+        Instagram: { icon: <InstagramIcon className="w-5 h-5" />, name: "Instagram" },
+        YouTube: { icon: null, name: "YouTube" },
+    };
+
+    const renderContent = () => {
+        if (isLoading) return <div className="p-8 text-center"><LoadingSpinner size="h-10 w-10"/></div>;
+        if (error) return <div className="p-4 text-center text-red-400">{error}</div>;
+        if (data.length === 0) return <p className="p-8 text-center text-dark-text-secondary">No {type} on this post yet.</p>;
+
+        if (type === 'likes') {
+            const likes = data as FacebookUser[];
+            return (
+                <ul className="space-y-2">
+                    {likes.map(user => (
+                        <li key={user.id} className="flex items-center gap-3 p-2 bg-dark-bg rounded-md">
+                            <img src={user.picture?.data.url} alt={user.name} className="w-8 h-8 rounded-full" />
+                            <span className="text-sm font-medium text-dark-text">{user.name}</span>
+                        </li>
+                    ))}
+                </ul>
+            );
+        }
+
+        if (type === 'comments') {
+            const comments = data as Comment[];
+            return (
+                <ul className="space-y-3">
+                    {comments.map(comment => (
+                         <li key={comment.id} className="bg-dark-bg p-3 rounded-lg">
+                            <div className="flex items-start gap-3">
+                               <img src={comment.from.picture?.data.url} alt={comment.from.name} className="w-8 h-8 rounded-full"/>
+                               <div className="flex-1">
+                                    <div className="flex justify-between items-center text-xs">
+                                        <p className="font-bold text-white">{comment.from.name}</p>
+                                        <p className="text-dark-text-secondary">{timeAgo(comment.created_time)}</p>
+                                    </div>
+                                    <p className="text-sm text-dark-text mt-1">{comment.message}</p>
+                                    <button onClick={() => setReplyingTo(replyingTo === comment.id ? null : comment.id)} className="text-xs text-brand-secondary hover:underline mt-2">
+                                       {replyingTo === comment.id ? 'Cancel' : 'Reply'}
+                                    </button>
+                               </div>
+                            </div>
+                            {replyingTo === comment.id && (
+                                <div className="mt-2 pl-11">
+                                    <textarea 
+                                        value={replyText}
+                                        onChange={(e) => setReplyText(e.target.value)}
+                                        className="w-full bg-dark-card border border-dark-border rounded-md p-2 text-sm"
+                                        placeholder={`Replying to ${comment.from.name}...`}
+                                        rows={2}
+                                    />
+                                    <div className="text-right mt-1">
+                                        <button 
+                                            onClick={() => handleReplySubmit(comment.id)}
+                                            disabled={isSubmitting}
+                                            className="flex items-center justify-center gap-2 px-3 py-1 text-xs font-medium text-white bg-brand-primary hover:bg-brand-secondary rounded-md disabled:bg-gray-500">
+                                            {isSubmitting ? <LoadingSpinner size="h-4 w-4"/> : 'Send'}
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+                        </li>
+                    ))}
+                </ul>
+            );
+        }
+        return null;
+    };
+
+
+    return (
+        <div className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 animate-fade-in" onClick={onClose} role="dialog" aria-modal="true">
+            <div className="bg-dark-card border border-dark-border rounded-lg shadow-xl text-white w-full max-w-lg m-4 transform transition-all flex flex-col" onClick={e => e.stopPropagation()}>
+                <div className="p-4 border-b border-dark-border flex justify-between items-center">
+                    <div className="flex items-center gap-2">
+                         {platformConfig[platform].icon}
+                         <h3 className="text-lg font-bold capitalize">{platformConfig[platform].name} {type}</h3>
+                    </div>
+                    <button onClick={onClose} className="text-dark-text-secondary hover:text-white text-2xl leading-none">&times;</button>
+                </div>
+                <div className="p-4 overflow-y-auto max-h-[60vh]">
+                    {renderContent()}
+                </div>
+                <div className="p-3 bg-dark-bg/50 border-t border-dark-border text-right">
+                    <button onClick={onClose} className="px-4 py-2 bg-dark-bg border border-dark-border rounded-md text-sm hover:border-brand-primary">Close</button>
+                </div>
+            </div>
+        </div>
+    );
+};
+
+
 const PlatformIcons: React.FC<{ platforms: Platform[] }> = ({ platforms }) => (
     <div className="flex space-x-2">
-        {platforms.includes(Platform.Facebook) && <FacebookIcon className="w-5 h-5 text-blue-500" />}
-        {platforms.includes(Platform.Instagram) && <InstagramIcon className="w-5 h-5 text-pink-500" />}
-        {platforms.includes(Platform.YouTube) && <YoutubeIcon className="w-5 h-5 text-red-600" />}
+        {platforms.includes(PlatformEnum.Facebook) && <FacebookIcon className="w-5 h-5 text-blue-500" />}
+        {platforms.includes(PlatformEnum.Instagram) && <InstagramIcon className="w-5 h-5 text-pink-500" />}
+        {platforms.includes(PlatformEnum.YouTube) && <YoutubeIcon className="w-5 h-5 text-red-600" />}
     </div>
 );
 
-const EngagementDisplay: React.FC<{ post: Post }> = ({ post }) => {
-    const fbEngagement = post.engagement?.facebook;
-    const igEngagement = post.engagement?.instagram;
-
-    // Don't render if no detailed data is available, or for platforms like YouTube
-    if (!fbEngagement && !igEngagement) {
-        return (
-             <div className="text-xs text-dark-text-secondary flex items-center gap-3">
-                <span>❤️ {post.engagement?.total?.likes || 0}</span>
-                <span>💬 {post.engagement?.total?.comments || 0}</span>
-                <span>🔁 {post.engagement?.total?.shares || 0}</span>
-            </div>
-        );
-    }
-
-    return (
-        <div className="space-y-2 text-xs text-dark-text-secondary">
-            {fbEngagement && (
-                <div className="flex items-center gap-2">
-                    <FacebookIcon className="w-4 h-4 text-blue-500 flex-shrink-0" />
-                    <div className="flex items-center gap-3 flex-wrap">
-                        <span><span className="font-sans">❤️</span> {fbEngagement.likes}</span>
-                        <span><span className="font-sans">💬</span> {fbEngagement.comments}</span>
-                        <span><span className="font-sans">🔁</span> {fbEngagement.shares}</span>
-                    </div>
-                </div>
-            )}
-            {igEngagement && (
-                <div className="flex items-center gap-2">
-                    <InstagramIcon className="w-4 h-4 text-pink-500 flex-shrink-0" />
-                    <div className="flex items-center gap-3 flex-wrap">
-                        <span><span className="font-sans">❤️</span> {igEngagement.likes}</span>
-                        <span><span className="font-sans">💬</span> {igEngagement.comments}</span>
-                    </div>
-                </div>
-            )}
-        </div>
-    );
-}
-
-
-export const PostCard: React.FC<PostCardProps> = ({ post, isSelected, connectionDetails, isDeleting, onSelect, onDelete, onEdit, onRefreshInsights, onUpdatePost }) => {
+export const PostCard: React.FC<PostCardProps> = ({ post, isSelected, connectionDetails, isDeleting, onSelect, onDelete, onEdit, onRefreshInsights }) => {
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [modalConfig, setModalConfig] = useState<{type: 'likes' | 'comments', platform: Platform} | null>(null);
   const isFacebookConnected = !!connectionDetails.facebook;
   const isDeletedOnPlatform = post.status === 'deleted-on-platform';
 
@@ -95,8 +212,8 @@ export const PostCard: React.FC<PostCardProps> = ({ post, isSelected, connection
         return;
     }
 
-    const onFacebook = post.platforms.includes(Platform.Facebook);
-    const onInstagram = post.platforms.includes(Platform.Instagram);
+    const onFacebook = post.platforms.includes(PlatformEnum.Facebook);
+    const onInstagram = post.platforms.includes(PlatformEnum.Instagram);
 
     let confirmMessage = 'Are you sure you want to delete this post? This will permanently remove it from your dashboard.';
 
@@ -134,6 +251,60 @@ export const PostCard: React.FC<PostCardProps> = ({ post, isSelected, connection
   
   const mainContent = post.generatedContent.facebook || post.generatedContent.instagram || post.generatedContent.youtubeTitle || "No content available.";
 
+  const EngagementDisplay: React.FC<{ post: Post }> = ({ post }) => {
+    const fbEngagement = post.engagement?.facebook;
+    const igEngagement = post.engagement?.instagram;
+    const isPostInteractive = !post.id.startsWith('post_') && isFacebookConnected && !isDeletedOnPlatform;
+
+    const handleInteractionClick = (type: 'likes' | 'comments', platform: Platform) => {
+        if (!isPostInteractive) return;
+        setModalConfig({ type, platform });
+    };
+
+    if (!fbEngagement && !igEngagement) {
+        return (
+             <div className="text-xs text-dark-text-secondary flex items-center gap-3">
+                <span>❤️ {post.engagement?.total?.likes || 0}</span>
+                <span>💬 {post.engagement?.total?.comments || 0}</span>
+                <span>🔁 {post.engagement?.total?.shares || 0}</span>
+            </div>
+        );
+    }
+    
+    const buttonClasses = isPostInteractive ? "cursor-pointer hover:underline disabled:cursor-not-allowed disabled:no-underline disabled:opacity-70" : "cursor-default";
+    
+    return (
+        <div className="space-y-2 text-xs text-dark-text-secondary">
+            {fbEngagement && (
+                <div className="flex items-center gap-2">
+                    <FacebookIcon className="w-4 h-4 text-blue-500 flex-shrink-0" />
+                    <div className="flex items-center gap-3 flex-wrap">
+                        <button title={isPostInteractive ? `View Facebook likes` : `Connect Facebook to view likes`} disabled={!isPostInteractive} onClick={() => handleInteractionClick('likes', PlatformEnum.Facebook)} className={buttonClasses}>
+                            <span className="font-sans">❤️</span> {fbEngagement.likes}
+                        </button>
+                        <button title={isPostInteractive ? `View Facebook comments` : `Connect Facebook to view comments`} disabled={!isPostInteractive} onClick={() => handleInteractionClick('comments', PlatformEnum.Facebook)} className={buttonClasses}>
+                            <span className="font-sans">💬</span> {fbEngagement.comments}
+                        </button>
+                        <span><span className="font-sans">🔁</span> {fbEngagement.shares}</span>
+                    </div>
+                </div>
+            )}
+            {igEngagement && (
+                <div className="flex items-center gap-2">
+                    <InstagramIcon className="w-4 h-4 text-pink-500 flex-shrink-0" />
+                    <div className="flex items-center gap-3 flex-wrap">
+                        <button title={isPostInteractive ? `View Instagram likes` : `Connect Facebook to view likes`} disabled={!isPostInteractive} onClick={() => handleInteractionClick('likes', PlatformEnum.Instagram)} className={buttonClasses}>
+                             <span className="font-sans">❤️</span> {igEngagement.likes}
+                        </button>
+                        <button title={isPostInteractive ? `View Instagram comments` : `Connect Facebook to view comments`} disabled={!isPostInteractive} onClick={() => handleInteractionClick('comments', PlatformEnum.Instagram)} className={buttonClasses}>
+                            <span className="font-sans">💬</span> {igEngagement.comments}
+                        </button>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+  }
 
   return (
     <div className={`relative bg-dark-card border rounded-lg overflow-hidden transition-all duration-300 ${isSelected ? 'border-brand-primary' : 'border-dark-border'} ${isDeletedOnPlatform ? 'opacity-60' : ''}`}>
@@ -218,7 +389,7 @@ export const PostCard: React.FC<PostCardProps> = ({ post, isSelected, connection
           <div className="mt-auto pt-2 border-t border-dark-border">
               <div className="flex items-end justify-between">
                 <EngagementDisplay post={post} />
-                <div className="flex items-center gap-4">
+                <div className="flex items-center">
                     <button 
                         onClick={handleRefresh} 
                         disabled={isRefreshing || !isFacebookConnected || post.id.startsWith('post_') || isDeletedOnPlatform}
@@ -228,27 +399,19 @@ export const PostCard: React.FC<PostCardProps> = ({ post, isSelected, connection
                         <RefreshIcon className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
                         <span className="hidden sm:inline">{isRefreshing ? 'Refreshing...' : 'Refresh'}</span>
                     </button>
-                     <button 
-                        onClick={() => setIsExpanded(!isExpanded)}
-                        disabled={post.id.startsWith('post_') || !isFacebookConnected || isDeletedOnPlatform}
-                        title={isDeletedOnPlatform ? 'Post was deleted from the platform' : (post.id.startsWith('post_') ? 'Cannot manage mock posts' : (!isFacebookConnected ? 'Connect Facebook to manage post' : 'Manage post'))}
-                        className="flex items-center gap-2 text-xs px-3 py-1 rounded bg-dark-bg border border-dark-border hover:border-brand-primary disabled:opacity-50 disabled:cursor-not-allowed"
-                     >
-                       {isExpanded ? 'Close' : 'Manage'}
-                     </button>
                  </div>
               </div>
           </div>
         </div>
       </div>
-      {isExpanded && !post.id.startsWith('post_') && isFacebookConnected && !isDeletedOnPlatform && (
-        <div className="bg-dark-bg/50 border-t border-dark-border animate-fade-in">
-            <PostManager 
-              post={post}
-              connectionDetails={connectionDetails}
-              onUpdatePost={onUpdatePost}
-            />
-        </div>
+      {modalConfig && (
+        <EngagementModal
+            post={post}
+            type={modalConfig.type}
+            platform={modalConfig.platform}
+            connectionDetails={connectionDetails}
+            onClose={() => setModalConfig(null)}
+        />
       )}
     </div>
   );

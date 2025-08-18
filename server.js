@@ -1,4 +1,5 @@
 
+
 import express from 'express';
 import 'dotenv/config';
 import { GoogleGenAI, Type } from '@google/genai';
@@ -834,6 +835,30 @@ app.post('/api/post-insights', async (req, res) => {
 
 
 // --- Post Management Endpoints (Delete, Update, Comments) ---
+
+// GET Likes
+app.get('/api/post/:postId/likes', async (req, res) => {
+    const originalPostId = req.params.postId;
+    const postId = originalPostId.split(':')[0]; // Sanitize ID
+    const { pageAccessToken } = req.query;
+    if (!postId || !pageAccessToken) {
+        return res.status(400).json({ message: 'Missing postId or pageAccessToken' });
+    }
+    try {
+        const url = `https://graph.facebook.com/v23.0/${postId}/likes?fields=id,name,picture.type(square)&access_token=${pageAccessToken}`;
+        const response = await fetch(url);
+        if (!response.ok) { // Catch non-JSON responses
+            const text = await response.text();
+            throw new Error(`Graph API error: ${response.status} ${response.statusText} - ${text}`);
+        }
+        const data = await response.json();
+        if (data.error) throw new Error(data.error.message);
+        res.json(data.data || []); // The likes are in the `data` property
+    } catch (error) {
+        console.error(`[REAL LIKES] Failed to get likes for post ${postId}:`, error);
+        res.status(500).json({ message: `Failed to get likes: ${error.message}` });
+    }
+});
 
 // DELETE Post
 app.delete('/api/post/:postId', async (req, res) => {

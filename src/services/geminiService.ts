@@ -1,5 +1,5 @@
 
-import type { Platform, SeoSuggestions, Post, ConnectionStatus, GeneratedAssetContent, GeneratedPostIdea, ConnectionDetails, Comment } from '../types';
+import type { Platform, SeoSuggestions, Post, ConnectionStatus, GeneratedAssetContent, GeneratedPostIdea, ConnectionDetails, Comment, FacebookUser } from '../types';
 
 const handleResponse = async (response: Response) => {
     if (!response.ok) {
@@ -119,6 +119,11 @@ export const updatePost = async (postId: string, message: string, pageAccessToke
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message, pageAccessToken }),
     });
+    return handleResponse(response);
+};
+
+export const getLikes = async (postId: string, pageAccessToken: string): Promise<FacebookUser[]> => {
+    const response = await fetch(`/api/post/${postId}/likes?pageAccessToken=${pageAccessToken}`);
     return handleResponse(response);
 };
 

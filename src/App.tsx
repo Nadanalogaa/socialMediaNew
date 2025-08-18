@@ -112,12 +112,6 @@ const App: React.FC = () => {
           p.id === postId ? { ...p, engagement: newEngagement } : p
       ));
   };
-
-  const updatePostContent = (postId: string, newContent: Partial<Post['generatedContent']>) => {
-      setPosts(prevPosts => prevPosts.map(p =>
-          p.id === postId ? { ...p, generatedContent: { ...p.generatedContent, ...newContent } } : p
-      ));
-  };
   
   const markPostAsDeletedOnPlatform = (postId: string) => {
       setPosts(prevPosts => prevPosts.map(p => 
@@ -277,7 +271,6 @@ const App: React.FC = () => {
                     onDeletePost={deletePost}
                     onDeletePosts={deletePosts}
                     onUpdatePostEngagement={updatePostEngagement}
-                    onUpdatePostContent={updatePostContent}
                     onEditPost={(post) => navigateTo(View.CREATE_POST, post)}
                     onMarkPostAsDeleted={markPostAsDeletedOnPlatform}
                     onError={setGlobalError}

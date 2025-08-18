@@ -4,7 +4,7 @@ import type { Post, ConnectionDetails } from '../types';
 import { Platform } from '../types';
 import { PostCard } from './PostCard';
 import { AnalyticsChart } from './AnalyticsChart';
-import { getPostInsights, updatePost } from '../services/geminiService';
+import { getPostInsights } from '../services/geminiService';
 import { TrashIcon } from './icons/TrashIcon';
 import { FacebookIcon } from './icons/FacebookIcon';
 import { InstagramIcon } from './icons/InstagramIcon';
@@ -17,7 +17,6 @@ interface DashboardViewProps {
   onDeletePost: (postId: string) => Promise<void>;
   onDeletePosts: (postIds: string[]) => Promise<void>;
   onUpdatePostEngagement: (postId: string, engagement: Post['engagement']) => void;
-  onUpdatePostContent: (postId: string, newContent: Partial<Post['generatedContent']>) => void;
   onEditPost: (post: Post) => void;
   onMarkPostAsDeleted: (postId: string) => void;
   onError: (message: string | null) => void;
@@ -30,7 +29,7 @@ const LoadingSpinner: React.FC = () => (
     </svg>
 );
 
-export const DashboardView: React.FC<DashboardViewProps> = ({ posts, connectionDetails, onDeletePost, onDeletePosts, onUpdatePostEngagement, onUpdatePostContent, onEditPost, onMarkPostAsDeleted, onError }) => {
+export const DashboardView: React.FC<DashboardViewProps> = ({ posts, connectionDetails, onDeletePost, onDeletePosts, onUpdatePostEngagement, onEditPost, onMarkPostAsDeleted, onError }) => {
   const [platformFilter, setPlatformFilter] = useState<Platform | 'All'>('All');
   const [selectedPosts, setSelectedPosts] = useState<Set<string>>(new Set());
   const [deletingPosts, setDeletingPosts] = useState<Set<string>>(new Set());
@@ -134,28 +133,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ posts, connectionD
     }
   };
 
-  const handleUpdatePost = async (post: Post, newContent: Post['generatedContent']) => {
-    if (!connectionDetails?.facebook?.pageAccessToken) {
-        onError("Cannot update post: Facebook not connected or token missing.");
-        throw new Error("Facebook connection details not found.");
-    }
-     if (post.id.startsWith('post_')) {
-        onError("Cannot update mock posts on the platform.");
-        throw new Error("Cannot update mock posts.");
-    }
-    onError(null);
-    try {
-        const fullMessage = `${newContent.facebook}\n\n${(newContent.hashtags || []).map(h => `#${h}`).join(' ')}`.trim();
-        await updatePost(post.id, fullMessage, connectionDetails.facebook.pageAccessToken);
-        onUpdatePostContent(post.id, newContent);
-    } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        console.error(`Failed to update post ${post.id}:`, message);
-        onError(`Failed to update post: ${message}`);
-        throw err;
-    }
-  };
-
   const filterOptions: { value: Platform | 'All'; label: string; icon: React.ReactNode }[] = [
     { value: 'All', label: 'All', icon: <AllPlatformsIcon className="w-5 h-5" /> },
     { value: Platform.Facebook, label: 'Facebook', icon: <FacebookIcon className="w-5 h-5" /> },
@@ -249,7 +226,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ posts, connectionD
                     onDelete={handleDeletePost}
                     onEdit={onEditPost}
                     onRefreshInsights={handleRefreshInsights}
-                    onUpdatePost={handleUpdatePost}
                     isDeleting={deletingPosts.has(post.id)}
                 />
             )
