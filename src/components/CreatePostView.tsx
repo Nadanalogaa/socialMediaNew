@@ -113,19 +113,31 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
             try {
                 const storedAssets = await getDraftsFromDB();
                 if (storedAssets && storedAssets.length > 0) {
-                    const assetsWithPreviews = storedAssets.map(asset => {
-                        if (asset.file && asset.file instanceof File) {
-                            if (asset.mediaType !== 'VIDEO' && !asset.previewUrl?.startsWith('https://')) {
-                                return { ...asset, previewUrl: URL.createObjectURL(asset.file) };
+                    const assetsWithPreviews = storedAssets
+                        .map(asset => {
+                            // Sanitize the asset data to prevent crashes from old/malformed DB entries.
+                            const sanitizedAsset = {
+                                ...asset,
+                                platforms: Array.isArray(asset.platforms) ? asset.platforms : [PlatformEnum.Facebook],
+                                hashtags: Array.isArray(asset.hashtags) ? asset.hashtags : [],
+                            };
+
+                            // Generate blob URLs for previews if needed.
+                            if (sanitizedAsset.file && sanitizedAsset.file instanceof File) {
+                                if (sanitizedAsset.mediaType !== 'VIDEO' && !sanitizedAsset.previewUrl?.startsWith('https://')) {
+                                    return { ...sanitizedAsset, previewUrl: URL.createObjectURL(sanitizedAsset.file) };
+                                }
+                            } else if (sanitizedAsset.file) {
+                                // If a file object is present but not a File instance (e.g., from DB), remove it.
+                                const newAsset = { ...sanitizedAsset };
+                                delete newAsset.file;
+                                return newAsset;
                             }
-                        } else if (asset.file) {
-                            const newAsset = {...asset};
-                            delete newAsset.file;
-                            return newAsset;
-                        }
-                        return asset;
-                    }).filter(a => a.status !== 'published');
-                    
+
+                            return sanitizedAsset;
+                        })
+                        .filter(a => a.status !== 'published');
+
                     setAssets(assetsWithPreviews);
                 }
             } catch (error) {
