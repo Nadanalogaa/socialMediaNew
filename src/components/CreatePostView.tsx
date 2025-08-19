@@ -114,17 +114,11 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
                 const storedAssets = await getDraftsFromDB();
                 if (storedAssets && storedAssets.length > 0) {
                     const assetsWithPreviews = storedAssets.map(asset => {
-                        // When loading from IndexedDB, a File object can be deserialized as a plain object.
-                        // We need to ensure it's a real File instance before using it with APIs like URL.createObjectURL.
                         if (asset.file && asset.file instanceof File) {
-                            // If it is a valid File, create a blob URL for preview.
-                            // For videos, the previewUrl is handled differently (it's the video itself).
                             if (asset.mediaType !== 'VIDEO' && !asset.previewUrl?.startsWith('https://')) {
                                 return { ...asset, previewUrl: URL.createObjectURL(asset.file) };
                             }
                         } else if (asset.file) {
-                            // If asset.file exists but is not a File instance, we can't use it.
-                            // We'll clear it to prevent crashes. The user would need to re-upload.
                             const newAsset = {...asset};
                             delete newAsset.file;
                             return newAsset;
@@ -205,7 +199,6 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
     const updateAsset = useCallback((id: string, updates: Partial<MediaAsset>) => {
         setAssets(prev => prev.map(a => {
             if (a.id === id) {
-                // If we're updating the file, revoke the old blob URL to prevent memory leaks
                 if (updates.previewUrl && a.previewUrl && a.previewUrl.startsWith('blob:')) {
                     URL.revokeObjectURL(a.previewUrl);
                 }
@@ -241,10 +234,7 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
             const formData = new FormData();
             formData.append('file', chunk);
             formData.append('upload_preset', uploadPreset);
-            // On the final chunk, we add the transformation request.
             if (i === totalChunks - 1) {
-                // Eager transformation to compress and resize the video on Cloudinary's side.
-                // 720p, 4Mbit bitrate, auto quality, auto codec.
                 formData.append('eager', 'w_1280,h_720,c_limit,br_4m,q_auto:good,vc_auto');
                 formData.append('eager_async', 'true');
             }
@@ -275,7 +265,6 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
                         errorMessage: 'Upload complete! Transformation processing.',
                         uploadProgress: 100,
                     });
-                    // Clear the 'processing' message after a few seconds
                     setTimeout(() => {
                         setAssets(curr => curr.map(a => 
                             a.id === assetId && a.errorMessage?.includes('Transformation') ? { ...a, errorMessage: undefined } : a
@@ -286,7 +275,7 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
             } catch (error) {
                 const message = error instanceof Error ? error.message : "An unknown error occurred during upload.";
                 updateAsset(assetId, { status: 'error', errorMessage: `Upload failed: ${message}`, uploadProgress: undefined });
-                return; // Stop upload on error
+                return;
             }
         }
     };
@@ -341,7 +330,6 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
                         description: '', hashtags: [], platforms: [PlatformEnum.Facebook], ...initialState
                     } as MediaAsset, ...prev]);
                 }
-                // Upload in the background
                 handleChunkedUpload(assetIdToUpdate, originalFile);
             } else { // Is an image
                  const imagePreviewUrl = URL.createObjectURL(originalFile);
@@ -433,9 +421,9 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
         const isImage = asset.mediaType === 'IMAGE';
         const isVideo = asset.mediaType === 'VIDEO';
 
-        const hasMedia = (isImage && (asset.file || asset.previewUrl?.startsWith('https'))) || (isVideo && (asset.videoUrl || asset.previewUrl?.startsWith('blob:')));
+        const hasMedia = (isImage && (asset.file || asset.previewUrl?.startsWith('https'))) || (isVideo && asset.videoUrl);
         if (!hasMedia) {
-            updateAsset(assetId, { status: 'error', errorMessage: 'Please add media before publishing.' });
+            updateAsset(assetId, { status: 'error', errorMessage: 'Please add and upload media before publishing.' });
             return;
         }
         
@@ -463,7 +451,6 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
                 if (!asset.videoUrl) {
                     throw new Error('Video is still uploading or has failed. Please wait or try re-uploading.');
                 }
-                // Derive thumbnail from Cloudinary URL for the post record
                 imageUrlData = asset.videoUrl
                     .replace('/upload/', '/upload/w_400,h_300,c_pad,b_black,so_0/')
                     .replace(/\.(mp4|mov|avi|wmv|flv|webm|mkv)$/i, '.jpg');
@@ -483,7 +470,7 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
             return;
         }
 
-        const postToCreate: Omit<Post, 'id' | 'engagement' | 'postedAt'> = {
+        const postToCreate: Omit<Post, 'id' | 'engagement' | 'postedAt' | 'platformPostIds' | 'status'> = {
             platforms: asset.platforms,
             audience,
             imageUrl: imageUrlData,
@@ -495,7 +482,7 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
                 instagram: asset.description,
                 youtubeTitle: asset.name,
                 youtubeDescription: asset.description,
-                hashtags: asset.hashtags,
+                hashtags: asset.hashtags || [],
             }
         };
 
@@ -665,7 +652,7 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
             <div className="grid grid-cols-1 xl:grid-cols-2 2xl:grid-cols-3 gap-6">
             {assets.map((asset) => {
                 const isBusy = asset.status === 'generating' || asset.status === 'publishing' || asset.status === 'published' || asset.status === 'compressing' || asset.status === 'uploading' || asset.status === 'thumbnailing';
-                const hasMedia = (asset.mediaType === 'IMAGE' && (asset.file || asset.previewUrl?.startsWith('https'))) || (asset.mediaType === 'VIDEO' && (asset.videoUrl || asset.previewUrl?.startsWith('blob:')));
+                const hasMedia = (asset.mediaType === 'IMAGE' && (asset.file || asset.previewUrl?.startsWith('https'))) || (asset.mediaType === 'VIDEO' && asset.videoUrl);
                 const isPublishDisabled = isBusy || asset.status === 'error' || asset.platforms.length === 0 || !hasMedia;
 
                 return (
@@ -715,7 +702,7 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
                                         {asset.mediaType === 'VIDEO' ? (
                                             <video 
                                                 src={asset.previewUrl} 
-                                                controls 
+                                                controls={!asset.videoUrl} // Show controls only for local blob preview
                                                 className="rounded-lg w-full h-full object-cover bg-dark-bg" 
                                             />
                                         ) : (
