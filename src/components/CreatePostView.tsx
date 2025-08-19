@@ -126,7 +126,8 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
 
                             // Generate blob URLs for previews if needed.
                             if (sanitizedAsset.file && sanitizedAsset.file instanceof File) {
-                                if (sanitizedAsset.mediaType !== 'VIDEO' && !sanitizedAsset.previewUrl?.startsWith('https://')) {
+                                // Recreate blob URL for preview for both images and videos if it's missing or not a remote URL
+                                if (!sanitizedAsset.previewUrl || !sanitizedAsset.previewUrl.startsWith('https')) {
                                     return { ...sanitizedAsset, previewUrl: URL.createObjectURL(sanitizedAsset.file) };
                                 }
                             } else if (sanitizedAsset.file) {
@@ -443,6 +444,7 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
 
                     updateAsset(assetIdToUpdate, {
                         status: 'idle',
+                        file: compressedFile, // Store the compressed file for upload
                         errorMessage: `Compressed from ${(originalFile.size / 1024 / 1024).toFixed(1)}MB to ${(compressedFile.size / 1024 / 1024).toFixed(1)}MB. Ready to upload.`
                     });
                     setTimeout(() => setAssets(curr => curr.map(a => a.id === assetIdToUpdate && a.errorMessage?.startsWith('Compressed') ? { ...a, errorMessage: undefined } : a)), 5000);
@@ -769,7 +771,7 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
                      {selectedAssets.has(asset.id) && <div className="absolute inset-0 bg-brand-primary/10 rounded-lg pointer-events-none"></div>}
 
                     {(asset.status === 'compressing' || asset.status === 'generating' || asset.status === 'thumbnailing' || asset.status === 'uploading') && (
-                        <div className="absolute inset-0 bg-dark-card/80 backdrop-blur-sm flex flex-col items-center justify-center z-20 rounded-lg text-center">
+                        <div className="absolute inset-0 bg-dark-card/80 backdrop-blur-sm flex flex-col items-center justify-center z-20 rounded-lg text-center p-4">
                             <LoadingSpinner size="h-10 w-10" />
                             {asset.status === 'compressing' ? (
                                 <>
@@ -782,7 +784,7 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
                                             <p className="text-sm text-dark-text-secondary mt-1">{compressionProgress[asset.id]}% complete</p>
                                         </>
                                     )}
-                                     <p className="text-xs text-dark-text-secondary mt-2 px-4">This may take a while and use significant computer resources. Please keep this tab open.</p>
+                                     <p className="text-xs text-dark-text-secondary mt-2">This may take a while and use significant computer resources. Please keep this tab open.</p>
                                 </>
                             ) : asset.status === 'uploading' && asset.uploadProgress !== undefined ? (
                                 <>
