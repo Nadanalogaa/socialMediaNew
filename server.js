@@ -863,10 +863,20 @@ app.get('/api/post/:postId/likes', async (req, res) => {
 app.delete('/api/post/:postId', async (req, res) => {
     const originalPostId = req.params.postId;
     const postId = originalPostId.split(':')[0]; // Sanitize ID
-    const { pageAccessToken } = req.body;
+    const { pageAccessToken, platform } = req.body;
+
     if (!postId || !pageAccessToken) {
         return res.status(400).json({ message: 'Missing postId or pageAccessToken' });
     }
+
+    // Heuristic: Instagram media IDs are numeric without an underscore; Facebook page post IDs often have PAGEID_POSTID.
+    const isInstagram = platform === 'Instagram' || (!postId.includes('_') && /^\d+$/.test(postId));
+    if (isInstagram) {
+        return res.status(501).json({
+            message: 'Instagram Graph API does not support deleting published media. Please delete the post manually in the Instagram app.'
+        });
+    }
+
     try {
         const url = `https://graph.facebook.com/v23.0/${postId}?access_token=${pageAccessToken}`;
         const response = await fetch(url, { method: 'DELETE' });

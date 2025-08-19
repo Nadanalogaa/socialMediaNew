@@ -55,8 +55,8 @@ const App: React.FC = () => {
         const { Facebook: fbPostId, Instagram: igPostId } = postToDelete.platformPostIds || {};
         
         const deletePromises = [];
-        if (fbPostId) deletePromises.push(deletePostOnPlatformApi(fbPostId, pageAccessToken));
-        if (igPostId) deletePromises.push(deletePostOnPlatformApi(igPostId, pageAccessToken));
+        if (fbPostId) deletePromises.push(deletePostOnPlatformApi(fbPostId, pageAccessToken, Platform.Facebook));
+        if (igPostId) deletePromises.push(deletePostOnPlatformApi(igPostId, pageAccessToken, Platform.Instagram));
 
         if (deletePromises.length > 0) {
           const results = await Promise.allSettled(deletePromises);
@@ -64,10 +64,10 @@ const App: React.FC = () => {
           const igResultIndex = fbPostId ? 1 : 0;
           const igResult = igPostId ? results[igResultIndex] : null;
 
-          // Check if IG deletion failed with the expected error for shared images.
-          if (igResult && igResult.status === 'rejected' && (igResult.reason as Error).message.includes('cannot be deleted')) {
+          const igErrorMessage = 'Instagram Graph API does not support deleting published media';
+          if (igResult && igResult.status === 'rejected' && (igResult.reason as Error).message.includes(igErrorMessage)) {
             // This is an expected failure, log it but don't show an error if FB deletion succeeded.
-            console.warn('Instagram post cannot be deleted via API (likely a shared image). Please delete it manually from the app.');
+            console.warn('Instagram post cannot be deleted via API. This is expected. Please delete it manually from the app.');
             
             // Check if there are other failures
             const otherFailures = results.filter((r, i) => r.status === 'rejected' && i !== igResultIndex);
@@ -115,28 +115,29 @@ const App: React.FC = () => {
           realPostsToDelete.forEach(post => {
             const { Facebook: fbPostId, Instagram: igPostId } = post.platformPostIds || {};
             if (fbPostId) {
-              deleteOperations.push({ promise: deletePostOnPlatformApi(fbPostId, pageAccessToken), originalPostId: post.id, platform: Platform.Facebook });
+              deleteOperations.push({ promise: deletePostOnPlatformApi(fbPostId, pageAccessToken, Platform.Facebook), originalPostId: post.id, platform: Platform.Facebook });
             }
             if (igPostId) {
-              deleteOperations.push({ promise: deletePostOnPlatformApi(igPostId, pageAccessToken), originalPostId: post.id, platform: Platform.Instagram });
+              deleteOperations.push({ promise: deletePostOnPlatformApi(igPostId, pageAccessToken, Platform.Instagram), originalPostId: post.id, platform: Platform.Instagram });
             }
           });
   
           const results = await Promise.allSettled(deleteOperations.map(op => op.promise));
           
           const unexpectedFailures: { postId: string, reason: string }[] = [];
+          const igErrorMessage = 'Instagram Graph API does not support deleting published media';
           results.forEach((result, index) => {
             if (result.status === 'rejected') {
               const operation = deleteOperations[index];
               const reason = (result.reason as Error).message;
               
-              const isExpectedIgFailure = operation.platform === Platform.Instagram && reason.includes('cannot be deleted');
+              const isExpectedIgFailure = operation.platform === Platform.Instagram && reason.includes(igErrorMessage);
               
               if (!isExpectedIgFailure) {
                 unexpectedFailures.push({ postId: operation.originalPostId, reason });
                 console.error(`Failed to delete post ${operation.originalPostId} from ${operation.platform}:`, reason);
               } else {
-                console.warn(`Could not delete post ${operation.originalPostId} from Instagram via API. Please delete it manually.`);
+                console.warn(`Could not delete post ${operation.originalPostId} from Instagram via API. This is expected. Please delete it manually.`);
               }
             }
           });

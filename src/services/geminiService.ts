@@ -99,7 +99,7 @@ export const getPostInsights = async (facebookPostId: string | undefined, instag
     return handleResponse(response);
 };
 
-export const deletePost = async (postId: string, pageAccessToken: string): Promise<{ success: boolean }> => {
+export const deletePost = async (postId: string, pageAccessToken: string, platform: Platform): Promise<{ success: boolean }> => {
     // Mock posts are handled client-side only and don't need an API call.
     if (postId.startsWith('post_')) {
         return Promise.resolve({ success: true });
@@ -108,7 +108,7 @@ export const deletePost = async (postId: string, pageAccessToken: string): Promi
     const response = await fetch(`/api/post/${postId}`, {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ pageAccessToken }),
+        body: JSON.stringify({ pageAccessToken, platform }),
     });
     return handleResponse(response);
 };
