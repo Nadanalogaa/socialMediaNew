@@ -209,6 +209,16 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
     }, []);
 
     const handleChunkedUpload = async (assetId: string, file: File) => {
+        const MAX_CLOUDINARY_MB = 100;
+        if (file.size > MAX_CLOUDINARY_MB * 1024 * 1024) {
+            updateAsset(assetId, {
+                status: 'error',
+                errorMessage: `Video is ${(file.size / 1024 / 1024).toFixed(1)}MB. Cloudinary limit is ${MAX_CLOUDINARY_MB}MB on your plan. Please compress or upload a smaller file.`,
+                uploadProgress: undefined
+            });
+            return;
+        }
+
         const cloudName = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
         const apiKey = import.meta.env.VITE_CLOUDINARY_API_KEY;
         const CHUNK_SIZE = 20 * 1024 * 1024; // 20 MB chunks
@@ -311,7 +321,7 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
         if (!files || files.length === 0) return;
 
         const MAX_IMAGE_SIZE_MB = 10;
-        const MAX_VIDEO_SIZE_MB = 1024; // 1 GB
+        const MAX_VIDEO_SIZE_MB = 95; // Cloudinary plan limit is 100 MB; keep a little headroom
         
         const processFile = async (originalFile: File, existingAssetId?: string) => {
             const assetId = existingAssetId || `asset_${Date.now()}_${Math.random()}`;
@@ -329,7 +339,7 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
                 return;
             }
             if (mediaType === 'VIDEO' && originalFile.size > MAX_VIDEO_SIZE_MB * 1024 * 1024) {
-                 const errorState = createErrorState(`Video is too large (${(originalFile.size / 1024 / 1024).toFixed(1)}MB). Max size is ${MAX_VIDEO_SIZE_MB}MB.`);
+                 const errorState = createErrorState(`Video is ${(originalFile.size / 1024 / 1024).toFixed(1)}MB. The limit for your plan is 100MB. Please compress or upload a smaller file.`);
                  if (existingAssetId) updateAsset(existingAssetId, errorState);
                  else setAssets(p => [{ ...errorState, id: assetId, name: originalFile.name, mediaType} as MediaAsset, ...p]);
                 return;
@@ -648,7 +658,7 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
                 >
                     <svg className="mx-auto h-12 w-12 text-dark-text-secondary" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true"><path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
                     <span className="mt-2 block text-sm font-semibold text-white">Upload Images or Videos</span>
-                    <span className="block text-xs text-dark-text-secondary">Images (max 10MB), Videos (max 1GB). Files are optimized before upload.</span>
+                    <span className="block text-xs text-dark-text-secondary">Images (max 10MB), Videos (max 100MB). Files are optimized before upload.</span>
                     <input ref={fileInputRef} type="file" multiple={!assetForMediaUpload} onChange={handleFileChange} className="sr-only" accept="image/*,video/*" />
                 </div>
 
