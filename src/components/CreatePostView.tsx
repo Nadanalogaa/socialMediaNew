@@ -8,7 +8,6 @@ import { FacebookIcon } from './icons/FacebookIcon';
 import { InstagramIcon } from './icons/InstagramIcon';
 import { YoutubeIcon } from './icons/YoutubeIcon';
 import { getDraftsFromDB, saveDraftsToDB } from '../utils/db';
-import { compressVideo } from '../utils/ffmpeg';
 
 const toBase64 = (file: File): Promise<string> => new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -107,7 +106,6 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
     const [selectedAssets, setSelectedAssets] = useState<Set<string>>(new Set());
     const [isBulkGenerating, setIsBulkGenerating] = useState(false);
     const [isBulkPublishing, setIsBulkPublishing] = useState(false);
-    const [compressionProgress, setCompressionProgress] = useState<Record<string, number>>({});
 
     // Load assets from IndexedDB on initial mount
     useEffect(() => {
@@ -332,8 +330,6 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
         if (!files || files.length === 0) return;
 
         const MAX_IMAGE_SIZE_MB = 10;
-        const MAX_PLAN_LIMIT_MB = 100;
-        const MAX_COMPRESS_ATTEMPT_MB = 250; // Max size we'll try to compress in-browser
         
         const processFile = async (originalFile: File, existingAssetId?: string) => {
             const assetId = existingAssetId || `asset_${Date.now()}_${Math.random()}`;
@@ -398,10 +394,6 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
             }
 
             // --- VIDEO LOGIC ---
-            if (originalFile.size > MAX_COMPRESS_ATTEMPT_MB * 1024 * 1024) {
-                return createOrUpdateAssetWithError(`Video is too large (${(originalFile.size / 1024 / 1024).toFixed(1)}MB). Max size for automatic compression is ${MAX_COMPRESS_ATTEMPT_MB}MB. Please compress it manually using a tool like HandBrake and re-upload.`);
-            }
-
             // Create asset in UI immediately
             const videoPreviewUrl = URL.createObjectURL(originalFile);
             const initialState: Partial<MediaAsset> = {
@@ -419,52 +411,9 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
                 } as MediaAsset, ...prev]);
             }
             
-            let fileToUpload = originalFile;
-
-            if (originalFile.size > MAX_PLAN_LIMIT_MB * 1024 * 1024) {
-                try {
-                    updateAsset(assetIdToUpdate, { 
-                        status: 'compressing', 
-                        errorMessage: 'Compressing video in your browser. This may take a while...' 
-                    });
-                    
-                    const compressedFile = await compressVideo(originalFile, (progress) => {
-                        setCompressionProgress(prev => ({ ...prev, [assetIdToUpdate]: progress }));
-                    });
-
-                    setCompressionProgress(prev => {
-                        const newState = { ...prev };
-                        delete newState[assetIdToUpdate];
-                        return newState;
-                    });
-
-                    if (compressedFile.size > MAX_PLAN_LIMIT_MB * 1024 * 1024) {
-                         throw new Error(`Compression was not enough. The file is still too large (${(compressedFile.size / 1024 / 1024).toFixed(1)}MB).`);
-                    }
-
-                    updateAsset(assetIdToUpdate, {
-                        status: 'idle',
-                        file: compressedFile, // Store the compressed file for upload
-                        errorMessage: `Compressed from ${(originalFile.size / 1024 / 1024).toFixed(1)}MB to ${(compressedFile.size / 1024 / 1024).toFixed(1)}MB. Ready to upload.`
-                    });
-                    setTimeout(() => setAssets(curr => curr.map(a => a.id === assetIdToUpdate && a.errorMessage?.startsWith('Compressed') ? { ...a, errorMessage: undefined } : a)), 5000);
-                    
-                    fileToUpload = compressedFile;
-
-                } catch(err) {
-                    const message = err instanceof Error ? err.message : "Video compression failed. The file may be too large or in an unsupported format.";
-                    console.error("Compression failed:", err);
-                    updateAsset(assetIdToUpdate, { status: 'error', errorMessage: message });
-                    setCompressionProgress(prev => {
-                        const newState = { ...prev };
-                        delete newState[assetIdToUpdate];
-                        return newState;
-                    });
-                    return; // Stop processing
-                }
-            }
-            // Proceed to upload the (potentially compressed) file
-            handleChunkedUpload(assetIdToUpdate, fileToUpload);
+            // Proceed to upload the original file directly.
+            // The server will handle applying a compression transformation via Cloudinary URL.
+            handleChunkedUpload(assetIdToUpdate, originalFile);
         };
 
         if (assetForMediaUpload) {
@@ -722,7 +671,7 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
                 >
                     <svg className="mx-auto h-12 w-12 text-dark-text-secondary" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true"><path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
                     <span className="mt-2 block text-sm font-semibold text-white">Upload Images or Videos</span>
-                    <span className="block text-xs text-dark-text-secondary">Images (max 10MB), Videos (max 250MB, auto-compressed if &gt;100MB).</span>
+                    <span className="block text-xs text-dark-text-secondary">Images (max 10MB). Videos are optimized for social media upon publishing.</span>
                     <input ref={fileInputRef} type="file" multiple={!assetForMediaUpload} onChange={handleFileChange} className="sr-only" accept="image/*,video/*" />
                 </div>
 
@@ -751,7 +700,7 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
             
             <div className="grid grid-cols-1 xl:grid-cols-2 2xl:grid-cols-3 gap-6">
             {assets.map((asset) => {
-                const isBusy = asset.status === 'generating' || asset.status === 'publishing' || asset.status === 'published' || asset.status === 'compressing' || asset.status === 'uploading' || asset.status === 'thumbnailing';
+                const isBusy = asset.status === 'generating' || asset.status === 'publishing' || asset.status === 'published' || asset.status === 'uploading' || asset.status === 'thumbnailing';
                 const hasMedia = (asset.mediaType === 'IMAGE' && (asset.file || asset.previewUrl?.startsWith('https'))) || (asset.mediaType === 'VIDEO' && asset.videoUrl);
                 const isPublishDisabled = isBusy || asset.status === 'error' || asset.platforms.length === 0 || !hasMedia;
 
@@ -770,23 +719,10 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
                      )}
                      {selectedAssets.has(asset.id) && <div className="absolute inset-0 bg-brand-primary/10 rounded-lg pointer-events-none"></div>}
 
-                    {(asset.status === 'compressing' || asset.status === 'generating' || asset.status === 'thumbnailing' || asset.status === 'uploading') && (
+                    {(asset.status === 'generating' || asset.status === 'thumbnailing' || asset.status === 'uploading') && (
                         <div className="absolute inset-0 bg-dark-card/80 backdrop-blur-sm flex flex-col items-center justify-center z-20 rounded-lg text-center p-4">
                             <LoadingSpinner size="h-10 w-10" />
-                            {asset.status === 'compressing' ? (
-                                <>
-                                    <p className="mt-4 text-white font-semibold">Compressing Video...</p>
-                                    {compressionProgress[asset.id] !== undefined && (
-                                        <>
-                                            <div className="w-4/5 bg-dark-bg rounded-full h-2.5 mt-2">
-                                                <div className="bg-brand-primary h-2.5 rounded-full" style={{ width: `${compressionProgress[asset.id]}%` }}></div>
-                                            </div>
-                                            <p className="text-sm text-dark-text-secondary mt-1">{compressionProgress[asset.id]}% complete</p>
-                                        </>
-                                    )}
-                                     <p className="text-xs text-dark-text-secondary mt-2">This may take a while and use significant computer resources. Please keep this tab open.</p>
-                                </>
-                            ) : asset.status === 'uploading' && asset.uploadProgress !== undefined ? (
+                            {asset.status === 'uploading' && asset.uploadProgress !== undefined ? (
                                 <>
                                     <p className="mt-4 text-white font-semibold">Uploading Video...</p>
                                     <div className="w-4/5 bg-dark-bg rounded-full h-2.5 mt-2">

@@ -8,6 +8,30 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import crypto from 'crypto';
 
+const addCloudinaryVideoTransformation = (url) => {
+    if (!url || !url.includes('res.cloudinary.com') || !url.includes('/video/upload')) {
+        return url;
+    }
+    // Do not transform if a transformation is already present.
+    // Simple check: look for common transformation parameters like c_, w_, h_, q_.
+    if (url.match(/\/upload\/.*(c_|w_|h_|q_|vc_).*\//)) {
+        console.log('[CLOUDINARY] URL already has transformation, skipping.');
+        return url;
+    }
+
+    // A robust transformation for social media:
+    // w_1920,h_1080: limit resolution to 1080p.
+    // c_limit: fit within dimensions without cropping.
+    // vc_auto: automatically choose the best video codec.
+    // q_auto:good: automatically select a good quality level for compression.
+    const transformation = "w_1920,h_1080,c_limit,vc_auto,q_auto:good";
+    
+    // Replace "/upload/" with "/upload/<transformation>/"
+    const transformedUrl = url.replace('/upload/', `/upload/${transformation}/`);
+    console.log(`[CLOUDINARY] Transformed video URL to ${transformedUrl.substring(0,120)}...`);
+    return transformedUrl;
+};
+
 const app = express();
 const port = process.env.PORT || 3001;
 
@@ -399,6 +423,11 @@ app.post('/api/publish-post', async (req, res) => {
     const isImage = mediaType === 'IMAGE';
     const isVideo = mediaType === 'VIDEO';
 
+    let transformedVideoUrl = videoUrl;
+    if (isVideo && videoUrl) {
+        transformedVideoUrl = addCloudinaryVideoTransformation(videoUrl);
+    }
+
     let facebookPostId = null;
     let instagramPostId = null;
     let facebookPhotoUrl = null;
@@ -450,11 +479,11 @@ app.post('/api/publish-post', async (req, res) => {
                     }
 
                 } else if (isVideo) {
-                    console.log(`[REAL FB] Publishing video from URL: ${videoUrl.substring(0, 70)}...`);
+                    console.log(`[REAL FB] Publishing video from URL: ${transformedVideoUrl.substring(0, 70)}...`);
                     const postUrl = `https://graph.facebook.com/v23.0/${facebook.pageId}/videos`;
                     const videoParams = new URLSearchParams({
                         access_token: facebook.pageAccessToken,
-                        file_url: videoUrl,
+                        file_url: transformedVideoUrl,
                         description: caption
                     });
                     const fbResponse = await fetch(postUrl, { method: 'POST', body: videoParams });
@@ -507,7 +536,7 @@ app.post('/api/publish-post', async (req, res) => {
                     await new Promise(resolve => setTimeout(resolve, 2000));
                     mediaUrlForIg = facebookPhotoUrl;
                 } else if (isVideo) {
-                    mediaUrlForIg = videoUrl; // Use Cloudinary URL directly
+                    mediaUrlForIg = transformedVideoUrl; // Use transformed Cloudinary URL directly
                     // Pre-flight check for video URL accessibility
                     console.log(`[REAL IG] Verifying accessibility of video URL: ${mediaUrlForIg.substring(0, 70)}...`);
                     try {
@@ -649,7 +678,7 @@ app.post('/api/publish-post', async (req, res) => {
         },
         audience,
         imageUrl, // Thumbnail for videos, image for images
-        videoUrl, // Link to video if it exists
+        videoUrl, // Link to original video if it exists
         mediaType,
         prompt,
         generatedContent,
