@@ -181,7 +181,6 @@ export const ConnectionsView: React.FC<ConnectionsViewProps> = ({ connections, s
             window.FB.login(loginCallback, {
                 scope: required_scope,
                 enable_profile_selector: true,
-                auth_type: 'rerequest'
             });
 
         } else {
