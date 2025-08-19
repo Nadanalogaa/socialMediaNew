@@ -346,14 +346,38 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
 
             if (mediaType === 'IMAGE' && originalFile.size > MAX_IMAGE_SIZE_MB * 1024 * 1024) {
                 const errorState = createErrorState(`Image is too large (${(originalFile.size / 1024 / 1024).toFixed(1)}MB). Max size is ${MAX_IMAGE_SIZE_MB}MB.`);
-                if (existingAssetId) updateAsset(existingAssetId, errorState);
-                else setAssets(p => [{ ...errorState, id: assetId, name: originalFile.name, mediaType} as MediaAsset, ...p]);
+                if (existingAssetId) {
+                    updateAsset(existingAssetId, errorState);
+                } else {
+                    setAssets(p => [{
+                        ...errorState,
+                        id: assetId,
+                        name: originalFile.name.split('.').slice(0, -1).join('.').replace(/[\-_]/g, ' '),
+                        mediaType,
+                        prompt: '',
+                        description: '',
+                        hashtags: [],
+                        platforms: [PlatformEnum.Facebook],
+                    } as MediaAsset, ...p]);
+                }
                 return;
             }
             if (mediaType === 'VIDEO' && originalFile.size > MAX_VIDEO_SIZE_MB * 1024 * 1024) {
                  const errorState = createErrorState(`Video is ${(originalFile.size / 1024 / 1024).toFixed(1)}MB. The limit for your plan is 100MB. Please compress or upload a smaller file.`);
-                 if (existingAssetId) updateAsset(existingAssetId, errorState);
-                 else setAssets(p => [{ ...errorState, id: assetId, name: originalFile.name, mediaType} as MediaAsset, ...p]);
+                 if (existingAssetId) {
+                    updateAsset(existingAssetId, errorState);
+                 } else {
+                    setAssets(p => [{
+                        ...errorState,
+                        id: assetId,
+                        name: originalFile.name.split('.').slice(0, -1).join('.').replace(/[\-_]/g, ' '),
+                        mediaType,
+                        prompt: '',
+                        description: '',
+                        hashtags: [],
+                        platforms: [PlatformEnum.Facebook],
+                    } as MediaAsset, ...p]);
+                 }
                 return;
             }
 
