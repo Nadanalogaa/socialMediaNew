@@ -1082,8 +1082,8 @@ app.get('/api/post/:postId/comments', async (req, res) => {
     try {
         let fields;
         if (platform === 'Instagram') {
-            // Instagram User object (from a comment) has 'id' and 'username', not 'name' or 'picture'.
-            fields = 'id,message,from{id,username},created_time';
+            // Instagram Comment has 'text' not 'message', and 'timestamp' not 'created_time'.
+            fields = 'id,text,from{id,username},timestamp';
         } else {
             // Default to Facebook fields
             fields = 'id,message,from{id,name,picture},created_time';
@@ -1103,7 +1103,9 @@ app.get('/api/post/:postId/comments', async (req, res) => {
         // If it was an Instagram request, transform the response to match the client's expected `Comment` structure.
         if (platform === 'Instagram') {
             comments = comments.map(comment => ({
-                ...comment,
+                id: comment.id,
+                message: comment.text, // Map `text` to `message`
+                created_time: comment.timestamp, // Map `timestamp` to `created_time`
                 from: {
                     id: comment.from.id,
                     name: comment.from.username, // Map username to name

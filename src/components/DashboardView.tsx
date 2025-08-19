@@ -36,7 +36,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ posts, connectionD
     const [hasMore, setHasMore] = useState(true);
     const [nextCursors, setNextCursors] = useState<{ facebook: string | null; instagram: string | null; } | null>(null);
 
-    const observer = useRef<IntersectionObserver>();
+    const observer = useRef<IntersectionObserver | null>(null);
 
     const loadMorePosts = useCallback(() => {
         if (!hasMore || isLoading || !connectionDetails.facebook) return;
