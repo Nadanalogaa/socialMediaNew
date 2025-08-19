@@ -1,6 +1,4 @@
 
-
-
 /// <reference lib="dom" />
 
 import React, { useState, useCallback, useEffect } from 'react';
@@ -13,7 +11,7 @@ import type { Post, ConnectionStatus, ConnectionDetails, GeneratedPostIdea } fro
 import { ErrorModal } from './components/ErrorModal';
 import { View, Platform } from './types';
 import { MOCK_POSTS } from './constants';
-import { getConnections, connectFacebook, deletePost as deletePostOnPlatform } from './services/geminiService';
+import { getConnections, connectFacebook, deletePost as deletePostOnPlatformApi } from './services/geminiService';
 import { getPostsFromDB, savePostsToDB } from './utils/db';
 
 // Extend the Window interface to include FB
@@ -43,30 +41,57 @@ const App: React.FC = () => {
   };
   
   const deletePost = async (postId: string) => {
-      setGlobalError(null);
-      try {
-        const postToDelete = posts.find(p => p.id === postId);
-        if (!postToDelete) return;
+    setGlobalError(null);
+    try {
+      const postToDelete = posts.find(p => p.id === postId);
+      if (!postToDelete) return;
 
-        // Only attempt platform deletion for real, active posts
-        if (!postToDelete.id.startsWith('post_') && postToDelete.platforms.includes(Platform.Facebook) && postToDelete.status !== 'deleted-on-platform') {
-            const pageAccessToken = connectionDetails.facebook?.pageAccessToken;
-            if (!pageAccessToken) {
-                throw new Error("Cannot delete post from Facebook: Connection details are missing.");
-            }
-            // Use the specific Facebook post ID for deletion
-            const fbPostId = postToDelete.platformPostIds?.Facebook;
-            if (fbPostId) {
-                await deletePostOnPlatform(fbPostId, pageAccessToken);
-            }
+      if (!postToDelete.id.startsWith('post_') && postToDelete.status !== 'deleted-on-platform') {
+        const pageAccessToken = connectionDetails.facebook?.pageAccessToken;
+        if (!pageAccessToken) {
+          throw new Error("Cannot delete post from platforms: Connection details are missing.");
         }
 
-        // Always remove from local state
-        setPosts(prevPosts => prevPosts.filter(p => p.id !== postId));
-      } catch (err) {
-         const message = err instanceof Error ? err.message : String(err);
-         setGlobalError(message);
+        const { Facebook: fbPostId, Instagram: igPostId } = postToDelete.platformPostIds || {};
+        
+        const deletePromises = [];
+        if (fbPostId) deletePromises.push(deletePostOnPlatformApi(fbPostId, pageAccessToken));
+        if (igPostId) deletePromises.push(deletePostOnPlatformApi(igPostId, pageAccessToken));
+
+        if (deletePromises.length > 0) {
+          const results = await Promise.allSettled(deletePromises);
+          
+          const igResultIndex = fbPostId ? 1 : 0;
+          const igResult = igPostId ? results[igResultIndex] : null;
+
+          // Check if IG deletion failed with the expected error for shared images.
+          if (igResult && igResult.status === 'rejected' && (igResult.reason as Error).message.includes('cannot be deleted')) {
+            // This is an expected failure, log it but don't show an error if FB deletion succeeded.
+            console.warn('Instagram post cannot be deleted via API (likely a shared image). Please delete it manually from the app.');
+            
+            // Check if there are other failures
+            const otherFailures = results.filter((r, i) => r.status === 'rejected' && i !== igResultIndex);
+            if (otherFailures.length > 0) {
+              const errorMessages = otherFailures.map(r => ((r as PromiseRejectedResult).reason as Error).message).join(', ');
+              throw new Error(`Failed to delete post from Facebook: ${errorMessages}`);
+            }
+          } else {
+            // Handle any other unexpected failures
+            const allFailures = results.filter(r => r.status === 'rejected');
+            if (allFailures.length > 0) {
+              const errorMessages = allFailures.map(r => ((r as PromiseRejectedResult).reason as Error).message).join(', ');
+              throw new Error(`Failed to delete post(s) from platforms: ${errorMessages}`);
+            }
+          }
+        }
       }
+
+      // Always remove from local state
+      setPosts(prevPosts => prevPosts.filter(p => p.id !== postId));
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setGlobalError(message);
+    }
   };
 
   const deletePosts = async (postIds: string[]) => {
@@ -78,38 +103,53 @@ const App: React.FC = () => {
         const realPostsToDelete = posts.filter(p => 
             idsToDelete.has(p.id) && 
             !p.id.startsWith('post_') && 
-            p.platforms.includes(Platform.Facebook) &&
             p.status !== 'deleted-on-platform'
         );
 
         if (realPostsToDelete.length > 0 && !pageAccessToken) {
-            throw new Error("Cannot delete posts from Facebook: Connection details are missing.");
+            throw new Error("Cannot delete posts from platforms: Connection details are missing.");
         }
 
-        let failedDeletions: string[] = [];
         if (pageAccessToken) {
-            const deletePromises = realPostsToDelete
-                .map(post => post.platformPostIds?.Facebook)
-                .filter((id): id is string => !!id)
-                .map(fbPostId => deletePostOnPlatform(fbPostId, pageAccessToken));
-
-            const results = await Promise.allSettled(deletePromises);
-            
-            failedDeletions = results.reduce((acc, result, index) => {
-                if (result.status === 'rejected') {
-                    console.error(`Failed to delete post ${realPostsToDelete[index].id}:`, result.reason);
-                    acc.push(realPostsToDelete[index].id);
-                }
-                return acc;
-            }, [] as string[]);
+          const deleteOperations: { promise: Promise<any>, originalPostId: string, platform: Platform }[] = [];
+          realPostsToDelete.forEach(post => {
+            const { Facebook: fbPostId, Instagram: igPostId } = post.platformPostIds || {};
+            if (fbPostId) {
+              deleteOperations.push({ promise: deletePostOnPlatformApi(fbPostId, pageAccessToken), originalPostId: post.id, platform: Platform.Facebook });
+            }
+            if (igPostId) {
+              deleteOperations.push({ promise: deletePostOnPlatformApi(igPostId, pageAccessToken), originalPostId: post.id, platform: Platform.Instagram });
+            }
+          });
+  
+          const results = await Promise.allSettled(deleteOperations.map(op => op.promise));
+          
+          const unexpectedFailures: { postId: string, reason: string }[] = [];
+          results.forEach((result, index) => {
+            if (result.status === 'rejected') {
+              const operation = deleteOperations[index];
+              const reason = (result.reason as Error).message;
+              
+              const isExpectedIgFailure = operation.platform === Platform.Instagram && reason.includes('cannot be deleted');
+              
+              if (!isExpectedIgFailure) {
+                unexpectedFailures.push({ postId: operation.originalPostId, reason });
+                console.error(`Failed to delete post ${operation.originalPostId} from ${operation.platform}:`, reason);
+              } else {
+                console.warn(`Could not delete post ${operation.originalPostId} from Instagram via API. Please delete it manually.`);
+              }
+            }
+          });
+          
+          if (unexpectedFailures.length > 0) {
+            const failedPostIds = [...new Set(unexpectedFailures.map(f => f.postId))];
+            throw new Error(`Failed to delete ${failedPostIds.length} post(s) from their platforms. They have been removed from the dashboard, but may still be live.`);
+          }
         }
         
         // Always remove from dashboard state as requested by user action
         setPosts(prevPosts => prevPosts.filter(p => !idsToDelete.has(p.id)));
 
-        if (failedDeletions.length > 0) {
-            throw new Error(`Failed to delete ${failedDeletions.length} of ${realPostsToDelete.length} post(s) from Facebook. They have been removed from the dashboard.`);
-        }
     } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         setGlobalError(message);
