@@ -274,6 +274,135 @@ app.post('/api/generate-asset-content', async (req, res) => {
 });
 
 
+// --- Helper Functions for Post Fetching ---
+const transformFbPostToStandard = (post) => {
+    const isVideo = post.attachments?.data?.[0]?.type === 'video_inline';
+    return {
+        id: post.id,
+        platforms: ['Facebook'],
+        platformPostIds: { Facebook: post.id },
+        audience: 'Global', // Cannot determine audience from API
+        imageUrl: post.full_picture, // This works as a thumbnail for videos too
+        videoUrl: isVideo ? post.attachments.data[0].url : undefined,
+        mediaType: isVideo ? 'VIDEO' : 'IMAGE',
+        prompt: post.message || 'Post from Facebook',
+        generatedContent: {
+            facebook: post.message || '',
+            instagram: '',
+            youtubeTitle: '',
+            youtubeDescription: '',
+            hashtags: (post.message || '').match(/#\w+/g)?.map(h => h.substring(1)) || []
+        },
+        postedAt: post.created_time,
+        engagement: {
+            total: {
+                likes: post.likes?.summary?.total_count || 0,
+                comments: post.comments?.summary?.total_count || 0,
+                shares: post.shares?.count || 0,
+            },
+            facebook: {
+                likes: post.likes?.summary?.total_count || 0,
+                comments: post.comments?.summary?.total_count || 0,
+                shares: post.shares?.count || 0,
+            }
+        },
+        status: 'active',
+    };
+};
+
+const transformIgPostToStandard = (post) => {
+    return {
+        id: post.id,
+        platforms: ['Instagram'],
+        platformPostIds: { Instagram: post.id },
+        audience: 'Global',
+        imageUrl: post.media_type === 'VIDEO' ? post.thumbnail_url : post.media_url,
+        videoUrl: post.media_type === 'VIDEO' ? post.media_url : undefined,
+        mediaType: post.media_type === 'VIDEO' ? 'VIDEO' : 'IMAGE',
+        prompt: post.caption || `Post from ${post.username}`,
+        generatedContent: {
+            facebook: '',
+            instagram: post.caption || '',
+            youtubeTitle: '',
+            youtubeDescription: '',
+            hashtags: (post.caption || '').match(/#\w+/g)?.map(h => h.substring(1)) || []
+        },
+        postedAt: post.timestamp,
+        engagement: {
+            total: {
+                likes: post.like_count || 0,
+                comments: post.comments_count || 0,
+                shares: 0,
+            },
+            instagram: {
+                likes: post.like_count || 0,
+                comments: post.comments_count || 0,
+                shares: 0,
+            }
+        },
+        status: 'active',
+    };
+};
+
+app.get('/api/posts', async (req, res) => {
+    const { limit = '10', fbNext, igNext, pageAccessToken, pageId, igUserId } = req.query;
+
+    if (!pageAccessToken || !pageId) {
+        return res.status(400).json({ message: 'Missing required connection details: pageAccessToken and pageId.' });
+    }
+
+    const platformPromises = [];
+
+    // Facebook Promise
+    const fbFields = 'id,message,created_time,full_picture,attachments,likes.summary(true),comments.summary(true),shares';
+    const fbUrl = fbNext ?
+        decodeURIComponent(fbNext) :
+        `https://graph.facebook.com/v23.0/${pageId}/posts?fields=${fbFields}&limit=${limit}&access_token=${pageAccessToken}`;
+    platformPromises.push(fetch(fbUrl).then(r => r.json()).catch(e => ({ error: { message: `Facebook fetch failed: ${e.message}` } })));
+
+    // Instagram Promise (only if igUserId is provided)
+    if (igUserId) {
+        const igFields = 'id,caption,timestamp,media_url,media_type,thumbnail_url,like_count,comments_count,username';
+        const igUrl = igNext ?
+            decodeURIComponent(igNext) :
+            `https://graph.facebook.com/v23.0/${igUserId}/media?fields=${igFields}&limit=${limit}&access_token=${pageAccessToken}`;
+        platformPromises.push(fetch(igUrl).then(r => r.json()).catch(e => ({ error: { message: `Instagram fetch failed: ${e.message}` } })));
+    } else {
+        platformPromises.push(Promise.resolve({ data: [] })); // Resolve with empty if no IG account
+    }
+
+    try {
+        const [fbResult, igResult] = await Promise.all(platformPromises);
+        
+        if (fbResult.error) console.error("Facebook API Error:", fbResult.error.message);
+        if (igResult.error) console.error("Instagram API Error:", igResult.error.message);
+
+        const fbPosts = (fbResult.data || []).map(transformFbPostToStandard);
+        const igPosts = (igResult.data || []).map(transformIgPostToStandard);
+        
+        const allPosts = [...fbPosts, ...igPosts];
+        // The lists are already sorted by date from the API. Merging and re-sorting the whole list on every page
+        // can lead to items shifting. For infinite scroll, it's often better to just append.
+        // The client will receive a mixed block of items. The overall list will be mostly chronological.
+        // For a true unified chronological feed, more complex server-side logic would be needed.
+        
+        const nextCursors = {
+            facebook: fbResult.paging?.next ? encodeURIComponent(fbResult.paging.next) : null,
+            instagram: igResult.paging?.next ? encodeURIComponent(igResult.paging.next) : null,
+        };
+
+        res.json({
+            posts: allPosts,
+            nextCursors,
+        });
+
+    } catch (error) {
+        console.error("Failed to fetch platform posts:", error);
+        res.status(500).json({ message: `Failed to fetch posts: ${error.message}` });
+    }
+});
+
+
 // --- Connection and Publishing Endpoints ---
 app.get('/api/connections', (req, res) => {
     // Return a simplified view for the client for initial state

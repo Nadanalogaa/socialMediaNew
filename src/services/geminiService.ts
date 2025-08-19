@@ -1,4 +1,5 @@
 
+
 import type { Platform, SeoSuggestions, Post, ConnectionStatus, GeneratedAssetContent, GeneratedPostIdea, ConnectionDetails, Comment, FacebookUser, PostInsightResponse } from '../types';
 
 const handleResponse = async (response: Response) => {
@@ -27,6 +28,44 @@ const handleResponse = async (response: Response) => {
     const text = await response.text();
     return text ? JSON.parse(text) : {};
 }
+
+export interface FetchPostsResponse {
+    posts: Post[];
+    nextCursors: {
+        facebook: string | null;
+        instagram: string | null;
+    } | null;
+}
+
+export const fetchPlatformPosts = async (
+    limit: number,
+    nextCursors: { facebook?: string | null; instagram?: string | null } | null,
+    connectionDetails: ConnectionDetails
+): Promise<FetchPostsResponse> => {
+    if (!connectionDetails.facebook) {
+        throw new Error("Facebook connection details are required to fetch posts.");
+    }
+    
+    const params = new URLSearchParams({
+        limit: String(limit),
+        pageAccessToken: connectionDetails.facebook.pageAccessToken,
+        pageId: connectionDetails.facebook.pageId,
+    });
+    
+    if (connectionDetails.instagram?.igUserId) {
+        params.append('igUserId', connectionDetails.instagram.igUserId);
+    }
+
+    if (nextCursors?.facebook) {
+        params.append('fbNext', nextCursors.facebook);
+    }
+    if (nextCursors?.instagram) {
+        params.append('igNext', nextCursors.instagram);
+    }
+
+    const response = await fetch(`/api/posts?${params.toString()}`);
+    return handleResponse(response);
+};
 
 export const generateAssetContent = async (prompt: string): Promise<GeneratedAssetContent> => {
     const response = await fetch('/api/generate-asset-content', {

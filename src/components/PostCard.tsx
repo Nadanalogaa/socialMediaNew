@@ -1,6 +1,6 @@
 /// <reference lib="dom" />
 
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useState, useCallback, useEffect, useRef, forwardRef } from 'react';
 import type { Post, ConnectionDetails, Comment, FacebookUser } from '../types';
 import { Platform as PlatformEnum, type Platform } from '../types';
 import { FacebookIcon } from './icons/FacebookIcon';
@@ -204,7 +204,7 @@ const PlatformIcons: React.FC<{ platforms: Platform[] }> = ({ platforms }) => (
     </div>
 );
 
-export const PostCard: React.FC<PostCardProps> = ({ post, isSelected, connectionDetails, isDeleting, onSelect, onDelete, onEdit, onRefreshInsights }) => {
+export const PostCard = forwardRef<HTMLDivElement, PostCardProps>(({ post, isSelected, connectionDetails, isDeleting, onSelect, onDelete, onEdit, onRefreshInsights }, ref) => {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [modalConfig, setModalConfig] = useState<{type: 'likes' | 'comments', platform: Platform} | null>(null);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -355,7 +355,7 @@ export const PostCard: React.FC<PostCardProps> = ({ post, isSelected, connection
   );
 
   return (
-    <div className={`relative bg-dark-card border rounded-lg overflow-hidden transition-all duration-300 ${isSelected ? 'border-brand-primary' : 'border-dark-border'} ${isDeletedOnPlatform ? 'opacity-60' : ''}`}>
+    <div ref={ref} className={`relative bg-dark-card border rounded-lg overflow-hidden transition-all duration-300 ${isSelected ? 'border-brand-primary' : 'border-dark-border'} ${isDeletedOnPlatform ? 'opacity-60' : ''}`}>
        {isDeletedOnPlatform && (
             <div className="absolute inset-0 bg-dark-card/90 backdrop-blur-sm flex flex-col items-center justify-center z-20 rounded-lg animate-fade-in text-center p-4">
                 <svg className="h-10 w-10 text-yellow-400" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" aria-hidden="true">
@@ -451,4 +451,4 @@ export const PostCard: React.FC<PostCardProps> = ({ post, isSelected, connection
       )}
     </div>
   );
-};
+});

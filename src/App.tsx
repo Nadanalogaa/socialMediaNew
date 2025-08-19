@@ -1,4 +1,5 @@
 
+
 /// <reference lib="dom" />
 
 import React, { useState, useCallback, useEffect } from 'react';
@@ -12,7 +13,6 @@ import { PrivacyPolicyView } from './components/PrivacyPolicyView';
 import type { Post, ConnectionStatus, ConnectionDetails, GeneratedPostIdea } from './types';
 import { ErrorModal } from './components/ErrorModal';
 import { View, Platform } from './types';
-import { MOCK_POSTS } from './constants';
 import { getConnections, connectFacebook, deletePost as deletePostOnPlatformApi } from './services/geminiService';
 import { getPostsFromDB, savePostsToDB } from './utils/db';
 
@@ -176,17 +176,10 @@ const App: React.FC = () => {
     const loadInitialData = async () => {
       try {
         const dbPosts = await getPostsFromDB();
-        if (dbPosts && dbPosts.length > 0) {
-          setPosts(dbPosts);
-        } else {
-          // If DB is empty, populate with mocks and save them
-          const sortedMocks = MOCK_POSTS.sort((a, b) => new Date(b.postedAt).getTime() - new Date(a.postedAt).getTime());
-          setPosts(sortedMocks);
-          await savePostsToDB(sortedMocks);
-        }
+        setPosts(dbPosts);
       } catch (error) {
-        console.error("Failed to load posts from DB, using mocks as fallback:", error);
-        setPosts(MOCK_POSTS);
+        console.error("Failed to load locally created posts from DB:", error);
+        setPosts([]);
       } finally {
         setIsDataLoaded(true);
       }
