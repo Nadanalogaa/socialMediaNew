@@ -706,9 +706,9 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
                 const isPublishDisabled = isBusy || asset.status === 'error' || asset.platforms.length === 0 || !hasMedia;
 
                 const handleHashtagKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-                    if (e.key === ' ' || e.key === 'Enter') {
+                    if (e.key === ' ' || e.key === 'Enter' || e.key === ',' || e.code === 'Space') {
                         e.preventDefault();
-                        const newHashtag = (hashtagInputs[asset.id] || '').trim().replace('#', '');
+                        const newHashtag = (hashtagInputs[asset.id] || '').trim().replace(/#|,/g, '');
                         const currentHashtags = asset.hashtags || [];
                         if (newHashtag && !currentHashtags.includes(newHashtag)) {
                             updateAsset(asset.id, { hashtags: [...currentHashtags, newHashtag] });

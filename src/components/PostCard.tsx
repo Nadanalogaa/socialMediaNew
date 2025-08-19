@@ -419,7 +419,7 @@ export const PostCard: React.FC<PostCardProps> = ({ post, isSelected, connection
             
             <p className="text-xs text-dark-text-secondary italic mb-2 truncate">Prompt: "{post.prompt}"</p>
 
-            <p className="text-dark-text text-sm mb-3 flex-grow">{mainContent}</p>
+            <p className="text-dark-text text-sm mb-3 flex-grow break-words">{mainContent}</p>
 
             <div className="mt-auto pt-2 border-t border-dark-border">
                 <div className="flex items-end justify-between">
