@@ -1,4 +1,5 @@
 
+
 import React, { useState, useEffect, useCallback } from 'react';
 import type { Post, ConnectionDetails, Comment } from '../types';
 import { Platform } from '../types';
@@ -100,7 +101,7 @@ const CommentsTab: React.FC<{ post: Post, pageAccessToken: string }> = ({ post, 
         if (!replyText.trim()) return;
         setIsSubmitting(true);
         try {
-            await replyToComment(commentId, replyText, pageAccessToken);
+            await replyToComment(commentId, replyText, pageAccessToken, Platform.Facebook);
             setReplyText('');
             setReplyingTo(null);
             // Refresh comments to see the new reply

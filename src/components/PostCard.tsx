@@ -90,7 +90,7 @@ const EngagementModal: React.FC<EngagementModalProps> = ({ post, type, platform,
         setIsSubmitting(true);
         setError(null);
         try {
-            await replyToComment(commentId, replyText, pageAccessToken);
+            await replyToComment(commentId, replyText, pageAccessToken, platform);
             setReplyText('');
             setReplyingTo(null);
             await fetchData(); // Refresh comments

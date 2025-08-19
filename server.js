@@ -1,3 +1,5 @@
+
+
 import express from 'express';
 import 'dotenv/config';
 import { GoogleGenAI, Type } from '@google/genai';
@@ -939,25 +941,34 @@ app.get('/api/post/:postId/comments', async (req, res) => {
 // POST Reply to Comment
 app.post('/api/comment/:commentId/reply', async (req, res) => {
     const { commentId } = req.params;
-    const { message, pageAccessToken } = req.body;
-     if (!commentId || !message || !pageAccessToken) {
-        return res.status(400).json({ message: 'Missing commentId, message, or pageAccessToken' });
+    const { message, pageAccessToken, platform } = req.body;
+    if (!commentId || !message || !pageAccessToken || !platform) {
+        return res.status(400).json({ message: 'Missing commentId, message, pageAccessToken, or platform' });
     }
     try {
-        // Per user feedback, the /replies endpoint can be unreliable. Using /comments on the comment object
-        // is an alternative way to post a reply.
-        const url = `https://graph.facebook.com/v23.0/${commentId}/comments`;
+        const isInstagram = platform === 'Instagram';
+
+        // Facebook uses /{comment-id}/comments
+        // Instagram uses /{ig-comment-id}/replies
+        const endpoint = isInstagram ? 'replies' : 'comments';
+        const url = `https://graph.facebook.com/v23.0/${commentId}/${endpoint}`;
+
         const body = new URLSearchParams({
             message,
             access_token: pageAccessToken
         });
+
         const response = await fetch(url, { method: 'POST', body });
         const data = await response.json();
-        if (data.error) throw new Error(data.error.message);
-        console.log(`[REAL REPLY] Successfully posted comment reply to ${commentId}`);
+
+        if (!response.ok || data.error) {
+            throw new Error(data?.error?.message || `Graph API error: Reply failed with status ${response.status}`);
+        }
+
+        console.log(`[REAL REPLY] Successfully posted comment reply to ${commentId} on ${platform}`);
         res.json({ success: true, id: data.id });
     } catch (error) {
-        console.error(`[REAL REPLY] Failed to post comment reply to ${commentId}:`, error);
+        console.error(`[REAL REPLY] Failed to post reply to ${commentId} on ${platform}:`, error);
         res.status(500).json({ message: `Failed to reply: ${error.message}` });
     }
 });

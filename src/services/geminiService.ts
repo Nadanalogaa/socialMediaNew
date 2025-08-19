@@ -1,9 +1,4 @@
 
-
-
-
-
-
 import type { Platform, SeoSuggestions, Post, ConnectionStatus, GeneratedAssetContent, GeneratedPostIdea, ConnectionDetails, Comment, FacebookUser, PostInsightResponse } from '../types';
 
 const handleResponse = async (response: Response) => {
@@ -128,11 +123,11 @@ export const getComments = async (postId: string, pageAccessToken: string, platf
     return handleResponse(response);
 };
 
-export const replyToComment = async (commentId: string, message: string, pageAccessToken: string): Promise<{ success: boolean, id: string }> => {
+export const replyToComment = async (commentId: string, message: string, pageAccessToken: string, platform: Platform): Promise<{ success: boolean, id: string }> => {
     const response = await fetch(`/api/comment/${commentId}/reply`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message, pageAccessToken }),
+        body: JSON.stringify({ message, pageAccessToken, platform }),
     });
     return handleResponse(response);
 };
