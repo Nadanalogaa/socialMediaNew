@@ -1,7 +1,8 @@
 
 
+
 import React, { useState } from 'react';
-import type { Post, ConnectionDetails } from '../types';
+import type { Post, ConnectionDetails, Platform as PlatformType } from '../types';
 import { Platform } from '../types';
 import { PostCard } from './PostCard';
 import { AnalyticsChart } from './AnalyticsChart';
@@ -17,9 +18,8 @@ interface DashboardViewProps {
   connectionDetails: ConnectionDetails;
   onDeletePost: (postId: string) => Promise<void>;
   onDeletePosts: (postIds: string[]) => Promise<void>;
-  onUpdatePostEngagement: (postId: string, engagement: Post['engagement']) => void;
+  onUpdatePost: (postId: string, updates: Partial<Post>) => void;
   onEditPost: (post: Post) => void;
-  onMarkPostAsDeleted: (postId: string) => void;
   onError: (message: string | null) => void;
 }
 
@@ -30,8 +30,8 @@ const LoadingSpinner: React.FC = () => (
     </svg>
 );
 
-export const DashboardView: React.FC<DashboardViewProps> = ({ posts, connectionDetails, onDeletePost, onDeletePosts, onUpdatePostEngagement, onEditPost, onMarkPostAsDeleted, onError }) => {
-  const [platformFilter, setPlatformFilter] = useState<Platform | 'All'>('All');
+export const DashboardView: React.FC<DashboardViewProps> = ({ posts, connectionDetails, onDeletePost, onDeletePosts, onUpdatePost, onEditPost, onError }) => {
+  const [platformFilter, setPlatformFilter] = useState<PlatformType | 'All'>('All');
   const [selectedPosts, setSelectedPosts] = useState<Set<string>>(new Set());
   const [deletingPosts, setDeletingPosts] = useState<Set<string>>(new Set());
   const [isBulkDeleting, setIsBulkDeleting] = useState(false);
@@ -44,6 +44,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ posts, connectionD
   const totalLikes = filteredPosts.reduce((sum, post) => sum + (post.engagement?.total?.likes || 0), 0);
   const totalComments = filteredPosts.reduce((sum, post) => sum + (post.engagement?.total?.comments || 0), 0);
   const totalShares = filteredPosts.reduce((sum, post) => sum + (post.engagement?.total?.shares || 0), 0);
+  
+  const deletedPostsCount = posts.filter(p => p.status === 'deleted-on-platform').length;
 
   const handleSelectPost = (postId: string) => {
     setSelectedPosts(prev => {
@@ -76,6 +78,15 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ posts, connectionD
         onError(message);
     } finally {
         setIsBulkDeleting(false);
+    }
+  };
+  
+  const handleClearDeleted = () => {
+    const idsToClear = posts
+        .filter(p => p.status === 'deleted-on-platform')
+        .map(p => p.id);
+    if (idsToClear.length > 0) {
+        onDeletePosts(idsToClear);
     }
   };
 
@@ -112,18 +123,25 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ posts, connectionD
     
     onError(null);
     try {
-        const newEngagement = await getPostInsights(
+        const result = await getPostInsights(
             postToRefresh.platformPostIds?.Facebook, 
             postToRefresh.platformPostIds?.Instagram, 
             connectionDetails.facebook.pageAccessToken
         );
-        onUpdatePostEngagement(postId, newEngagement);
+
+        if (result.status === 'deleted') {
+            onUpdatePost(postId, { status: 'deleted-on-platform' });
+        } else {
+            onUpdatePost(postId, {
+                engagement: result.engagement,
+                platforms: result.activePlatforms,
+                status: 'active', // Ensure status is active if it wasn't
+            });
+        }
+
     } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
-        if (message.includes("not found on the platform")) {
-            console.warn(`Post ${postId} not found on platform. Marking as deleted.`);
-            onMarkPostAsDeleted(postId);
-        } else if (message.toLowerCase().includes('permission')) {
+        if (message.toLowerCase().includes('permission')) {
             const userFriendlyMessage = `Could not get insights due to missing permissions.\n\nPlease go to the 'Connections' page, 'Disconnect' Facebook, and then 'Connect' again to grant the required permissions (e.g., 'pages_read_engagement').`;
             onError(userFriendlyMessage);
         } else {
@@ -134,7 +152,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ posts, connectionD
     }
   };
 
-  const filterOptions: { value: Platform | 'All'; label: string; icon: React.ReactNode }[] = [
+  const filterOptions: { value: PlatformType | 'All'; label: string; icon: React.ReactNode }[] = [
     { value: 'All', label: 'All', icon: <AllPlatformsIcon className="w-5 h-5" /> },
     { value: Platform.Facebook, label: 'Facebook', icon: <FacebookIcon className="w-5 h-5" /> },
     { value: Platform.Instagram, label: 'Instagram', icon: <InstagramIcon className="w-5 h-5" /> },
@@ -187,7 +205,19 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ posts, connectionD
       </div>
 
       <div>
-        <h2 className="text-2xl font-bold text-white mb-4">Post History</h2>
+        <div className="flex justify-between items-center mb-4">
+          <h2 className="text-2xl font-bold text-white">Post History</h2>
+           {deletedPostsCount > 0 && (
+              <button
+                  onClick={handleClearDeleted}
+                  className="flex items-center gap-2 px-3 py-1.5 border border-yellow-500/50 text-yellow-400 bg-yellow-500/10 hover:bg-yellow-500/20 rounded-md text-sm font-medium transition-colors"
+                  aria-label={`Clear ${deletedPostsCount} deleted posts from the dashboard`}
+              >
+                  <TrashIcon className="w-4 h-4" />
+                  <span>Clear {deletedPostsCount} Deleted Post{deletedPostsCount > 1 ? 's' : ''}</span>
+              </button>
+            )}
+        </div>
         {filteredPosts.length > 0 && (
              <div className="bg-dark-card p-3 rounded-lg border border-dark-border mb-4 flex items-center justify-between sticky top-4 z-10 backdrop-blur-sm bg-opacity-80">
                 <div className="flex items-center gap-4">

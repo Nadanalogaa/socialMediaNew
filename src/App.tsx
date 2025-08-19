@@ -1,5 +1,6 @@
 
 
+
 /// <reference lib="dom" />
 
 import React, { useState, useCallback, useEffect } from 'react';
@@ -115,16 +116,10 @@ const App: React.FC = () => {
     }
   };
 
-  const updatePostEngagement = (postId: string, newEngagement: Post['engagement']) => {
-      setPosts(prevPosts => prevPosts.map(p =>
-          p.id === postId ? { ...p, engagement: newEngagement } : p
-      ));
-  };
-  
-  const markPostAsDeletedOnPlatform = (postId: string) => {
-      setPosts(prevPosts => prevPosts.map(p => 
-          p.id === postId ? { ...p, status: 'deleted-on-platform' } : p
-      ));
+  const updatePost = (postId: string, updates: Partial<Post>) => {
+    setPosts(prevPosts =>
+      prevPosts.map(p => (p.id === postId ? { ...p, ...updates } : p))
+    );
   };
 
 
@@ -278,9 +273,8 @@ const App: React.FC = () => {
                     connectionDetails={connectionDetails}
                     onDeletePost={deletePost}
                     onDeletePosts={deletePosts}
-                    onUpdatePostEngagement={updatePostEngagement}
+                    onUpdatePost={updatePost}
                     onEditPost={(post) => navigateTo(View.CREATE_POST, post)}
-                    onMarkPostAsDeleted={markPostAsDeletedOnPlatform}
                     onError={setGlobalError}
                 />;
     }

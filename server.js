@@ -803,29 +803,27 @@ app.post('/api/post-insights', async (req, res) => {
                 console.log(`[REAL INSIGHTS] IG Insights: ${igInsights.likes} likes, ${igInsights.comments} comments.`);
             }
         }
-
-        const platformsPostedTo = [];
-        if (facebookPostId) platformsPostedTo.push('Facebook');
-        if (instagramPostId) platformsPostedTo.push('Instagram');
-
-        const platformsNotFoundOn = [];
-        if (facebookPostId && fbPostNotFound) platformsNotFoundOn.push('Facebook');
-        if (instagramPostId && igPostNotFound) platformsNotFoundOn.push('Instagram');
         
-        if (platformsPostedTo.length > 0 && platformsPostedTo.length === platformsNotFoundOn.length) {
-            return res.status(404).json({ message: 'This post was not found on the platform(s) it was posted to. It may have been deleted.' });
-        }
+        const activePlatforms = [];
+        if (facebookPostId && !fbPostNotFound) activePlatforms.push('Facebook');
+        if (instagramPostId && !igPostNotFound) activePlatforms.push('Instagram');
+
+        const status = (facebookPostId || instagramPostId) && activePlatforms.length === 0 ? 'deleted' : 'active';
         
         const total = {
-            likes: fbInsights.likes + igInsights.likes,
-            comments: fbInsights.comments + igInsights.comments,
-            shares: fbInsights.shares + igInsights.shares, // IG shares is 0
+            likes: (fbPostNotFound ? 0 : fbInsights.likes) + (igPostNotFound ? 0 : igInsights.likes),
+            comments: (fbPostNotFound ? 0 : fbInsights.comments) + (igPostNotFound ? 0 : igInsights.comments),
+            shares: (fbPostNotFound ? 0 : fbInsights.shares), // IG shares is 0
         };
 
         res.json({
-            total,
-            facebook: fbInsights,
-            instagram: igInsights,
+            engagement: {
+                total,
+                facebook: facebookPostId && !fbPostNotFound ? fbInsights : undefined,
+                instagram: instagramPostId && !igPostNotFound ? igInsights : undefined,
+            },
+            activePlatforms,
+            status,
         });
 
     } catch (error) {

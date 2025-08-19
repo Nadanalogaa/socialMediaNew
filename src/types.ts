@@ -1,6 +1,7 @@
 
 
 
+
 export enum Platform {
   Facebook = 'Facebook',
   Instagram = 'Instagram',
@@ -131,4 +132,10 @@ export interface Comment {
     message: string;
     from: FacebookUser;
     created_time: string;
+}
+
+export interface PostInsightResponse {
+  engagement: Post['engagement'];
+  activePlatforms: Platform[];
+  status: 'active' | 'deleted';
 }

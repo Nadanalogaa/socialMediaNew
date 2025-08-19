@@ -1,7 +1,8 @@
 
 
 
-import type { Platform, SeoSuggestions, Post, ConnectionStatus, GeneratedAssetContent, GeneratedPostIdea, ConnectionDetails, Comment, FacebookUser } from '../types';
+
+import type { Platform, SeoSuggestions, Post, ConnectionStatus, GeneratedAssetContent, GeneratedPostIdea, ConnectionDetails, Comment, FacebookUser, PostInsightResponse } from '../types';
 
 const handleResponse = async (response: Response) => {
     if (!response.ok) {
@@ -92,7 +93,7 @@ export const publishPost = async (
     return handleResponse(response);
 };
 
-export const getPostInsights = async (facebookPostId: string | undefined, instagramPostId: string | undefined, pageAccessToken: string): Promise<Post['engagement']> => {
+export const getPostInsights = async (facebookPostId: string | undefined, instagramPostId: string | undefined, pageAccessToken: string): Promise<PostInsightResponse> => {
     const response = await fetch('/api/post-insights', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
