@@ -942,8 +942,7 @@ app.get('/api/post/:postId/comments', async (req, res) => {
 
 // POST Reply to Comment
 app.post('/api/comment/:commentId/reply', async (req, res) => {
-    const originalCommentId = req.params.commentId;
-    const commentId = originalCommentId.split(':')[0]; // Sanitize ID
+    const { commentId } = req.params;
     const { message, pageAccessToken } = req.body;
      if (!commentId || !message || !pageAccessToken) {
         return res.status(400).json({ message: 'Missing commentId, message, or pageAccessToken' });

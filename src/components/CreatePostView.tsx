@@ -428,7 +428,9 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
                     throw new Error('Video is still uploading or has failed. Please wait or try re-uploading.');
                 }
                 // Derive thumbnail from Cloudinary URL for the post record
-                imageUrlData = asset.videoUrl.replace(/\.(mp4|mov|avi|wmv|flv|webm|mkv)$/i, '.jpg');
+                imageUrlData = asset.videoUrl
+                    .replace('/upload/', '/upload/w_400,h_300,c_pad,b_black,so_0/')
+                    .replace(/\.(mp4|mov|avi|wmv|flv|webm|mkv)$/i, '.jpg');
             } else { // Existing image logic
                 if (asset.file) {
                      imageUrlData = await toBase64(asset.file);

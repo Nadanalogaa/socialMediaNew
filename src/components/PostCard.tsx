@@ -251,7 +251,9 @@ export const PostCard: React.FC<PostCardProps> = ({ post, isSelected, connection
   // This handles legacy data that might be stored in the user's IndexedDB.
   let displayImageUrl = post.imageUrl;
   if (post.mediaType === 'VIDEO' && post.imageUrl && !/\.(jpe?g|png|gif|webp)$/i.test(post.imageUrl)) {
-      displayImageUrl = post.imageUrl.replace(/\.(mp4|mov|avi|wmv|flv|webm|mkv)$/i, '.jpg');
+      displayImageUrl = post.imageUrl
+        .replace('/upload/', '/upload/w_400,h_300,c_pad,b_black,so_0/')
+        .replace(/\.(mp4|mov|avi|wmv|flv|webm|mkv)$/i, '.jpg');
   }
   
   const mainContent = post.generatedContent.facebook || post.generatedContent.instagram || post.generatedContent.youtubeTitle || "No content available.";
