@@ -975,7 +975,6 @@ app.post('/api/cloudinary-signature', (req, res) => {
     // Do not include upload_preset for signed uploads, as per Cloudinary best practices.
     const paramsToSign = {
         timestamp: timestamp,
-        eager: 'w_1280,h_720,c_limit,br_4m,q_auto:good,vc_auto',
         folder: 'nadanaloga/uploads'
     };
 

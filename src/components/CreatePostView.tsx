@@ -78,7 +78,7 @@ interface CreatePostViewProps {
 }
 
 const LoadingSpinner: React.FC<{ size?: string }> = ({ size = 'h-5 w-5' }) => (
-    <svg className={`animate-spin ${size} text-white`} xmlns="http://www.w.org/2000/svg" fill="none" viewBox="0 0 24 24">
+    <svg className={`animate-spin ${size} text-white`} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
         <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
         <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
     </svg>
@@ -222,7 +222,6 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
         }
 
         // These parameters MUST match what the server signs.
-        const eagerTransformations = 'w_1280,h_720,c_limit,br_4m,q_auto:good,vc_auto';
         const uploadFolder = 'nadanaloga/uploads';
         let timestamp, signature;
         
@@ -255,9 +254,9 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
             formData.append('api_key', apiKey);
             formData.append('timestamp', String(timestamp));
             formData.append('signature', signature);
-            formData.append('eager', eagerTransformations);
             formData.append('folder', uploadFolder);
             // DO NOT send upload_preset for signed uploads.
+            // DO NOT send eager transformations during chunked upload to simplify signature.
 
             try {
                 const response = await fetch(url, {
