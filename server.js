@@ -946,7 +946,9 @@ app.post('/api/comment/:commentId/reply', async (req, res) => {
         return res.status(400).json({ message: 'Missing commentId, message, or pageAccessToken' });
     }
     try {
-        const url = `https://graph.facebook.com/v23.0/${commentId}/replies`;
+        // Per user feedback, the /replies endpoint can be unreliable. Using /comments on the comment object
+        // is an alternative way to post a reply.
+        const url = `https://graph.facebook.com/v23.0/${commentId}/comments`;
         const body = new URLSearchParams({
             message,
             access_token: pageAccessToken
@@ -954,10 +956,10 @@ app.post('/api/comment/:commentId/reply', async (req, res) => {
         const response = await fetch(url, { method: 'POST', body });
         const data = await response.json();
         if (data.error) throw new Error(data.error.message);
-        console.log(`[REAL REPLY] Successfully replied to comment ${commentId}`);
+        console.log(`[REAL REPLY] Successfully posted comment reply to ${commentId}`);
         res.json({ success: true, id: data.id });
     } catch (error) {
-        console.error(`[REAL REPLY] Failed to reply to comment ${commentId}:`, error);
+        console.error(`[REAL REPLY] Failed to post comment reply to ${commentId}:`, error);
         res.status(500).json({ message: `Failed to reply: ${error.message}` });
     }
 });
