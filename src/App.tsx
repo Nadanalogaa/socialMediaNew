@@ -3,10 +3,12 @@
 
 import React, { useState, useCallback, useEffect } from 'react';
 import { Sidebar } from './components/Sidebar';
+import { BottomNav } from './components/BottomNav';
 import { DashboardView } from './components/DashboardView';
 import { CreatePostView } from './components/CreatePostView';
 import { SeoConnectorView } from './components/SeoAssistantView';
 import { ConnectionsView } from './components/ConnectionsView';
+import { PrivacyPolicyView } from './components/PrivacyPolicyView';
 import type { Post, ConnectionStatus, ConnectionDetails, GeneratedPostIdea } from './types';
 import { ErrorModal } from './components/ErrorModal';
 import { View, Platform } from './types';
@@ -307,6 +309,8 @@ const App: React.FC = () => {
         return <SeoConnectorView navigateTo={navigateTo} />;
       case View.CONNECTIONS:
         return <ConnectionsView connections={connections} setConnections={setConnections} setConnectionDetails={setConnectionDetails} isFbSdkInitialized={isFbSdkInitialized} />;
+      case View.PRIVACY_POLICY:
+        return <PrivacyPolicyView />;
       case View.DASHBOARD:
       default:
         return <DashboardView 
@@ -324,10 +328,11 @@ const App: React.FC = () => {
   return (
     <div className="flex min-h-screen bg-dark-bg font-sans">
       <Sidebar activeView={activeView} setActiveView={(view) => navigateTo(view)} />
-      <main className="flex-1 p-4 sm:p-6 lg:p-8">
+      <main className="flex-1 p-4 sm:p-6 lg:p-8 pb-24 md:pb-6 lg:pb-8">
         <ErrorModal message={globalError} onClose={() => setGlobalError(null)} />
         {renderView()}
       </main>
+      <BottomNav activeView={activeView} setActiveView={(view) => navigateTo(view)} />
     </div>
   );
 };

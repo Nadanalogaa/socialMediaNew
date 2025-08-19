@@ -4,6 +4,7 @@
   import { CreatePostIcon } from './icons/CreatePostIcon';
   import { SeoIcon } from './icons/SeoIcon';
   import { ConnectIcon } from './icons/ConnectIcon';
+  import { PrivacyIcon } from './icons/PrivacyIcon';
   import type { View } from '../types';
   import { View as ViewEnum } from '../types';
 
@@ -34,7 +35,7 @@
 
   export const Sidebar: React.FC<SidebarProps> = ({ activeView, setActiveView }) => {
     return (
-      <aside className="w-64 bg-gray-900 text-white p-4 flex flex-col sticky top-0 h-screen border-r border-dark-border">
+      <aside className="hidden md:flex w-64 bg-gray-900 text-white p-4 flex-col sticky top-0 h-screen border-r border-dark-border">
         <div className="flex items-center mb-10">
           <div className="p-2 bg-gradient-to-r from-brand-primary to-brand-secondary rounded-lg">
             <CreatePostIcon className="w-6 h-6 text-white" />
@@ -65,6 +66,12 @@
             label="Connections"
             isActive={activeView === ViewEnum.CONNECTIONS}
             onClick={() => setActiveView(ViewEnum.CONNECTIONS)}
+          />
+          <NavItem
+            icon={<PrivacyIcon className="w-5 h-5" />}
+            label="Privacy Policy"
+            isActive={activeView === ViewEnum.PRIVACY_POLICY}
+            onClick={() => setActiveView(ViewEnum.PRIVACY_POLICY)}
           />
         </nav>
         <div className="mt-auto text-center text-dark-text-secondary text-xs space-y-1">
