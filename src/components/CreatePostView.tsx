@@ -225,7 +225,7 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
         if (file.size > MAX_CLOUDINARY_MB * 1024 * 1024) {
             updateAsset(assetId, {
                 status: 'error',
-                errorMessage: `Video is ${(file.size / 1024 / 1024).toFixed(1)}MB. Cloudinary limit is ${MAX_CLOUDINARY_MB}MB on your plan. Please compress or upload a smaller file.`,
+                errorMessage: `Video too large (${(file.size / 1024 / 1024).toFixed(1)}MB). The plan limit is ${MAX_CLOUDINARY_MB}MB. Please compress the video first (e.g., using HandBrake) and try again.`,
                 uploadProgress: undefined
             });
             return;
@@ -363,7 +363,7 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
                 return;
             }
             if (mediaType === 'VIDEO' && originalFile.size > MAX_VIDEO_SIZE_MB * 1024 * 1024) {
-                 const errorState = createErrorState(`Video is ${(originalFile.size / 1024 / 1024).toFixed(1)}MB. The limit for your plan is 100MB. Please compress or upload a smaller file.`);
+                 const errorState = createErrorState(`Video too large (${(originalFile.size / 1024 / 1024).toFixed(1)}MB). The plan limit is 100MB. Please compress the video first (e.g., using a tool like HandBrake) and try again.`);
                  if (existingAssetId) {
                     updateAsset(existingAssetId, errorState);
                  } else {
