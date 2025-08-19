@@ -1,7 +1,3 @@
-
-
-
-
 import express from 'express';
 import 'dotenv/config';
 import { GoogleGenAI, Type } from '@google/genai';
@@ -975,10 +971,12 @@ app.post('/api/cloudinary-signature', (req, res) => {
 
     const timestamp = Math.round((new Date()).getTime() / 1000);
     
-    // Cloudinary's signing algorithm requires parameters to be sorted alphabetically by key.
+    // Define parameters to be signed on the server for security.
+    // Do not include upload_preset for signed uploads, as per Cloudinary best practices.
     const paramsToSign = {
-        ...req.body, // The client will send any parameters it wants signed, like eager transformations
-        timestamp: timestamp
+        timestamp: timestamp,
+        eager: 'w_1280,h_720,c_limit,br_4m,q_auto:good,vc_auto',
+        folder: 'nadanaloga/uploads'
     };
 
     const sortedKeys = Object.keys(paramsToSign).sort();
