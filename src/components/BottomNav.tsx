@@ -6,11 +6,10 @@ import { SeoIcon } from './icons/SeoIcon';
 import { ConnectIcon } from './icons/ConnectIcon';
 import { PrivacyIcon } from './icons/PrivacyIcon';
 import { View } from '../types';
-import type { View as ViewType } from '../types';
 
 interface BottomNavProps {
-  activeView: ViewType;
-  setActiveView: (view: ViewType) => void;
+  activeView: View;
+  setActiveView: (view: View) => void;
 }
 
 const NavItem: React.FC<{

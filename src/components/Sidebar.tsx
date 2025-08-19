@@ -5,8 +5,7 @@
   import { SeoIcon } from './icons/SeoIcon';
   import { ConnectIcon } from './icons/ConnectIcon';
   import { PrivacyIcon } from './icons/PrivacyIcon';
-  import type { View } from '../types';
-  import { View as ViewEnum } from '../types';
+  import { View } from '../types';
 
 
   interface SidebarProps {
@@ -46,32 +45,32 @@
           <NavItem
             icon={<DashboardIcon className="w-5 h-5" />}
             label="Dashboard"
-            isActive={activeView === ViewEnum.DASHBOARD}
-            onClick={() => setActiveView(ViewEnum.DASHBOARD)}
+            isActive={activeView === View.DASHBOARD}
+            onClick={() => setActiveView(View.DASHBOARD)}
           />
           <NavItem
             icon={<CreatePostIcon className="w-5 h-5" />}
             label="Create Post"
-            isActive={activeView === ViewEnum.CREATE_POST}
-            onClick={() => setActiveView(ViewEnum.CREATE_POST)}
+            isActive={activeView === View.CREATE_POST}
+            onClick={() => setActiveView(View.CREATE_POST)}
           />
           <NavItem
             icon={<SeoIcon className="w-5 h-5" />}
             label="SEO Connector"
-            isActive={activeView === ViewEnum.SEO_CONNECTOR}
-            onClick={() => setActiveView(ViewEnum.SEO_CONNECTOR)}
+            isActive={activeView === View.SEO_CONNECTOR}
+            onClick={() => setActiveView(View.SEO_CONNECTOR)}
           />
           <NavItem
             icon={<ConnectIcon className="w-5 h-5" />}
             label="Connections"
-            isActive={activeView === ViewEnum.CONNECTIONS}
-            onClick={() => setActiveView(ViewEnum.CONNECTIONS)}
+            isActive={activeView === View.CONNECTIONS}
+            onClick={() => setActiveView(View.CONNECTIONS)}
           />
           <NavItem
             icon={<PrivacyIcon className="w-5 h-5" />}
             label="Privacy Policy"
-            isActive={activeView === ViewEnum.PRIVACY_POLICY}
-            onClick={() => setActiveView(ViewEnum.PRIVACY_POLICY)}
+            isActive={activeView === View.PRIVACY_POLICY}
+            onClick={() => setActiveView(View.PRIVACY_POLICY)}
           />
         </nav>
         <div className="mt-auto text-center text-dark-text-secondary text-xs space-y-1">

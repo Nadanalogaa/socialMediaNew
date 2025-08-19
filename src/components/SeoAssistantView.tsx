@@ -1,9 +1,10 @@
+
 /// <reference lib="dom" />
 
 import React, { useState, useCallback } from 'react';
 import { generateSeoSuggestions, generatePostFromIdea } from '../services/geminiService';
-import type { SeoSuggestions, View } from '../types';
-import { View as ViewEnum } from '../types';
+import type { SeoSuggestions } from '../types';
+import { View } from '../types';
 
 
 interface SeoConnectorViewProps {
@@ -47,7 +48,7 @@ export const SeoConnectorView: React.FC<SeoConnectorViewProps> = ({ navigateTo }
         setError(null);
         try {
             const postIdea = await generatePostFromIdea(idea.title, idea.description);
-            navigateTo(ViewEnum.CREATE_POST, postIdea);
+            navigateTo(View.CREATE_POST, postIdea);
         } catch (err) {
             const message = err instanceof Error ? err.message : String(err);
             setError(`Failed to generate post from idea: ${message}`);

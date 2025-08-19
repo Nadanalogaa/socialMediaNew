@@ -37,6 +37,28 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ posts, connectionD
     const [nextCursors, setNextCursors] = useState<{ facebook: string | null; instagram: string | null; } | null>(null);
 
     const observer = useRef<IntersectionObserver>();
+
+    const loadMorePosts = useCallback(() => {
+        if (!hasMore || isLoading || !connectionDetails.facebook) return;
+        setIsLoading(true);
+        fetchPlatformPosts(10, nextCursors, connectionDetails)
+            .then(response => {
+                setAllPosts(prev => {
+                    const postMap = new Map(prev.map(p => [p.id, p]));
+                    response.posts.forEach(p => postMap.set(p.id, p));
+                    return Array.from(postMap.values()).sort((a, b) => new Date(b.postedAt).getTime() - new Date(a.postedAt).getTime());
+                });
+                setNextCursors(response.nextCursors);
+                setHasMore(!!(response.nextCursors?.facebook || response.nextCursors?.instagram));
+            })
+            .catch(err => {
+                const message = err instanceof Error ? err.message : String(err);
+                onError(`Failed to load more posts: ${message}`);
+                setHasMore(false); // Stop trying if there's an error
+            })
+            .finally(() => setIsLoading(false));
+    }, [hasMore, isLoading, nextCursors, connectionDetails, onError]);
+
     const lastPostElementRef = useCallback(node => {
         if (isLoading) return;
         if (observer.current) observer.current.disconnect();
@@ -107,27 +129,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ posts, connectionD
         }
     }, [posts]);
 
-
-    const loadMorePosts = useCallback(() => {
-        if (!hasMore || isLoading || !connectionDetails.facebook) return;
-        setIsLoading(true);
-        fetchPlatformPosts(10, nextCursors, connectionDetails)
-            .then(response => {
-                setAllPosts(prev => {
-                    const postMap = new Map(prev.map(p => [p.id, p]));
-                    response.posts.forEach(p => postMap.set(p.id, p));
-                    return Array.from(postMap.values()).sort((a, b) => new Date(b.postedAt).getTime() - new Date(a.postedAt).getTime());
-                });
-                setNextCursors(response.nextCursors);
-                setHasMore(!!(response.nextCursors?.facebook || response.nextCursors?.instagram));
-            })
-            .catch(err => {
-                const message = err instanceof Error ? err.message : String(err);
-                onError(`Failed to load more posts: ${message}`);
-                setHasMore(false); // Stop trying if there's an error
-            })
-            .finally(() => setIsLoading(false));
-    }, [hasMore, isLoading, nextCursors, connectionDetails, onError]);
 
     const handleSelectPost = (postId: string) => {
         setSelectedPosts(prev => {
