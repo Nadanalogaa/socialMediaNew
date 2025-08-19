@@ -211,10 +211,11 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
     const handleChunkedUpload = async (assetId: string, file: File) => {
         const cloudName = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
         const apiKey = import.meta.env.VITE_CLOUDINARY_API_KEY;
+        const uploadPreset = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET;
         const CHUNK_SIZE = 20 * 1024 * 1024; // 20 MB chunks
 
-        if (!cloudName || !apiKey) {
-            const errorMessage = "Cloudinary is not configured for large uploads. Please set VITE_CLOUDINARY_CLOUD_NAME and VITE_CLOUDINARY_API_KEY in your environment variables.";
+        if (!cloudName || !apiKey || !uploadPreset) {
+            const errorMessage = "Cloudinary is not fully configured for large uploads. Please set VITE_CLOUDINARY_CLOUD_NAME, VITE_CLOUDINARY_API_KEY, and VITE_CLOUDINARY_UPLOAD_PRESET in your environment variables.";
             console.error(errorMessage);
             updateAsset(assetId, { status: 'error', errorMessage, uploadProgress: undefined });
             return;
@@ -225,7 +226,11 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
         
         try {
             updateAsset(assetId, { status: 'uploading', errorMessage: 'Requesting upload signature...' });
-            const sigResponse = await getCloudinarySignature({ eager: eagerTransformations });
+            const paramsToSign = {
+                eager: eagerTransformations,
+                upload_preset: uploadPreset
+            };
+            const sigResponse = await getCloudinarySignature(paramsToSign);
             timestamp = sigResponse.timestamp;
             signature = sigResponse.signature;
         } catch (error) {
@@ -252,6 +257,7 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
             formData.append('timestamp', String(timestamp));
             formData.append('signature', signature);
             formData.append('eager', eagerTransformations);
+            formData.append('upload_preset', uploadPreset);
 
             try {
                 const response = await fetch(url, {
