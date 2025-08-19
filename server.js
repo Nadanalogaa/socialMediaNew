@@ -1,12 +1,14 @@
 
 
 
+
 import express from 'express';
 import 'dotenv/config';
 import { GoogleGenAI, Type } from '@google/genai';
 import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import crypto from 'crypto';
 
 const app = express();
 const port = process.env.PORT || 3001;
@@ -962,6 +964,32 @@ app.post('/api/comment/:commentId/reply', async (req, res) => {
         console.error(`[REAL REPLY] Failed to post comment reply to ${commentId}:`, error);
         res.status(500).json({ message: `Failed to reply: ${error.message}` });
     }
+});
+
+app.post('/api/cloudinary-signature', (req, res) => {
+    const apiSecret = process.env.CLOUDINARY_API_SECRET;
+    if (!apiSecret) {
+        console.error("CLOUDINARY_API_SECRET not set on server.");
+        return res.status(500).json({ message: "Server is not configured for signing uploads." });
+    }
+
+    const timestamp = Math.round((new Date()).getTime() / 1000);
+    
+    // Cloudinary's signing algorithm requires parameters to be sorted alphabetically by key.
+    const paramsToSign = {
+        ...req.body, // The client will send any parameters it wants signed, like eager transformations
+        timestamp: timestamp
+    };
+
+    const sortedKeys = Object.keys(paramsToSign).sort();
+    
+    const stringToSign = sortedKeys
+        .map(key => `${key}=${paramsToSign[key]}`)
+        .join('&');
+    
+    const signature = crypto.createHash('sha1').update(stringToSign + apiSecret).digest('hex');
+
+    res.json({ timestamp, signature });
 });
 
 

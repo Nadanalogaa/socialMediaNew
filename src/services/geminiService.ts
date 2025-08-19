@@ -2,6 +2,8 @@
 
 
 
+
+
 import type { Platform, SeoSuggestions, Post, ConnectionStatus, GeneratedAssetContent, GeneratedPostIdea, ConnectionDetails, Comment, FacebookUser, PostInsightResponse } from '../types';
 
 const handleResponse = async (response: Response) => {
@@ -131,6 +133,15 @@ export const replyToComment = async (commentId: string, message: string, pageAcc
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message, pageAccessToken }),
+    });
+    return handleResponse(response);
+};
+
+export const getCloudinarySignature = async (paramsToSign: object): Promise<{ timestamp: number, signature: string }> => {
+    const response = await fetch('/api/cloudinary-signature', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(paramsToSign),
     });
     return handleResponse(response);
 };

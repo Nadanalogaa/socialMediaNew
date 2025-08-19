@@ -3,7 +3,7 @@
 import React, { useState, useCallback, useRef, useEffect } from 'react';
 import type { Platform, Audience, Post, ConnectionStatus, MediaAsset, GeneratedPostIdea, ConnectionDetails } from '../types';
 import { Platform as PlatformEnum, Audience as AudienceEnum } from '../types';
-import { publishPost, generateAssetContent } from '../services/geminiService';
+import { publishPost, generateAssetContent, getCloudinarySignature } from '../services/geminiService';
 import { FacebookIcon } from './icons/FacebookIcon';
 import { InstagramIcon } from './icons/InstagramIcon';
 import { YoutubeIcon } from './icons/YoutubeIcon';
@@ -210,13 +210,28 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
 
     const handleChunkedUpload = async (assetId: string, file: File) => {
         const cloudName = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
-        const uploadPreset = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET;
+        const apiKey = import.meta.env.VITE_CLOUDINARY_API_KEY;
         const CHUNK_SIZE = 20 * 1024 * 1024; // 20 MB chunks
 
-        if (!cloudName || !uploadPreset) {
-            const errorMessage = "Cloudinary is not configured. Please set VITE_CLOUDINARY_CLOUD_NAME and VITE_CLOUDINARY_UPLOAD_PRESET in your environment variables.";
+        if (!cloudName || !apiKey) {
+            const errorMessage = "Cloudinary is not configured for large uploads. Please set VITE_CLOUDINARY_CLOUD_NAME and VITE_CLOUDINARY_API_KEY in your environment variables.";
             console.error(errorMessage);
             updateAsset(assetId, { status: 'error', errorMessage, uploadProgress: undefined });
+            return;
+        }
+
+        const eagerTransformations = 'w_1280,h_720,c_limit,br_4m,q_auto:good,vc_auto';
+        let timestamp, signature;
+        
+        try {
+            updateAsset(assetId, { status: 'uploading', errorMessage: 'Requesting upload signature...' });
+            const sigResponse = await getCloudinarySignature({ eager: eagerTransformations });
+            timestamp = sigResponse.timestamp;
+            signature = sigResponse.signature;
+        } catch (error) {
+            const message = error instanceof Error ? error.message : "Failed to get upload signature from server.";
+            console.error("Signature error:", error);
+            updateAsset(assetId, { status: 'error', errorMessage: message, uploadProgress: undefined });
             return;
         }
 
@@ -224,7 +239,7 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
         const url = `https://api.cloudinary.com/v1_1/${cloudName}/video/upload`;
         const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
 
-        updateAsset(assetId, { status: 'uploading', uploadProgress: 0, errorMessage: 'Starting upload...'});
+        updateAsset(assetId, { status: 'uploading', uploadProgress: 0, errorMessage: 'Starting signed upload...'});
 
         for (let i = 0; i < totalChunks; i++) {
             const start = i * CHUNK_SIZE;
@@ -233,11 +248,10 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
 
             const formData = new FormData();
             formData.append('file', chunk);
-            formData.append('upload_preset', uploadPreset);
-            if (i === totalChunks - 1) {
-                formData.append('eager', 'w_1280,h_720,c_limit,br_4m,q_auto:good,vc_auto');
-                formData.append('eager_async', 'true');
-            }
+            formData.append('api_key', apiKey);
+            formData.append('timestamp', String(timestamp));
+            formData.append('signature', signature);
+            formData.append('eager', eagerTransformations);
 
             try {
                 const response = await fetch(url, {
@@ -686,9 +700,10 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
                                     <p className="mt-4 text-white font-semibold">
                                         {asset.status === 'compressing' ? 'Processing media...' : 
                                          asset.status === 'thumbnailing' ? 'Generating thumbnail...' :
-                                         'Generating content...'}
+                                         asset.status === 'generating' ? 'Generating content...' :
+                                         'Please wait...'}
                                     </p>
-                                    <p className="text-sm text-dark-text-secondary">This may take a moment.</p>
+                                    <p className="text-sm text-dark-text-secondary">{asset.errorMessage || 'This may take a moment.'}</p>
                                 </>
                             )}
                         </div>
