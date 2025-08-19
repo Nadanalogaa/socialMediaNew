@@ -42,7 +42,7 @@ const App: React.FC = () => {
     setPosts(prevPosts => [post, ...prevPosts]);
   };
   
-  const deletePost = async (postId: string) => {
+  const deletePost = useCallback(async (postId: string) => {
     setGlobalError(null);
     try {
       const postToDelete = posts.find(p => p.id === postId);
@@ -94,9 +94,9 @@ const App: React.FC = () => {
       const message = err instanceof Error ? err.message : String(err);
       setGlobalError(message);
     }
-  };
+  }, [posts, connectionDetails]);
 
-  const deletePosts = async (postIds: string[]) => {
+  const deletePosts = useCallback(async (postIds: string[]) => {
     setGlobalError(null);
     try {
         const pageAccessToken = connectionDetails.facebook?.pageAccessToken;
@@ -157,13 +157,13 @@ const App: React.FC = () => {
         const message = err instanceof Error ? err.message : String(err);
         setGlobalError(message);
     }
-  };
+  }, [posts, connectionDetails]);
 
-  const updatePost = (postId: string, updates: Partial<Post>) => {
+  const updatePost = useCallback((postId: string, updates: Partial<Post>) => {
     setPosts(prevPosts =>
       prevPosts.map(p => (p.id === postId ? { ...p, ...updates } : p))
     );
-  };
+  }, []);
 
 
   const navigateTo = (view: View, data: any = null) => {

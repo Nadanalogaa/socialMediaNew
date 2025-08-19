@@ -133,6 +133,11 @@ export interface Comment {
     created_time: string;
 }
 
+export interface SmartReplySuggestion {
+    sentiment: 'positive' | 'neutral' | 'negative' | 'question';
+    suggestedReply: string;
+}
+
 export interface PostInsightResponse {
   engagement: Post['engagement'];
   activePlatforms: Platform[];

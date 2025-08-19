@@ -1,6 +1,6 @@
 
 
-import type { Platform, SeoSuggestions, Post, ConnectionStatus, GeneratedAssetContent, GeneratedPostIdea, ConnectionDetails, Comment, FacebookUser, PostInsightResponse } from '../types';
+import type { Platform, SeoSuggestions, Post, ConnectionStatus, GeneratedAssetContent, GeneratedPostIdea, ConnectionDetails, Comment, FacebookUser, PostInsightResponse, SmartReplySuggestion } from '../types';
 
 const handleResponse = async (response: Response) => {
     if (!response.ok) {
@@ -167,6 +167,15 @@ export const replyToComment = async (commentId: string, message: string, pageAcc
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message, pageAccessToken, platform }),
+    });
+    return handleResponse(response);
+};
+
+export const generateCommentReply = async (commentText: string): Promise<SmartReplySuggestion[]> => {
+    const response = await fetch('/api/generate-comment-reply', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ commentText }),
     });
     return handleResponse(response);
 };

@@ -1,5 +1,6 @@
 
 
+
 import express from 'express';
 import 'dotenv/config';
 import { GoogleGenAI, Type } from '@google/genai';
@@ -133,6 +134,25 @@ const postFromIdeaSchema = {
         }
     },
     required: ["postText", "imagePrompt", "hashtags"]
+};
+
+const commentReplySchema = {
+    type: Type.ARRAY,
+    description: "A list of 1 to 3 suggested replies to the user's comment.",
+    items: {
+        type: Type.OBJECT,
+        properties: {
+            sentiment: {
+                type: Type.STRING,
+                description: "The analyzed sentiment of the user's comment. Can be 'positive', 'neutral', 'negative', or 'question'."
+            },
+            suggestedReply: {
+                type: Type.STRING,
+                description: "A concise, engaging, and context-aware reply. It should be friendly, appreciative, and maintain the brand's voice."
+            }
+        },
+        required: ["sentiment", "suggestedReply"]
+    }
 };
 
 
@@ -270,6 +290,110 @@ app.post('/api/generate-asset-content', async (req, res) => {
     } catch (error) {
         console.error("Error generating asset content:", error);
         res.status(500).json({ message: `Failed to generate asset content: ${error.message || 'Please check server logs.'}` });
+    }
+});
+
+app.post('/api/generate-seo', async (req, res) => {
+    const { url } = req.body;
+    if (!url) {
+        return res.status(400).json({ message: 'Missing required field: url' });
+    }
+
+    if (!hasApiKey) {
+        return setTimeout(() => res.json({
+            metaTitle: `Mock SEO Title for ${url}`,
+            metaDescription: `This is a mock SEO meta description for ${url}. It's optimized for search engines.`,
+            keywords: ['mock', 'seo', 'keywords', 'for', url.split('.')[0]],
+            blogIdeas: [
+                { title: `Mock Blog Idea 1 about ${url}`, description: 'A great blog post to attract visitors.' },
+                { title: `Mock Blog Idea 2 about ${url}`, description: 'Another engaging topic for your audience.' }
+            ]
+        }), 1000);
+    }
+
+    const systemInstruction = `You are an SEO expert for a website. Analyze the provided URL and generate SEO suggestions. The tone should be professional and data-driven. The target business is 'Nadanaloga' (www.nadanaloga.com), an Indian classical dance school. Tailor suggestions accordingly.`;
+
+    try {
+        const response = await ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: `Generate SEO suggestions for the website: "${url}"`,
+            config: {
+                systemInstruction,
+                responseMimeType: "application/json",
+                responseSchema: seoSchema,
+            }
+        });
+        const jsonText = response.text.trim();
+        res.json(JSON.parse(jsonText));
+    } catch (error) {
+        console.error("Error generating SEO suggestions:", error);
+        res.status(500).json({ message: `Failed to generate SEO suggestions: ${error.message || 'Please check server logs.'}` });
+    }
+});
+
+app.post('/api/generate-post-from-idea', async (req, res) => {
+    const { title, description } = req.body;
+    if (!title || !description) {
+        return res.status(400).json({ message: 'Missing required fields: title and description' });
+    }
+    if (!hasApiKey) {
+        return setTimeout(() => res.json({
+            postText: `This is a mock social media post based on the blog idea: "${title}". It's designed to be engaging!`,
+            imagePrompt: `A vibrant mock illustration related to "${title}"`,
+            hashtags: ['mock', 'socialmedia', 'generated', 'post']
+        }), 1000);
+    }
+    
+    const systemInstruction = `You are a social media manager for 'Nadanaloga', an Indian classical dance school. Your task is to take a blog post idea (title and description) and turn it into a short, engaging social media post. Provide the post text, a creative prompt for an AI image generator, and relevant hashtags.`;
+
+    try {
+        const response = await ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: `Generate a social media post from this blog idea:\nTitle: ${title}\nDescription: ${description}`,
+            config: {
+                systemInstruction,
+                responseMimeType: "application/json",
+                responseSchema: postFromIdeaSchema,
+            }
+        });
+        const jsonText = response.text.trim();
+        res.json(JSON.parse(jsonText));
+    } catch (error) {
+        console.error("Error generating post from idea:", error);
+        res.status(500).json({ message: `Failed to generate post from idea: ${error.message || 'Please check server logs.'}` });
+    }
+});
+
+app.post('/api/generate-comment-reply', async (req, res) => {
+    const { commentText } = req.body;
+    if (!commentText) {
+        return res.status(400).json({ message: 'Missing required field: commentText' });
+    }
+
+    if (!hasApiKey) {
+        return setTimeout(() => res.json([
+            { sentiment: 'positive', suggestedReply: 'Thank you so much! 😊' },
+            { sentiment: 'neutral', suggestedReply: 'Thanks for sharing your thoughts.' }
+        ]), 1000);
+    }
+    
+    const systemInstruction = `You are a helpful and friendly social media assistant for 'Nadanaloga', an Indian classical dance school. Analyze the user's comment for sentiment and generate 1-3 concise, engaging, and context-aware replies. The tone should be positive and appreciative.`;
+    
+    try {
+        const response = await ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: `Generate suggested replies for this comment: "${commentText}"`,
+            config: {
+                systemInstruction,
+                responseMimeType: "application/json",
+                responseSchema: commentReplySchema,
+            }
+        });
+        const jsonText = response.text.trim();
+        res.json(JSON.parse(jsonText));
+    } catch (error) {
+        console.error("Error generating comment reply:", error);
+        res.status(500).json({ message: `Failed to generate comment reply: ${error.message || 'Please check server logs.'}` });
     }
 });
 
@@ -795,348 +919,197 @@ app.post('/api/publish-post', async (req, res) => {
 
     if (failedToPublish.length > 0) {
         const errorDetails = failedToPublish.map(p => `${p.platform} (${p.reason})`).join(', ');
-        return res.status(400).json({ message: `Cannot publish to some platforms. Please check connections or permissions: ${errorDetails}` });
+        return res.status(400).json({
+            message: `Failed to publish to some platforms: ${errorDetails}`,
+            publishedTo,
+            failedToPublish
+        });
     }
 
+    // All successful, construct the Post object for the client
     const newPost = {
-        id: facebookPostId || `post_${Date.now()}`,
+        id: facebookPostId || instagramPostId || `post_${Date.now()}`,
         platforms: publishedTo,
         platformPostIds: {
             Facebook: facebookPostId,
             Instagram: instagramPostId,
         },
-        audience,
-        imageUrl, // Thumbnail for videos, image for images
-        videoUrl, // Link to original video if it exists
-        mediaType,
-        prompt,
-        generatedContent,
+        audience: req.body.audience,
+        imageUrl: req.body.imageUrl,
+        videoUrl: transformedVideoUrl,
+        mediaType: req.body.mediaType,
+        prompt: req.body.prompt,
+        generatedContent: req.body.generatedContent,
         postedAt: new Date().toISOString(),
         engagement: {
             total: { likes: 0, comments: 0, shares: 0 },
-            facebook: facebookPostId ? { likes: 0, comments: 0, shares: 0 } : undefined,
-            instagram: instagramPostId ? { likes: 0, comments: 0, shares: 0 } : undefined,
         },
         status: 'active',
     };
 
-    // Simulate network delay for mock platforms if they were part of the request
-    const hasMockPlatform = platforms.some(p => p === 'YouTube');
-    setTimeout(() => {
-        console.log(`Created new post with ID: ${newPost.id}`);
-        res.status(200).json(newPost);
-    }, hasMockPlatform ? 1500 : 0);
-});
-
-// --- SEO Assistant Endpoint ---
-app.post('/api/generate-seo', async (req, res) => {
-    const { url } = req.body;
-    if (!url) {
-        return res.status(400).json({ message: 'Missing required field: url' });
-    }
-
-    if (!hasApiKey) {
-        // Keep mock data for users without an API key
-        return setTimeout(() => res.json({
-            metaTitle: "Mock: Nadanaloga - Premier Indian Classical Dance School",
-            metaDescription: "Discover the art of Bharatanatyam and other classical Indian dances at Nadanaloga. Join our classes in-person or online. For all ages and levels.",
-            keywords: ["mock", "indian classical dance", "bharatanatyam classes", "nadanaloga", "dance school", "online dance classes", "indian culture"],
-            blogIdeas: [
-                { title: "The History and Symbolism of Bharatanatyam", description: "Explore the rich history and deep symbolic meanings behind the gestures and movements of Bharatanatyam." },
-                { title: "Top 5 Health Benefits of Learning Classical Dance", description: "Discover how learning a classical dance form like Bharatanatyam can improve physical and mental well-being." }
-            ]
-        }), 1000);
-    }
-
-    const systemInstruction = `You are an expert SEO consultant for 'Nadanaloga' (www.nadanaloga.com), a prestigious Indian classical dance school. Your goal is to increase their online visibility and attract new students. Analyze the provided website URL and generate practical, actionable SEO improvements. The tone should be professional, encouraging, and tailored to the arts and culture sector.`;
-
-    try {
-        const response = await ai.models.generateContent({
-            model: "gemini-2.5-flash",
-            contents: `Please provide SEO suggestions for the website: ${url}. Focus on homepage meta tags, relevant keywords, and blog post ideas that would resonate with potential students, parents, and fans of Indian classical dance.`,
-            config: {
-                systemInstruction,
-                responseMimeType: "application/json",
-                responseSchema: seoSchema,
-            }
-        });
-        const jsonText = response.text.trim();
-        res.json(JSON.parse(jsonText));
-    } catch (error) {
-        console.error("Error generating SEO suggestions:", error);
-        res.status(500).json({ message: `Failed to generate SEO suggestions: ${error.message || 'Please check server logs.'}` });
-    }
-});
-
-
-app.post('/api/generate-post-from-idea', async (req, res) => {
-    const { title, description } = req.body;
-    if (!title || !description) {
-        return res.status(400).json({ message: 'Missing required fields: title, description' });
-    }
-
-    if (!hasApiKey) {
-        return setTimeout(() => res.json({
-            postText: `Check out our new blog post: "${title}"! We dive deep into ${description.toLowerCase()}. Learn more on our website!`,
-            imagePrompt: `A mock image prompt for a blog post about "${title}"`,
-            hashtags: ['mock', 'blog', 'newpost', 'nadanaloga', 'seo']
-        }), 1000);
-    }
-
-    const systemInstruction = `You are a social media marketing expert for 'Nadanaloga' (www.nadanaloga.com), an Indian classical dance school. Your task is to turn a blog post idea into a promotional social media post.`;
-    const prompt = `Blog Post Title: "${title}"\nBlog Post Description: "${description}"\n\nBased on the above, generate a short, engaging social media caption to promote this blog post. Also, create a detailed, creative prompt for an AI image generator to make a suitable visual. Finally, provide 5-7 relevant hashtags.`;
-
-    try {
-        const response = await ai.models.generateContent({
-            model: "gemini-2.5-flash",
-            contents: prompt,
-            config: {
-                systemInstruction,
-                responseMimeType: "application/json",
-                responseSchema: postFromIdeaSchema,
-            }
-        });
-        const jsonText = response.text.trim();
-        res.json(JSON.parse(jsonText));
-    } catch (error) {
-        console.error("Error generating post from idea:", error);
-        res.status(500).json({ message: `Failed to generate post from idea: ${error.message || 'Please check server logs.'}` });
-    }
+    res.status(201).json(newPost);
 });
 
 app.post('/api/post-insights', async (req, res) => {
     const { facebookPostId, instagramPostId, pageAccessToken } = req.body;
-
-    if ((!facebookPostId && !instagramPostId) || !pageAccessToken) {
-        return res.status(400).json({ message: 'Missing required fields: pageAccessToken and at least one postId' });
+    if (!pageAccessToken || (!facebookPostId && !instagramPostId)) {
+        return res.status(400).json({ message: 'Missing required parameters.' });
     }
 
     try {
-        let fbInsights = { likes: 0, comments: 0, shares: 0 };
-        let igInsights = { likes: 0, comments: 0, shares: 0 }; // IG API doesn't provide shares for media
-        let fbPostNotFound = false;
-        let igPostNotFound = false;
+        const insights = {
+            engagement: { total: { likes: 0, comments: 0, shares: 0 } },
+            activePlatforms: [],
+            status: 'active'
+        };
+        let anyPostFound = false;
 
-        // Fetch Facebook Insights
         if (facebookPostId) {
-            console.log(`[REAL INSIGHTS] Fetching insights for Facebook post: ${facebookPostId}`);
-            const fbInsightsUrl = `https://graph.facebook.com/v23.0/${facebookPostId}?fields=likes.summary(true),comments.summary(true),shares&access_token=${pageAccessToken}`;
-            const fbResponse = await fetch(fbInsightsUrl);
+            const fields = 'likes.summary(true),comments.summary(true),shares';
+            const url = `https://graph.facebook.com/v23.0/${facebookPostId}?fields=${fields}&access_token=${pageAccessToken}`;
+            const fbResponse = await fetch(url);
             const fbData = await fbResponse.json();
 
             if (fbData.error) {
-                const errorMessage = `Graph API error fetching FB insights: ${fbData.error.message}`;
-                if (fbData.error.code === 100 || (fbData.error.message && fbData.error.message.toLowerCase().includes('does not exist'))) {
-                    console.warn(`[REAL INSIGHTS] Facebook post ${facebookPostId} not found.`);
-                    fbPostNotFound = true;
+                // Common error when a post is deleted
+                if (fbData.error.code === 100 || fbData.error.code === 803) {
+                     console.log(`Facebook post ${facebookPostId} not found, likely deleted.`);
                 } else {
-                    console.error(errorMessage);
+                    console.error('FB Insight Error:', fbData.error);
                 }
             } else {
-                fbInsights.likes = fbData.likes?.summary?.total_count || 0;
-                fbInsights.comments = fbData.comments?.summary?.total_count || 0;
-                fbInsights.shares = fbData.shares?.count || 0;
-                console.log(`[REAL INSIGHTS] FB Insights: ${fbInsights.likes} likes, ${fbInsights.comments} comments, ${fbInsights.shares} shares`);
+                anyPostFound = true;
+                const likes = fbData.likes?.summary?.total_count || 0;
+                const comments = fbData.comments?.summary?.total_count || 0;
+                const shares = fbData.shares?.count || 0;
+                insights.engagement.total.likes += likes;
+                insights.engagement.total.comments += comments;
+                insights.engagement.total.shares += shares;
+                insights.engagement.facebook = { likes, comments, shares };
+                insights.activePlatforms.push('Facebook');
             }
         }
-
-        // Fetch Instagram Insights
+        
         if (instagramPostId) {
-            console.log(`[REAL INSIGHTS] Fetching insights for Instagram media: ${instagramPostId}`);
-            const igInsightsUrl = `https://graph.facebook.com/v23.0/${instagramPostId}?fields=like_count,comments_count&access_token=${pageAccessToken}`;
-            const igResponse = await fetch(igInsightsUrl);
+            const fields = 'like_count,comments_count';
+            const url = `https://graph.facebook.com/v23.0/${instagramPostId}?fields=${fields}&access_token=${pageAccessToken}`;
+            const igResponse = await fetch(url);
             const igData = await igResponse.json();
 
-            if (igData.error) {
-                const errorMessage = `Graph API error fetching IG insights: ${igData.error.message}`;
-                if (igData.error.code === 100 || (igData.error.message && igData.error.message.toLowerCase().includes('does not exist'))) {
-                    console.warn(`[REAL INSIGHTS] Instagram media ${instagramPostId} not found.`);
-                    igPostNotFound = true;
+             if (igData.error) {
+                if (igData.error.code === 100 || igData.error.code === 10) {
+                    console.log(`Instagram post ${instagramPostId} not found, likely deleted.`);
                 } else {
-                    console.error(errorMessage);
+                    console.error('IG Insight Error:', igData.error);
                 }
             } else {
-                igInsights.likes = igData.like_count || 0;
-                igInsights.comments = igData.comments_count || 0;
-                console.log(`[REAL INSIGHTS] IG Insights: ${igInsights.likes} likes, ${igInsights.comments} comments.`);
+                anyPostFound = true;
+                const likes = igData.like_count || 0;
+                const comments = igData.comments_count || 0;
+                insights.engagement.total.likes += likes;
+                insights.engagement.total.comments += comments;
+                insights.engagement.instagram = { likes, comments, shares: 0 };
+                insights.activePlatforms.push('Instagram');
             }
         }
         
-        const activePlatforms = [];
-        if (facebookPostId && !fbPostNotFound) activePlatforms.push('Facebook');
-        if (instagramPostId && !igPostNotFound) activePlatforms.push('Instagram');
+        if (!anyPostFound) {
+            insights.status = 'deleted';
+        }
 
-        const status = (facebookPostId || instagramPostId) && activePlatforms.length === 0 ? 'deleted' : 'active';
-        
-        const total = {
-            likes: (fbPostNotFound ? 0 : fbInsights.likes) + (igPostNotFound ? 0 : igInsights.likes),
-            comments: (fbPostNotFound ? 0 : fbInsights.comments) + (igPostNotFound ? 0 : igInsights.comments),
-            shares: (fbPostNotFound ? 0 : fbInsights.shares), // IG shares is 0
-        };
-
-        res.json({
-            engagement: {
-                total,
-                facebook: facebookPostId && !fbPostNotFound ? fbInsights : undefined,
-                instagram: instagramPostId && !igPostNotFound ? igInsights : undefined,
-            },
-            activePlatforms,
-            status,
-        });
-
+        res.json(insights);
     } catch (error) {
-        console.error('Error fetching post insights:', error);
-        res.status(500).json({ message: `Failed to fetch post insights: ${error.message || 'Please check server logs.'}` });
+        console.error('Failed to get post insights:', error);
+        res.status(500).json({ message: `Failed to get post insights: ${error.message}` });
     }
 });
 
+app.delete('/api/post/:postId', async (req, res) => {
+    const { postId } = req.params;
+    const { pageAccessToken, platform } = req.body;
 
-// --- Post Management Endpoints (Delete, Update, Comments) ---
-
-// GET Likes
-app.get('/api/post/:postId/likes', async (req, res) => {
-    const originalPostId = req.params.postId;
-    const postId = originalPostId.split(':')[0]; // Sanitize ID
-    const { pageAccessToken } = req.query;
-    if (!postId || !pageAccessToken) {
-        return res.status(400).json({ message: 'Missing postId or pageAccessToken' });
+    if (!pageAccessToken) {
+        return res.status(401).json({ message: 'Missing access token.' });
     }
+
     try {
-        const url = `https://graph.facebook.com/v23.0/${postId}/likes?fields=id,name,picture.type(square)&access_token=${pageAccessToken}`;
-        const response = await fetch(url);
-        if (!response.ok) { // Catch non-JSON responses
-            const text = await response.text();
-            throw new Error(`Graph API error: ${response.status} ${response.statusText} - ${text}`);
+        if (platform === 'Instagram') {
+            return res.status(405).json({ message: "Instagram Graph API does not support deleting published media. Please delete it from the Instagram app." });
         }
+        
+        const url = `https://graph.facebook.com/v23.0/${postId}?access_token=${pageAccessToken}`;
+        const response = await fetch(url, { method: 'DELETE' });
+        const data = await response.json();
+
+        if (data.error) {
+            if (data.error.code === 100) {
+                 return res.json({ success: true });
+            }
+            throw new Error(`Graph API error: ${data.error.message}`);
+        }
+
+        res.json({ success: data.success || false });
+    } catch (error) {
+        console.error(`Failed to delete post ${postId}:`, error);
+        res.status(500).json({ message: error.message });
+    }
+});
+
+app.get('/api/post/:postId/likes', async (req, res) => {
+    const { postId } = req.params;
+    const { pageAccessToken } = req.query;
+    
+    if (!pageAccessToken) return res.status(400).json({ message: 'Missing pageAccessToken' });
+
+    try {
+        const url = `https://graph.facebook.com/v23.0/${postId}/likes?fields=id,name,picture&limit=100&access_token=${pageAccessToken}`;
+        const response = await fetch(url);
         const data = await response.json();
         if (data.error) throw new Error(data.error.message);
-        res.json(data.data || []); // The likes are in the `data` property
+        res.json(data.data || []);
     } catch (error) {
-        console.error(`[REAL LIKES] Failed to get likes for post ${postId}:`, error);
+        console.error(`Failed to get likes for post ${postId}:`, error);
         res.status(500).json({ message: `Failed to get likes: ${error.message}` });
     }
 });
 
-// DELETE Post
-app.delete('/api/post/:postId', async (req, res) => {
-    const originalPostId = req.params.postId;
-    const postId = originalPostId.split(':')[0]; // Sanitize ID
-    const { pageAccessToken, platform } = req.body;
-
-    if (!postId || !pageAccessToken) {
-        return res.status(400).json({ message: 'Missing postId or pageAccessToken' });
-    }
-
-    // Heuristic: Instagram media IDs are numeric without an underscore; Facebook page post IDs often have PAGEID_POSTID.
-    const isInstagram = platform === 'Instagram' || (!postId.includes('_') && /^\d+$/.test(postId));
-    if (isInstagram) {
-        return res.status(501).json({
-            message: 'Instagram Graph API does not support deleting published media. Please delete the post manually in the Instagram app.'
-        });
-    }
-
-    try {
-        const url = `https://graph.facebook.com/v23.0/${postId}?access_token=${pageAccessToken}`;
-        const response = await fetch(url, { method: 'DELETE' });
-        const data = await response.json();
-        if (data.error && !data.success) { // Some delete calls return `success: true` with a minor error
-             throw new Error(data.error.message);
-        }
-        console.log(`[REAL DELETE] Successfully deleted post ${postId}`);
-        res.json({ success: true });
-    } catch (error) {
-        console.error(`[REAL DELETE] Failed to delete post ${postId}:`, error);
-        res.status(500).json({ message: `Failed to delete post: ${error.message}` });
-    }
-});
-
-// GET Comments
 app.get('/api/post/:postId/comments', async (req, res) => {
-    const originalPostId = req.params.postId;
-    const postId = originalPostId.split(':')[0]; // Sanitize ID
-    const { pageAccessToken, platform } = req.query;
-    if (!postId || !pageAccessToken || !platform) {
-        return res.status(400).json({ message: 'Missing postId, pageAccessToken, or platform' });
-    }
-    try {
-        let url;
-        const isInstagram = platform === 'Instagram';
+    const { postId } = req.params;
+    const { pageAccessToken } = req.query;
 
-        if (isInstagram) {
-            // Use fields compatible with Instagram Graph API
-            url = `https://graph.facebook.com/v23.0/${postId}/comments?fields=id,text,timestamp,from{id,username}&access_token=${pageAccessToken}`;
-        } else {
-            // Original fields for Facebook
-            url = `https://graph.facebook.com/v23.0/${postId}/comments?fields=id,message,from{id,name,picture},created_time&access_token=${pageAccessToken}`;
-        }
-        
+    if (!pageAccessToken) return res.status(400).json({ message: 'Missing pageAccessToken' });
+
+    try {
+        const fields = 'id,message,from{id,name,picture},created_time';
+        const url = `https://graph.facebook.com/v23.0/${postId}/comments?fields=${fields}&limit=100&access_token=${pageAccessToken}`;
         const response = await fetch(url);
-        if (!response.ok) { // Catch non-JSON responses
-            const text = await response.text();
-            throw new Error(`Graph API error: ${response.status} ${response.statusText} - ${text}`);
-        }
         const data = await response.json();
         if (data.error) throw new Error(data.error.message);
-        
-        let comments = data.data || [];
-
-        // If it's Instagram, transform the data to match the client's expected structure
-        if (isInstagram) {
-            comments = comments.map(comment => ({
-                id: comment.id,
-                message: comment.text,
-                created_time: comment.timestamp,
-                from: {
-                    id: comment.from.id,
-                    name: comment.from.username, // Use username for name
-                    picture: {
-                        data: {
-                            // Provide a placeholder since profile_pic is not available here
-                            url: `https://ui-avatars.com/api/?name=${encodeURIComponent(comment.from.username)}&background=random&color=fff`
-                        }
-                    }
-                }
-            }));
-        }
-
-        res.json(comments);
+        res.json(data.data || []);
     } catch (error) {
-        console.error(`[REAL COMMENTS] Failed to get comments for post ${postId} on ${platform}:`, error);
+        console.error(`Failed to get comments for post ${postId}:`, error);
         res.status(500).json({ message: `Failed to get comments: ${error.message}` });
     }
 });
 
-// POST Reply to Comment
 app.post('/api/comment/:commentId/reply', async (req, res) => {
     const { commentId } = req.params;
-    const { message, pageAccessToken, platform } = req.body;
-    if (!commentId || !message || !pageAccessToken || !platform) {
-        return res.status(400).json({ message: 'Missing commentId, message, pageAccessToken, or platform' });
-    }
+    const { message, pageAccessToken } = req.body;
+
+    if (!message || !pageAccessToken) return res.status(400).json({ message: 'Missing required parameters.' });
+
     try {
-        const isInstagram = platform === 'Instagram';
-
-        // Facebook uses /{comment-id}/comments
-        // Instagram uses /{ig-comment-id}/replies
-        const endpoint = isInstagram ? 'replies' : 'comments';
-        const url = `https://graph.facebook.com/v23.0/${commentId}/${endpoint}`;
-
-        const body = new URLSearchParams({
-            message,
+        const url = `https://graph.facebook.com/v23.0/${commentId}/replies`;
+        const params = new URLSearchParams({
+            message: message,
             access_token: pageAccessToken
         });
-
-        const response = await fetch(url, { method: 'POST', body });
+        const response = await fetch(url, { method: 'POST', body: params });
         const data = await response.json();
-
-        if (!response.ok || data.error) {
-            throw new Error(data?.error?.message || `Graph API error: Reply failed with status ${response.status}`);
-        }
-
-        console.log(`[REAL REPLY] Successfully posted comment reply to ${commentId} on ${platform}`);
+        if (data.error) throw new Error(data.error.message);
         res.json({ success: true, id: data.id });
     } catch (error) {
-        console.error(`[REAL REPLY] Failed to post reply to ${commentId} on ${platform}:`, error);
+        console.error(`Failed to reply to comment ${commentId}:`, error);
         res.status(500).json({ message: `Failed to reply: ${error.message}` });
     }
 });
@@ -1144,32 +1117,26 @@ app.post('/api/comment/:commentId/reply', async (req, res) => {
 app.post('/api/cloudinary-signature', (req, res) => {
     const apiSecret = process.env.CLOUDINARY_API_SECRET;
     if (!apiSecret) {
-        console.error("CLOUDINARY_API_SECRET not set on server.");
-        return res.status(500).json({ message: "Server is not configured for signing uploads." });
+        return res.status(500).json({ message: "Cloudinary API secret is not configured on the server." });
     }
-
     const timestamp = Math.round((new Date()).getTime() / 1000);
-    
-    // Define parameters to be signed on the server for security.
-    // Do not include upload_preset for signed uploads, as per Cloudinary best practices.
     const paramsToSign = {
+        folder: 'nadanaloga/uploads',
         timestamp: timestamp,
-        folder: 'nadanaloga/uploads'
     };
 
-    const sortedKeys = Object.keys(paramsToSign).sort();
-    
-    const stringToSign = sortedKeys
-        .map(key => `${key}=${paramsToSign[key]}`)
+    const paramsString = Object.entries(paramsToSign)
+        .sort(([keyA], [keyB]) => keyA.localeCompare(keyB))
+        .map(([key, value]) => `${key}=${value}`)
         .join('&');
-    
-    const signature = crypto.createHash('sha1').update(stringToSign + apiSecret).digest('hex');
+
+    const signature = crypto.createHash('sha1').update(paramsString + apiSecret).digest('hex');
 
     res.json({ timestamp, signature });
 });
 
 
-// Serve static files from the React app in production
+// --- Serve static files from React build in production ---
 if (process.env.NODE_ENV === 'production') {
     app.use(express.static(path.join(__dirname, 'dist')));
 
@@ -1179,5 +1146,5 @@ if (process.env.NODE_ENV === 'production') {
 }
 
 app.listen(port, () => {
-    console.log(`Server listening on port ${port}`);
+    console.log(`Server listening at http://localhost:${port}`);
 });

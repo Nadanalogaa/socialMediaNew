@@ -1,12 +1,9 @@
-
-
-
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import type { Post, ConnectionDetails, Platform as PlatformType } from '../types';
 import { Platform } from '../types';
 import { PostCard } from './PostCard';
 import { AnalyticsChart } from './AnalyticsChart';
-import { getPostInsights } from '../services/geminiService';
+import { getPostInsights, fetchPlatformPosts } from '../services/geminiService';
 import { TrashIcon } from './icons/TrashIcon';
 import { FacebookIcon } from './icons/FacebookIcon';
 import { InstagramIcon } from './icons/InstagramIcon';
@@ -31,240 +28,243 @@ const LoadingSpinner: React.FC = () => (
 );
 
 export const DashboardView: React.FC<DashboardViewProps> = ({ posts, connectionDetails, onDeletePost, onDeletePosts, onUpdatePost, onEditPost, onError }) => {
-  const [platformFilter, setPlatformFilter] = useState<PlatformType | 'All'>('All');
-  const [selectedPosts, setSelectedPosts] = useState<Set<string>>(new Set());
-  const [deletingPosts, setDeletingPosts] = useState<Set<string>>(new Set());
-  const [isBulkDeleting, setIsBulkDeleting] = useState(false);
+    const [allPosts, setAllPosts] = useState<Post[]>([]);
+    const [selectedPosts, setSelectedPosts] = useState<Set<string>>(new Set());
+    const [isDeleting, setIsDeleting] = useState<Set<string>>(new Set());
+    const [activeFilter, setActiveFilter] = useState<PlatformType | 'All'>('All');
+    const [isLoading, setIsLoading] = useState(true);
+    const [hasMore, setHasMore] = useState(true);
+    const [nextCursors, setNextCursors] = useState<{ facebook: string | null; instagram: string | null; } | null>(null);
 
-  const filteredPosts = posts.filter(post => {
-    if (platformFilter === 'All') return true;
-    return post.platforms.includes(platformFilter);
-  });
-  
-  const totalLikes = filteredPosts.reduce((sum, post) => sum + (post.engagement?.total?.likes || 0), 0);
-  const totalComments = filteredPosts.reduce((sum, post) => sum + (post.engagement?.total?.comments || 0), 0);
-  const totalShares = filteredPosts.reduce((sum, post) => sum + (post.engagement?.total?.shares || 0), 0);
-  
-  const deletedPostsCount = posts.filter(p => p.status === 'deleted-on-platform').length;
+    const observer = useRef<IntersectionObserver>();
+    const lastPostElementRef = useCallback(node => {
+        if (isLoading) return;
+        if (observer.current) observer.current.disconnect();
+        observer.current = new IntersectionObserver(entries => {
+            if (entries[0].isIntersecting && hasMore) {
+                loadMorePosts();
+            }
+        });
+        if (node) observer.current.observe(node);
+    }, [isLoading, hasMore, loadMorePosts]);
 
-  const handleSelectPost = (postId: string) => {
-    setSelectedPosts(prev => {
-        const newSet = new Set(prev);
-        if (newSet.has(postId)) {
-            newSet.delete(postId);
+    useEffect(() => {
+        // This effect runs once to perform the initial fetch.
+        const isConnected = !!connectionDetails.facebook;
+        if (isConnected) {
+            setAllPosts([]); // Clear previous posts when connection is established
+            setIsLoading(true);
+            setNextCursors(null);
+            fetchPlatformPosts(10, null, connectionDetails)
+                .then(response => {
+                    // Combine fetched posts with local posts from props.
+                    const uniquePosts = new Map<string, Post>();
+                    posts.forEach(p => uniquePosts.set(p.id, p));
+                    response.posts.forEach(p => uniquePosts.set(p.id, p));
+                    const combined = Array.from(uniquePosts.values()).sort((a, b) => new Date(b.postedAt).getTime() - new Date(a.postedAt).getTime());
+                    setAllPosts(combined);
+                    setNextCursors(response.nextCursors);
+                    setHasMore(!!(response.nextCursors?.facebook || response.nextCursors?.instagram));
+                })
+                .catch(err => {
+                    const message = err instanceof Error ? err.message : String(err);
+                    onError(`Failed to fetch initial posts: ${message}`);
+                    setAllPosts(posts); // Fallback to local posts
+                })
+                .finally(() => setIsLoading(false));
         } else {
-            newSet.add(postId);
+            // Not connected, just show local posts.
+            setAllPosts(posts.sort((a, b) => new Date(b.postedAt).getTime() - new Date(a.postedAt).getTime()));
+            setIsLoading(false);
+            setHasMore(false);
         }
-        return newSet;
-    });
-  };
+    }, [connectionDetails.facebook?.pageId]); // Re-fetch only when connection details *actually* change
 
-  const handleSelectAll = () => {
-    if (selectedPosts.size === filteredPosts.length) {
-        setSelectedPosts(new Set());
-    } else {
-        setSelectedPosts(new Set(filteredPosts.map(p => p.id)));
-    }
-  };
-  
-  const handleDeleteSelected = async () => {
-    onError(null);
-    setIsBulkDeleting(true);
-    try {
-        await onDeletePosts(Array.from(selectedPosts));
-        setSelectedPosts(new Set());
-    } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        onError(message);
-    } finally {
-        setIsBulkDeleting(false);
-    }
-  };
-  
-  const handleClearDeleted = () => {
-    const idsToClear = posts
-        .filter(p => p.status === 'deleted-on-platform')
-        .map(p => p.id);
-    if (idsToClear.length > 0) {
-        onDeletePosts(idsToClear);
-    }
-  };
+    useEffect(() => {
+        // This effect syncs changes from the `posts` prop (e.g., new local posts, or updates) into `allPosts`.
+        const postMap = new Map(allPosts.map(p => [p.id, p]));
+        let hasChanges = false;
 
-  const handleDeletePost = async (postId: string) => {
-      setDeletingPosts(prev => new Set(prev).add(postId));
-      onError(null);
-      try {
-          await onDeletePost(postId);
-          // PostCard will be unmounted, no need to clear state here
-      } catch (err) {
-          const message = err instanceof Error ? err.message : String(err);
-          onError(message);
-          // If deletion failed, remove loading state from the specific post
-          setDeletingPosts(prev => {
-              const newSet = new Set(prev);
-              newSet.delete(postId);
-              return newSet;
-          });
-      }
-  };
-  
-  const handleRefreshInsights = async (postId: string) => {
-    if (!connectionDetails?.facebook?.pageAccessToken) {
-        onError("Cannot refresh insights: Facebook not connected or token missing.");
-        throw new Error("Facebook connection details not found.");
-    }
-    const postToRefresh = posts.find(p => p.id === postId);
-    if (!postToRefresh) {
-        const errorMessage = `Could not find post with ID ${postId} to refresh its insights.`;
-        console.error(errorMessage);
-        onError(errorMessage);
-        throw new Error(errorMessage);
-    }
+        posts.forEach(p => {
+            const existing = postMap.get(p.id);
+            if (!existing || JSON.stringify(existing) !== JSON.stringify(p)) {
+                postMap.set(p.id, p);
+                hasChanges = true;
+            }
+        });
+
+        const propPostIds = new Set(posts.map(p => p.id));
+        allPosts.forEach(p => {
+            if (!propPostIds.has(p.id)) {
+                postMap.delete(p.id);
+                hasChanges = true;
+            }
+        });
+        
+        if (hasChanges) {
+            const combined = Array.from(postMap.values()).sort((a, b) => new Date(b.postedAt).getTime() - new Date(a.postedAt).getTime());
+            setAllPosts(combined);
+        }
+    }, [posts]);
+
+
+    const loadMorePosts = useCallback(() => {
+        if (!hasMore || isLoading || !connectionDetails.facebook) return;
+        setIsLoading(true);
+        fetchPlatformPosts(10, nextCursors, connectionDetails)
+            .then(response => {
+                setAllPosts(prev => {
+                    const postMap = new Map(prev.map(p => [p.id, p]));
+                    response.posts.forEach(p => postMap.set(p.id, p));
+                    return Array.from(postMap.values()).sort((a, b) => new Date(b.postedAt).getTime() - new Date(a.postedAt).getTime());
+                });
+                setNextCursors(response.nextCursors);
+                setHasMore(!!(response.nextCursors?.facebook || response.nextCursors?.instagram));
+            })
+            .catch(err => {
+                const message = err instanceof Error ? err.message : String(err);
+                onError(`Failed to load more posts: ${message}`);
+                setHasMore(false); // Stop trying if there's an error
+            })
+            .finally(() => setIsLoading(false));
+    }, [hasMore, isLoading, nextCursors, connectionDetails, onError]);
+
+    const handleSelectPost = (postId: string) => {
+        setSelectedPosts(prev => {
+            const newSet = new Set(prev);
+            if (newSet.has(postId)) newSet.delete(postId);
+            else newSet.add(postId);
+            return newSet;
+        });
+    };
+
+    const handleBulkDelete = async () => {
+        const idsToDelete = Array.from(selectedPosts);
+        if (idsToDelete.length === 0) return;
+        if (window.confirm(`Are you sure you want to delete ${idsToDelete.length} selected post(s)? This action might be irreversible.`)) {
+            setIsDeleting(new Set(idsToDelete));
+            await onDeletePosts(idsToDelete);
+            setSelectedPosts(new Set());
+            setIsDeleting(new Set());
+        }
+    };
+
+    const handleDelete = async (postId: string) => {
+        setIsDeleting(new Set([postId]));
+        await onDeletePost(postId);
+        // State update will be handled by the useEffect watching `posts` prop
+        setIsDeleting(new Set());
+    };
     
-    onError(null);
-    try {
-        const result = await getPostInsights(
-            postToRefresh.platformPostIds?.Facebook, 
-            postToRefresh.platformPostIds?.Instagram, 
-            connectionDetails.facebook.pageAccessToken
-        );
-
-        if (result.status === 'deleted') {
-            onUpdatePost(postId, { status: 'deleted-on-platform' });
-        } else {
-            onUpdatePost(postId, {
-                engagement: result.engagement,
-                platforms: result.activePlatforms,
-                status: 'active', // Ensure status is active if it wasn't
-            });
+    const handleRefreshInsights = useCallback(async (postId: string) => {
+        const post = allPosts.find(p => p.id === postId);
+        if (!post || !connectionDetails.facebook?.pageAccessToken) return;
+        
+        try {
+            const result = await getPostInsights(post.platformPostIds?.Facebook, post.platformPostIds?.Instagram, connectionDetails.facebook.pageAccessToken);
+            const updates: Partial<Post> = { engagement: result.engagement };
+            if (result.status === 'deleted') {
+                updates.status = 'deleted-on-platform';
+            }
+            onUpdatePost(postId, updates);
+        } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            onError(message);
         }
+    }, [allPosts, connectionDetails, onUpdatePost, onError]);
 
-    } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        if (message.toLowerCase().includes('permission')) {
-            const userFriendlyMessage = `Could not get insights due to missing permissions.\n\nPlease go to the 'Connections' page, 'Disconnect' Facebook, and then 'Connect' again to grant the required permissions (e.g., 'pages_read_engagement').`;
-            onError(userFriendlyMessage);
-        } else {
-            console.error(`Failed to refresh insights for post ${postId}:`, message);
-            onError(`Failed to refresh insights for post ${postId}: ${message}`);
-        }
-        throw err; // Re-throw to be caught in PostCard
-    }
-  };
+    const filteredPosts = useMemo(() => {
+        if (activeFilter === 'All') return allPosts;
+        return allPosts.filter(p => p.platforms.includes(activeFilter));
+    }, [allPosts, activeFilter]);
 
-  const filterOptions: { value: PlatformType | 'All'; label: string; icon: React.ReactNode }[] = [
-    { value: 'All', label: 'All', icon: <AllPlatformsIcon className="w-5 h-5" /> },
-    { value: Platform.Facebook, label: 'Facebook', icon: <FacebookIcon className="w-5 h-5" /> },
-    { value: Platform.Instagram, label: 'Instagram', icon: <InstagramIcon className="w-5 h-5" /> },
-    { value: Platform.YouTube, label: 'YouTube', icon: <YoutubeIcon className="w-5 h-5" /> },
-  ];
+    const platformFilters: { name: PlatformType | 'All', icon: JSX.Element }[] = [
+        { name: 'All', icon: <AllPlatformsIcon className="w-5 h-5" /> },
+        { name: Platform.Facebook, icon: <FacebookIcon className="w-5 h-5" /> },
+        { name: Platform.Instagram, icon: <InstagramIcon className="w-5 h-5" /> },
+        { name: Platform.YouTube, icon: <YoutubeIcon className="w-5 h-5" /> },
+    ];
 
-  return (
-    <div className="space-y-8 animate-fade-in">
-      <div>
-        <h1 className="text-3xl font-bold text-white">Dashboard</h1>
-        <p className="text-dark-text-secondary mt-1">
-          Welcome back! Here's a summary of your recent activity.
-        </p>
-      </div>
-
-      <div className="mb-6">
-        <div className="flex items-stretch space-x-2 rounded-lg bg-dark-card p-1 border border-dark-border overflow-x-auto">
-          {filterOptions.map(option => (
-            <button
-              key={option.value}
-              onClick={() => setPlatformFilter(option.value)}
-              className={`flex items-center gap-2 flex-shrink-0 px-4 py-2 text-sm font-medium rounded-md transition-colors ${platformFilter === option.value ? 'bg-brand-primary text-white' : 'text-dark-text-secondary hover:bg-dark-bg hover:text-dark-text'}`}
-              aria-label={`Filter by ${option.label}`}
-            >
-              {option.icon}
-              <span className="hidden sm:inline">{option.label}</span>
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <div className="bg-dark-card p-6 rounded-lg border border-dark-border">
-          <h3 className="text-dark-text-secondary text-sm font-medium">Total Likes</h3>
-          <p className="text-3xl font-bold text-white mt-1">{totalLikes}</p>
-        </div>
-        <div className="bg-dark-card p-6 rounded-lg border border-dark-border">
-          <h3 className="text-dark-text-secondary text-sm font-medium">Total Comments</h3>
-          <p className="text-3xl font-bold text-white mt-1">{totalComments}</p>
-        </div>
-        <div className="bg-dark-card p-6 rounded-lg border border-dark-border">
-          <h3 className="text-dark-text-secondary text-sm font-medium">Total Shares</h3>
-          <p className="text-3xl font-bold text-white mt-1">{totalShares}</p>
-        </div>
-      </div>
-
-      <div className="bg-dark-card p-6 rounded-lg border border-dark-border">
-         <h2 className="text-xl font-bold text-white mb-4">Engagement Over Time</h2>
-         <AnalyticsChart posts={filteredPosts} />
-      </div>
-
-      <div>
-        <div className="flex justify-between items-center mb-4">
-          <h2 className="text-2xl font-bold text-white">Post History</h2>
-           {deletedPostsCount > 0 && (
-              <button
-                  onClick={handleClearDeleted}
-                  className="flex items-center gap-2 px-3 py-1.5 border border-yellow-500/50 text-yellow-400 bg-yellow-500/10 hover:bg-yellow-500/20 rounded-md text-sm font-medium transition-colors"
-                  aria-label={`Clear ${deletedPostsCount} deleted posts from the dashboard`}
-              >
-                  <TrashIcon className="w-4 h-4" />
-                  <span>Clear {deletedPostsCount} Deleted Post{deletedPostsCount > 1 ? 's' : ''}</span>
-              </button>
-            )}
-        </div>
-        {filteredPosts.length > 0 && (
-             <div className="bg-dark-card p-3 rounded-lg border border-dark-border mb-4 flex items-center justify-between sticky top-4 z-10 backdrop-blur-sm bg-opacity-80">
-                <div className="flex items-center gap-4">
-                    <input
-                        id="select-all"
-                        type="checkbox"
-                        className="h-5 w-5 rounded bg-dark-bg border-dark-border text-brand-primary focus:ring-brand-primary"
-                        checked={filteredPosts.length > 0 && selectedPosts.size === filteredPosts.length}
-                        onChange={handleSelectAll}
-                        aria-label="Select all posts"
-                    />
-                    <label htmlFor="select-all" className="text-sm font-medium text-dark-text whitespace-nowrap">
-                       {selectedPosts.size > 0 ? `${selectedPosts.size} selected` : "Select All"}
-                    </label>
+    return (
+        <div className="space-y-6 animate-fade-in">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                <div>
+                    <h1 className="text-3xl font-bold text-white">Dashboard</h1>
+                    <p className="text-dark-text-secondary mt-1">Overview of your social media performance.</p>
                 </div>
                 {selectedPosts.size > 0 && (
-                    <button 
-                      onClick={handleDeleteSelected} 
-                      disabled={isBulkDeleting}
-                      className="flex items-center justify-center gap-2 px-3 py-1.5 border border-red-500/50 text-red-400 bg-red-500/10 hover:bg-red-500/20 rounded-md text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-wait"
+                     <button
+                        onClick={handleBulkDelete}
+                        className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg shadow-md transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                        disabled={isDeleting.size > 0}
                     >
-                        {isBulkDeleting ? <LoadingSpinner /> : <TrashIcon className="w-4 h-4" />}
-                        {isBulkDeleting ? 'Deleting...' : 'Delete Selected'}
+                        <TrashIcon className="w-5 h-5" />
+                        <span>Delete ({selectedPosts.size})</span>
                     </button>
                 )}
             </div>
-        )}
-        <div className="space-y-4">
-          {filteredPosts.length > 0 ? (
-            filteredPosts.map(post => 
-                <PostCard 
-                    key={post.id} 
-                    post={post}
-                    isSelected={selectedPosts.has(post.id)}
-                    connectionDetails={connectionDetails}
-                    onSelect={handleSelectPost}
-                    onDelete={handleDeletePost}
-                    onEdit={onEditPost}
-                    onRefreshInsights={handleRefreshInsights}
-                    isDeleting={deletingPosts.has(post.id)}
-                />
-            )
-          ) : (
-            <p className="text-dark-text-secondary text-center py-8">No posts found for this filter. Create one to get started!</p>
-          )}
+
+            <div className="bg-dark-card p-4 sm:p-6 rounded-lg border border-dark-border">
+                <h2 className="text-xl font-bold text-white mb-4">Engagement Analytics</h2>
+                {allPosts.length > 0 ? (
+                    <AnalyticsChart posts={allPosts} />
+                ) : (
+                    <p className="text-dark-text-secondary text-center py-10">No post data to display.</p>
+                )}
+            </div>
+            
+            <div className="space-y-4">
+                <div className="flex items-center justify-between">
+                    <h2 className="text-xl font-bold text-white">Recent Posts</h2>
+                    <div className="flex items-center p-1 bg-dark-card rounded-lg border border-dark-border">
+                        {platformFilters.map(filter => (
+                            <button
+                                key={filter.name}
+                                onClick={() => setActiveFilter(filter.name)}
+                                className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${activeFilter === filter.name ? 'bg-brand-primary text-white' : 'text-dark-text-secondary hover:bg-dark-bg'}`}
+                                aria-label={`Filter by ${filter.name}`}
+                            >
+                                {filter.icon}
+                            </button>
+                        ))}
+                    </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+                    {filteredPosts.map((post, index) => (
+                         <div key={post.id} ref={filteredPosts.length === index + 1 ? lastPostElementRef : null}>
+                            <PostCard 
+                                post={post}
+                                isSelected={selectedPosts.has(post.id)}
+                                connectionDetails={connectionDetails}
+                                isDeleting={isDeleting.has(post.id)}
+                                onSelect={handleSelectPost}
+                                onDelete={handleDelete}
+                                onEdit={onEditPost}
+                                onRefreshInsights={handleRefreshInsights}
+                            />
+                        </div>
+                    ))}
+                </div>
+
+                {isLoading && (
+                    <div className="flex justify-center items-center p-8">
+                        <LoadingSpinner />
+                        <p className="ml-4 text-dark-text-secondary">Loading posts...</p>
+                    </div>
+                )}
+                 {!isLoading && !hasMore && connectionDetails.facebook && (
+                    <p className="text-center text-dark-text-secondary py-8">You've reached the end of your posts.</p>
+                )}
+                 {!isLoading && filteredPosts.length === 0 && (
+                     <div className="text-center py-16 bg-dark-card rounded-lg border border-dark-border">
+                        <p className="text-dark-text-secondary">No posts found.</p>
+                        <p className="text-xs text-dark-text-secondary mt-1">
+                            {connectionDetails.facebook ? "Try a different filter or create a new post." : "Connect a social media account to see your posts."}
+                        </p>
+                    </div>
+                 )}
+            </div>
         </div>
-      </div>
-    </div>
-  );
+    );
 };
