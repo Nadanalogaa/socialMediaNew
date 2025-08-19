@@ -115,6 +115,7 @@ export interface MediaAsset {
   status: 'idle' | 'generating' | 'publishing' | 'error' | 'published' | 'compressing' | 'uploading' | 'thumbnailing';
   errorMessage?: string;
   mediaType: 'IMAGE' | 'VIDEO';
+  uploadProgress?: number;
 }
 
 export interface FacebookUser {

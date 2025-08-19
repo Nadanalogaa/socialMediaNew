@@ -215,43 +215,79 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
         }));
     }, []);
 
-     const handleCloudinaryUpload = async (assetId: string, file: File) => {
+    const handleChunkedUpload = async (assetId: string, file: File) => {
         const cloudName = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
         const uploadPreset = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET;
+        const CHUNK_SIZE = 20 * 1024 * 1024; // 20 MB chunks
 
         if (!cloudName || !uploadPreset) {
             const errorMessage = "Cloudinary is not configured. Please set VITE_CLOUDINARY_CLOUD_NAME and VITE_CLOUDINARY_UPLOAD_PRESET in your environment variables.";
             console.error(errorMessage);
-            updateAsset(assetId, { status: 'error', errorMessage });
+            updateAsset(assetId, { status: 'error', errorMessage, uploadProgress: undefined });
             return;
         }
 
+        const uniqueUploadId = `uqid-${Date.now()}`;
         const url = `https://api.cloudinary.com/v1_1/${cloudName}/video/upload`;
-        const formData = new FormData();
-        formData.append('file', file);
-        formData.append('upload_preset', uploadPreset);
+        const totalChunks = Math.ceil(file.size / CHUNK_SIZE);
 
-        try {
-            const response = await fetch(url, {
-                method: 'POST',
-                body: formData,
-            });
+        updateAsset(assetId, { status: 'uploading', uploadProgress: 0, errorMessage: 'Starting upload...'});
 
-            if (!response.ok) {
-                const errorData = await response.json();
-                throw new Error(errorData.error.message || 'Cloudinary upload failed.');
+        for (let i = 0; i < totalChunks; i++) {
+            const start = i * CHUNK_SIZE;
+            const end = Math.min(start + CHUNK_SIZE, file.size);
+            const chunk = file.slice(start, end);
+
+            const formData = new FormData();
+            formData.append('file', chunk);
+            formData.append('upload_preset', uploadPreset);
+            // On the final chunk, we add the transformation request.
+            if (i === totalChunks - 1) {
+                // Eager transformation to compress and resize the video on Cloudinary's side.
+                // 720p, 4Mbit bitrate, auto quality, auto codec.
+                formData.append('eager', 'w_1280,h_720,c_limit,br_4m,q_auto:good,vc_auto');
+                formData.append('eager_async', 'true');
             }
 
-            const data = await response.json();
-            updateAsset(assetId, {
-                videoUrl: data.secure_url,
-                status: 'idle',
-                errorMessage: undefined,
-            });
+            try {
+                const response = await fetch(url, {
+                    method: 'POST',
+                    body: formData,
+                    headers: {
+                        'X-Unique-Upload-Id': uniqueUploadId,
+                        'Content-Range': `bytes ${start}-${end - 1}/${file.size}`,
+                    },
+                });
 
-        } catch (error) {
-            const message = error instanceof Error ? error.message : "An unknown error occurred during upload.";
-            updateAsset(assetId, { status: 'error', errorMessage: `Upload failed: ${message}` });
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error.message || `Chunk upload failed with status ${response.status}.`);
+                }
+
+                const progress = Math.round(((i + 1) / totalChunks) * 100);
+                updateAsset(assetId, { uploadProgress: progress, errorMessage: `Uploading... ${progress}%` });
+
+                if (i === totalChunks - 1) { // Last chunk was successful
+                    const data = await response.json();
+                    updateAsset(assetId, {
+                        videoUrl: data.secure_url,
+                        status: 'idle',
+                        errorMessage: 'Upload complete! Transformation processing.',
+                        uploadProgress: 100,
+                    });
+                    // Clear the 'processing' message after a few seconds
+                    setTimeout(() => {
+                        setAssets(curr => curr.map(a => 
+                            a.id === assetId && a.errorMessage?.includes('Transformation') ? { ...a, errorMessage: undefined } : a
+                        ))
+                    }, 5000);
+                }
+
+            } catch (error) {
+                const message = error instanceof Error ? error.message : "An unknown error occurred during upload.";
+                updateAsset(assetId, { status: 'error', errorMessage: `Upload failed: ${message}`, uploadProgress: undefined });
+                return; // Stop upload on error
+            }
         }
     };
 
@@ -260,7 +296,7 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
         if (!files || files.length === 0) return;
 
         const MAX_IMAGE_SIZE_MB = 10;
-        const MAX_VIDEO_SIZE_MB = 100;
+        const MAX_VIDEO_SIZE_MB = 1024; // 1 GB
         
         const processFile = async (originalFile: File, existingAssetId?: string) => {
             const assetId = existingAssetId || `asset_${Date.now()}_${Math.random()}`;
@@ -293,7 +329,7 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
                     mediaType,
                     file: undefined,
                     status: 'uploading',
-                    errorMessage: 'Uploading video to cloud...'
+                    errorMessage: 'Preparing to upload video...'
                 };
                  if (existingAssetId) {
                     updateAsset(existingAssetId, initialState);
@@ -306,7 +342,7 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
                     } as MediaAsset, ...prev]);
                 }
                 // Upload in the background
-                handleCloudinaryUpload(assetIdToUpdate, originalFile);
+                handleChunkedUpload(assetIdToUpdate, originalFile);
             } else { // Is an image
                  const imagePreviewUrl = URL.createObjectURL(originalFile);
                  const initialState: Partial<MediaAsset> = {
@@ -599,7 +635,7 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
                 >
                     <svg className="mx-auto h-12 w-12 text-dark-text-secondary" stroke="currentColor" fill="none" viewBox="0 0 48 48" aria-hidden="true"><path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" /></svg>
                     <span className="mt-2 block text-sm font-semibold text-white">Upload Images or Videos</span>
-                    <span className="block text-xs text-dark-text-secondary">Images (max 10MB), Videos (max 100MB). Files are optimized before upload.</span>
+                    <span className="block text-xs text-dark-text-secondary">Images (max 10MB), Videos (max 1GB). Files are optimized before upload.</span>
                     <input ref={fileInputRef} type="file" multiple={!assetForMediaUpload} onChange={handleFileChange} className="sr-only" accept="image/*,video/*" />
                 </div>
 
@@ -647,16 +683,27 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
                      )}
                      {selectedAssets.has(asset.id) && <div className="absolute inset-0 bg-brand-primary/10 rounded-lg pointer-events-none"></div>}
 
-                    {(asset.status === 'compressing' || asset.status === 'generating' || asset.status === 'uploading' || asset.status === 'thumbnailing') && (
+                    {(asset.status === 'compressing' || asset.status === 'generating' || asset.status === 'thumbnailing' || asset.status === 'uploading') && (
                         <div className="absolute inset-0 bg-dark-card/80 backdrop-blur-sm flex flex-col items-center justify-center z-20 rounded-lg">
                             <LoadingSpinner size="h-10 w-10" />
-                            <p className="mt-4 text-white font-semibold">
-                                {asset.status === 'compressing' ? 'Processing media...' : 
-                                 asset.status === 'uploading' ? 'Uploading to cloud...' :
-                                 asset.status === 'thumbnailing' ? 'Generating thumbnail...' :
-                                 'Generating content...'}
-                            </p>
-                            <p className="text-sm text-dark-text-secondary">This may take a moment.</p>
+                            {asset.status === 'uploading' && asset.uploadProgress !== undefined ? (
+                                <>
+                                    <p className="mt-4 text-white font-semibold">Uploading Video...</p>
+                                    <div className="w-4/5 bg-dark-bg rounded-full h-2.5 mt-2">
+                                        <div className="bg-brand-primary h-2.5 rounded-full" style={{ width: `${asset.uploadProgress}%` }}></div>
+                                    </div>
+                                    <p className="text-sm text-dark-text-secondary mt-1">{asset.uploadProgress}% complete</p>
+                                </>
+                            ) : (
+                                <>
+                                    <p className="mt-4 text-white font-semibold">
+                                        {asset.status === 'compressing' ? 'Processing media...' : 
+                                         asset.status === 'thumbnailing' ? 'Generating thumbnail...' :
+                                         'Generating content...'}
+                                    </p>
+                                    <p className="text-sm text-dark-text-secondary">This may take a moment.</p>
+                                </>
+                            )}
                         </div>
                     )}
 
@@ -695,7 +742,7 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
                                  </div>
                                  <div>
                                     <label className="text-xs font-bold text-dark-text-secondary">Hashtags</label>
-                                    <input type="text" value={asset.hashtags.join(' ')} onChange={(e) => updateAsset(asset.id, { hashtags: e.target.value.split(' ').map(h => h.replace('#', '')) })} className="w-full mt-1 bg-dark-bg border border-dark-border rounded-md p-2 text-sm" placeholder="dance art inspiration"/>
+                                    <input type="text" value={(asset.hashtags || []).join(' ')} onChange={(e) => updateAsset(asset.id, { hashtags: e.target.value.split(' ').map(h => h.replace('#', '')) })} className="w-full mt-1 bg-dark-bg border border-dark-border rounded-md p-2 text-sm" placeholder="dance art inspiration"/>
                                 </div>
                             </div>
                         </div>
