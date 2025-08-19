@@ -169,12 +169,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ posts, connectionD
       </div>
 
       <div className="mb-6">
-        <div className="flex items-center space-x-2 rounded-lg bg-dark-card p-1 border border-dark-border w-full md:w-auto">
+        <div className="flex items-stretch space-x-2 rounded-lg bg-dark-card p-1 border border-dark-border overflow-x-auto">
           {filterOptions.map(option => (
             <button
               key={option.value}
               onClick={() => setPlatformFilter(option.value)}
-              className={`flex items-center gap-2 w-full justify-center px-4 py-2 text-sm font-medium rounded-md transition-colors ${platformFilter === option.value ? 'bg-brand-primary text-white' : 'text-dark-text-secondary hover:bg-dark-bg hover:text-dark-text'}`}
+              className={`flex items-center gap-2 flex-shrink-0 px-4 py-2 text-sm font-medium rounded-md transition-colors ${platformFilter === option.value ? 'bg-brand-primary text-white' : 'text-dark-text-secondary hover:bg-dark-bg hover:text-dark-text'}`}
               aria-label={`Filter by ${option.label}`}
             >
               {option.icon}

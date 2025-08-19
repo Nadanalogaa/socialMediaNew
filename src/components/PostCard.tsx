@@ -1,6 +1,6 @@
 /// <reference lib="dom" />
 
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import type { Post, ConnectionDetails, Comment, FacebookUser } from '../types';
 import { Platform as PlatformEnum, type Platform } from '../types';
 import { FacebookIcon } from './icons/FacebookIcon';
@@ -9,6 +9,7 @@ import { YoutubeIcon } from './icons/YoutubeIcon';
 import { EditIcon } from './icons/EditIcon';
 import { TrashIcon } from './icons/TrashIcon';
 import { RefreshIcon } from './icons/RefreshIcon';
+import { DotsVerticalIcon } from './icons/DotsVerticalIcon';
 import { timeAgo } from '../utils/time';
 import { getComments, getLikes, replyToComment } from '../services/geminiService';
 
@@ -206,9 +207,20 @@ const PlatformIcons: React.FC<{ platforms: Platform[] }> = ({ platforms }) => (
 export const PostCard: React.FC<PostCardProps> = ({ post, isSelected, connectionDetails, isDeleting, onSelect, onDelete, onEdit, onRefreshInsights }) => {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [modalConfig, setModalConfig] = useState<{type: 'likes' | 'comments', platform: Platform} | null>(null);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
   const isFacebookConnected = !!connectionDetails.facebook;
   const isDeletedOnPlatform = post.status === 'deleted-on-platform';
 
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+        if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+            setIsMenuOpen(false);
+        }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [menuRef]);
 
   const handleDeleteClick = async () => {
     // If it's already marked as deleted, just remove it from the dashboard without platform deletion logic.
@@ -313,6 +325,35 @@ export const PostCard: React.FC<PostCardProps> = ({ post, isSelected, connection
     );
   }
 
+  const ActionsMenu = () => (
+     <div className="relative" ref={menuRef}>
+        <button
+            onClick={() => setIsMenuOpen(prev => !prev)}
+            className="p-1.5 rounded-full text-dark-text-secondary hover:bg-dark-bg hover:text-dark-text transition-colors"
+            aria-label="Post options"
+        >
+            <DotsVerticalIcon className="w-5 h-5" />
+        </button>
+        {isMenuOpen && (
+            <div className="absolute right-0 mt-2 w-48 bg-dark-card border border-dark-border rounded-md shadow-lg z-10 animate-fade-in">
+                <button
+                    onClick={() => { onEdit(post); setIsMenuOpen(false); }}
+                    disabled={isDeletedOnPlatform}
+                    className="w-full text-left flex items-center gap-2 px-4 py-2 text-sm text-dark-text hover:bg-dark-bg disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                    <EditIcon className="w-4 h-4" /> Use as Template
+                </button>
+                <button
+                    onClick={() => { handleDeleteClick(); setIsMenuOpen(false); }}
+                    className="w-full text-left flex items-center gap-2 px-4 py-2 text-sm text-red-400 hover:bg-dark-bg"
+                >
+                    <TrashIcon className="w-4 h-4" /> {isDeletedOnPlatform ? "Remove" : "Delete"}
+                </button>
+            </div>
+        )}
+    </div>
+  );
+
   return (
     <div className={`relative bg-dark-card border rounded-lg overflow-hidden transition-all duration-300 ${isSelected ? 'border-brand-primary' : 'border-dark-border'} ${isDeletedOnPlatform ? 'opacity-60' : ''}`}>
        {isDeletedOnPlatform && (
@@ -324,91 +365,78 @@ export const PostCard: React.FC<PostCardProps> = ({ post, isSelected, connection
                 <p className="text-sm text-dark-text-secondary">This post could not be found online. You can remove it from your dashboard.</p>
             </div>
         )}
-      <div className="relative flex items-stretch">
-        {isDeleting && (
+      {isDeleting && (
           <div className="absolute inset-0 bg-dark-card/80 backdrop-blur-sm flex flex-col items-center justify-center z-30 rounded-lg animate-fade-in">
               <LoadingSpinner />
               <p className="mt-4 text-white font-semibold">Deleting post...</p>
           </div>
         )}
-        <div className="pl-3 pr-2 py-3 flex items-start justify-center bg-dark-card">
-          <input
+
+      <div className="flex flex-col sm:flex-row">
+        <div className="flex-shrink-0 p-3 flex items-start sm:items-center">
+             <input
               type="checkbox"
-              className="h-5 w-5 mt-1 rounded bg-dark-bg border-dark-border text-brand-primary focus:ring-brand-primary"
+              className="h-5 w-5 mt-1 sm:mt-0 rounded bg-dark-bg border-dark-border text-brand-primary focus:ring-brand-primary"
               checked={isSelected}
               onChange={() => onSelect(post.id)}
               aria-label={`Select post: ${post.prompt}`}
-          />
-        </div>
-        {displayImageUrl && (
-          <div className="w-24 sm:w-32 flex-shrink-0 relative">
-            <img
-              src={displayImageUrl}
-              alt="Post visual"
-              className="w-full h-full object-cover"
-              onError={(e) => {
-                  const target = e.target as HTMLImageElement;
-                  target.onerror = null; // Prevent infinite loop if placeholder fails
-                  target.src = 'https://placehold.co/800x600/1f2937/9ca3af?text=Media+Not+Found';
-              }}
             />
-            {post.mediaType === 'VIDEO' && (
-                <div className="absolute inset-0 flex items-center justify-center bg-black/30 pointer-events-none">
-                    <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-white/80" viewBox="0 0 20 20" fill="currentColor">
-                        <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
-                    </svg>
+        </div>
+
+        <div className="sm:flex-1 sm:flex sm:min-w-0">
+          {displayImageUrl && (
+            <div className="px-3 sm:px-0 sm:w-32 flex-shrink-0 relative">
+              <div className="w-full aspect-video sm:aspect-auto sm:h-full">
+                <img
+                  src={displayImageUrl}
+                  alt="Post visual"
+                  className="w-full h-full object-cover rounded-md sm:rounded-none"
+                  onError={(e) => {
+                      const target = e.target as HTMLImageElement;
+                      target.onerror = null; 
+                      target.src = 'https://placehold.co/800x600/1f2937/9ca3af?text=Media+Not+Found';
+                  }}
+                />
+                {post.mediaType === 'VIDEO' && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/30 pointer-events-none">
+                        <svg xmlns="http://www.w3.org/2000/svg" className="h-10 w-10 text-white/80" viewBox="0 0 20 20" fill="currentColor">
+                            <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
+                        </svg>
+                    </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          <div className="p-3 flex flex-col flex-grow min-w-0">
+            <div className="flex justify-between items-start mb-1">
+                <div>
+                     <PlatformIcons platforms={post.platforms} />
+                     <p className="text-xs text-dark-text-secondary mt-1">Posted to <span className="font-semibold text-dark-text">{post.audience}</span> {timeAgo(post.postedAt)}</p>
                 </div>
-            )}
-          </div>
-        )}
-        <div className={`p-3 flex flex-col flex-grow min-w-0`}>
-          <div className="flex justify-between items-start mb-1">
-              <div>
-                   <p className="text-xs text-dark-text-secondary">Posted to <span className="font-semibold text-dark-text">{post.audience}</span> {timeAgo(post.postedAt)}</p>
-              </div>
-              <div className="flex items-center gap-1">
-                  <PlatformIcons platforms={post.platforms} />
-                  <div className="flex items-center gap-0 border-l border-dark-border pl-2 ml-2">
-                      <button
-                          onClick={() => onEdit(post)}
-                          title="Use as Template"
-                          disabled={isDeletedOnPlatform}
-                          className="p-1.5 rounded-full text-dark-text-secondary hover:bg-dark-bg hover:text-dark-text transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                          aria-label="Use post as template"
-                      >
-                          <EditIcon className="w-4 h-4" />
-                      </button>
-                      <button
-                          onClick={handleDeleteClick}
-                          title={isDeletedOnPlatform ? "Remove from Dashboard" : "Delete Post"}
-                          className="p-1.5 rounded-full text-dark-text-secondary hover:bg-dark-bg hover:text-red-400 transition-colors"
-                          aria-label={isDeletedOnPlatform ? "Remove post from dashboard" : "Delete post"}
-                      >
-                          <TrashIcon className="w-4 h-4" />
-                      </button>
-                  </div>
-              </div>
-          </div>
-          
-          <p className="text-xs text-dark-text-secondary italic mb-2 truncate">Prompt: "{post.prompt}"</p>
+                <ActionsMenu />
+            </div>
+            
+            <p className="text-xs text-dark-text-secondary italic mb-2 truncate">Prompt: "{post.prompt}"</p>
 
-          <p className="text-dark-text text-sm mb-3 flex-grow">{mainContent}</p>
+            <p className="text-dark-text text-sm mb-3 flex-grow">{mainContent}</p>
 
-          <div className="mt-auto pt-2 border-t border-dark-border">
-              <div className="flex items-end justify-between">
-                <EngagementDisplay post={post} />
-                <div className="flex items-center">
-                    <button 
-                        onClick={handleRefresh} 
-                        disabled={isRefreshing || !isFacebookConnected || post.id.startsWith('post_') || isDeletedOnPlatform}
-                        title={isDeletedOnPlatform ? 'Post was deleted from the platform' : (post.id.startsWith('post_') ? 'Cannot refresh mock posts' : (!isFacebookConnected ? 'Connect Facebook to refresh insights' : 'Refresh insights'))}
-                        className="flex items-center gap-2 text-xs text-dark-text-secondary hover:text-dark-text disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                    >
-                        <RefreshIcon className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
-                        <span className="hidden sm:inline">{isRefreshing ? 'Refreshing...' : 'Refresh'}</span>
-                    </button>
-                 </div>
-              </div>
+            <div className="mt-auto pt-2 border-t border-dark-border">
+                <div className="flex items-end justify-between">
+                  <EngagementDisplay post={post} />
+                  <div className="flex items-center">
+                      <button 
+                          onClick={handleRefresh} 
+                          disabled={isRefreshing || !isFacebookConnected || post.id.startsWith('post_') || isDeletedOnPlatform}
+                          title={isDeletedOnPlatform ? 'Post was deleted from the platform' : (post.id.startsWith('post_') ? 'Cannot refresh mock posts' : (!isFacebookConnected ? 'Connect Facebook to refresh insights' : 'Refresh insights'))}
+                          className="flex items-center gap-2 text-xs text-dark-text-secondary hover:text-dark-text disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                      >
+                          <RefreshIcon className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+                          <span className="hidden sm:inline">{isRefreshing ? 'Refreshing...' : 'Refresh'}</span>
+                      </button>
+                   </div>
+                </div>
+            </div>
           </div>
         </div>
       </div>

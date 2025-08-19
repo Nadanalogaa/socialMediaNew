@@ -102,6 +102,7 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
     const [audience, setAudience] = useState<Audience>(AudienceEnum.Global);
     const fileInputRef = useRef<HTMLInputElement>(null);
     const [assetForMediaUpload, setAssetForMediaUpload] = useState<string | null>(null);
+    const [hashtagInputs, setHashtagInputs] = useState<Record<string, string>>({});
 
     const [selectedAssets, setSelectedAssets] = useState<Set<string>>(new Set());
     const [isBulkGenerating, setIsBulkGenerating] = useState(false);
@@ -704,6 +705,18 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
                 const hasMedia = (asset.mediaType === 'IMAGE' && (asset.file || asset.previewUrl?.startsWith('https'))) || (asset.mediaType === 'VIDEO' && asset.videoUrl);
                 const isPublishDisabled = isBusy || asset.status === 'error' || asset.platforms.length === 0 || !hasMedia;
 
+                const handleHashtagKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
+                    if (e.key === ' ' || e.key === 'Enter') {
+                        e.preventDefault();
+                        const newHashtag = (hashtagInputs[asset.id] || '').trim().replace('#', '');
+                        const currentHashtags = asset.hashtags || [];
+                        if (newHashtag && !currentHashtags.includes(newHashtag)) {
+                            updateAsset(asset.id, { hashtags: [...currentHashtags, newHashtag] });
+                        }
+                        setHashtagInputs(prev => ({ ...prev, [asset.id]: '' }));
+                    }
+                };
+
                 return (
                 <div key={asset.id} className={`relative bg-dark-card rounded-lg border flex flex-col transition-all duration-500 ${selectedAssets.has(asset.id) ? 'border-brand-primary ring-2 ring-brand-primary' : 'border-dark-border'} ${asset.status === 'published' ? 'opacity-50 scale-95' : ''}`}>
                      {asset.status !== 'published' && (
@@ -778,7 +791,24 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
                                  </div>
                                  <div>
                                     <label className="text-xs font-bold text-dark-text-secondary">Hashtags</label>
-                                    <input type="text" value={(asset.hashtags || []).join(' ')} onChange={(e) => updateAsset(asset.id, { hashtags: e.target.value.split(' ').map(h => h.replace('#', '')) })} className="w-full mt-1 bg-dark-bg border border-dark-border rounded-md p-2 text-sm" placeholder="dance art inspiration"/>
+                                    <div className="flex flex-wrap gap-2 p-2 mt-1 bg-dark-bg border border-dark-border rounded-md min-h-[40px]">
+                                        {(asset.hashtags || []).map(tag => (
+                                            <span key={tag} className="flex items-center gap-1 bg-brand-primary/20 text-brand-light text-xs px-2 py-1 rounded-full whitespace-nowrap">
+                                                #{tag}
+                                                <button onClick={() => updateAsset(asset.id, { hashtags: (asset.hashtags || []).filter(h => h !== tag) })} className="bg-red-500/50 hover:bg-red-500 rounded-full w-4 h-4 text-white text-xs flex items-center justify-center">
+                                                    &times;
+                                                </button>
+                                            </span>
+                                        ))}
+                                        <input
+                                            type="text"
+                                            value={hashtagInputs[asset.id] || ''}
+                                            onChange={(e) => setHashtagInputs(prev => ({...prev, [asset.id]: e.target.value}))}
+                                            onKeyDown={handleHashtagKeyDown}
+                                            className="flex-1 bg-transparent focus:outline-none p-1 text-sm min-w-[100px]"
+                                            placeholder="add tag..."
+                                        />
+                                    </div>
                                 </div>
                             </div>
                         </div>
