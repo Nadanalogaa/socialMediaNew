@@ -79,7 +79,9 @@ export const ConnectionsView: React.FC<ConnectionsViewProps> = ({ connections, s
     const popupRef = useRef<Window | null>(null);
     const intervalRef = useRef<number | null>(null);
 
-    const isCloudinaryConfigured = !!(import.meta.env.VITE_CLOUDINARY_CLOUD_NAME && import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET);
+    // const isCloudinaryConfigured = !!(import.meta.env.VITE_CLOUDINARY_CLOUD_NAME && import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET);
+    const isCloudinaryConfigured = !!(import.meta.env.VITE_CLOUDINARY_CLOUD_NAME && import.meta.env.VITE_CLOUDINARY_API_KEY);
+
 
     const handleAuthMessage = useCallback(async (event: MessageEvent) => {
         // Basic security check for mock flow
