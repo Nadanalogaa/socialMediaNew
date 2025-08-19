@@ -60,8 +60,9 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ posts, connectionD
     }, [hasMore, isLoading, nextCursors, connectionDetails, onError]);
 
     const lastPostElementRef = useCallback(node => {
-        if (isLoading) return;
         if (observer.current) observer.current.disconnect();
+        if (isLoading) return;
+
         observer.current = new IntersectionObserver(entries => {
             if (entries[0].isIntersecting && hasMore) {
                 loadMorePosts();
@@ -96,7 +97,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ posts, connectionD
                 .finally(() => setIsLoading(false));
         } else {
             // Not connected, just show local posts.
-            setAllPosts(posts.sort((a, b) => new Date(b.postedAt).getTime() - new Date(a.postedAt).getTime()));
+            setAllPosts([...posts].sort((a, b) => new Date(b.postedAt).getTime() - new Date(a.postedAt).getTime()));
             setIsLoading(false);
             setHasMore(false);
         }

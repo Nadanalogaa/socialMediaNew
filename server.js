@@ -1075,19 +1075,50 @@ app.get('/api/post/:postId/likes', async (req, res) => {
 
 app.get('/api/post/:postId/comments', async (req, res) => {
     const { postId } = req.params;
-    const { pageAccessToken } = req.query;
+    const { pageAccessToken, platform } = req.query;
 
     if (!pageAccessToken) return res.status(400).json({ message: 'Missing pageAccessToken' });
 
     try {
-        const fields = 'id,message,from{id,name,picture},created_time';
+        let fields;
+        if (platform === 'Instagram') {
+            // Instagram User object (from a comment) has 'id' and 'username', not 'name' or 'picture'.
+            fields = 'id,message,from{id,username},created_time';
+        } else {
+            // Default to Facebook fields
+            fields = 'id,message,from{id,name,picture},created_time';
+        }
+
         const url = `https://graph.facebook.com/v23.0/${postId}/comments?fields=${fields}&limit=100&access_token=${pageAccessToken}`;
         const response = await fetch(url);
         const data = await response.json();
-        if (data.error) throw new Error(data.error.message);
-        res.json(data.data || []);
+        
+        if (data.error) {
+             console.error(`Graph API error fetching comments for ${platform} post ${postId}:`, data.error);
+             throw new Error(data.error.message);
+        }
+
+        let comments = data.data || [];
+
+        // If it was an Instagram request, transform the response to match the client's expected `Comment` structure.
+        if (platform === 'Instagram') {
+            comments = comments.map(comment => ({
+                ...comment,
+                from: {
+                    id: comment.from.id,
+                    name: comment.from.username, // Map username to name
+                    picture: { // Add a placeholder picture
+                        data: {
+                            url: `https://ui-avatars.com/api/?name=${encodeURIComponent(comment.from.username)}&background=374151&color=e5e7eb&size=40`
+                        }
+                    }
+                }
+            }));
+        }
+
+        res.json(comments);
     } catch (error) {
-        console.error(`Failed to get comments for post ${postId}:`, error);
+        console.error(`Failed to get comments for post ${postId} (Platform: ${platform}):`, error);
         res.status(500).json({ message: `Failed to get comments: ${error.message}` });
     }
 });
