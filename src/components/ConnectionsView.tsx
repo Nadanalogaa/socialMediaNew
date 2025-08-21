@@ -177,10 +177,16 @@ export const ConnectionsView: React.FC<ConnectionsViewProps> = ({ connections, s
 
             const required_scope = 'public_profile,pages_show_list,pages_manage_posts,pages_read_engagement,instagram_basic,instagram_content_publish,read_insights,instagram_manage_comments';
             console.log(`Requesting Facebook permissions with scope: ${required_scope}`);
+            
+            // On smaller screens, use a full-page redirect which is more reliable on mobile browsers.
+            // The md breakpoint in Tailwind is 768px.
+            const isMobileView = window.innerWidth < 768;
 
             window.FB.login(loginCallback, {
                 scope: required_scope,
                 enable_profile_selector: true,
+                // Use 'page' for redirect-based auth on mobile, 'popup' for desktop.
+                display: isMobileView ? 'page' : 'popup',
             });
 
         } else {
