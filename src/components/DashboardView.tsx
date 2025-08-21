@@ -16,7 +16,6 @@ interface DashboardViewProps {
   onDeletePost: (postId: string) => Promise<void>;
   onDeletePosts: (postIds: string[]) => Promise<void>;
   onUpdatePost: (postId: string, updates: Partial<Post>) => void;
-  onEditPost: (post: Post) => void;
   onError: (message: string | null) => void;
 }
 
@@ -27,7 +26,7 @@ const LoadingSpinner: React.FC = () => (
     </svg>
 );
 
-export const DashboardView: React.FC<DashboardViewProps> = ({ posts, connectionDetails, onDeletePost, onDeletePosts, onUpdatePost, onEditPost, onError }) => {
+export const DashboardView: React.FC<DashboardViewProps> = ({ posts, connectionDetails, onDeletePost, onDeletePosts, onUpdatePost, onError }) => {
     const [allPosts, setAllPosts] = useState<Post[]>([]);
     const [selectedPosts, setSelectedPosts] = useState<Set<string>>(new Set());
     const [isDeleting, setIsDeleting] = useState<Set<string>>(new Set());
@@ -145,17 +144,33 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ posts, connectionD
         if (idsToDelete.length === 0) return;
         if (window.confirm(`Are you sure you want to delete ${idsToDelete.length} selected post(s)? This action might be irreversible.`)) {
             setIsDeleting(new Set(idsToDelete));
-            await onDeletePosts(idsToDelete);
-            setSelectedPosts(new Set());
-            setIsDeleting(new Set());
+            try {
+                await onDeletePosts(idsToDelete);
+                setSelectedPosts(new Set());
+            } catch (error) {
+                // Error is handled globally in App.tsx
+                console.error("Bulk delete failed:", error);
+            } finally {
+                setIsDeleting(new Set());
+            }
         }
     };
 
     const handleDelete = async (postId: string) => {
-        setIsDeleting(new Set([postId]));
-        await onDeletePost(postId);
-        // State update will be handled by the useEffect watching `posts` prop
-        setIsDeleting(new Set());
+        setIsDeleting(prev => new Set(prev).add(postId));
+        try {
+            await onDeletePost(postId);
+            // Successful deletion will trigger a state update via props, removing the post.
+        } catch (error) {
+            // Error is handled globally in App.tsx, the post remains in the UI.
+             console.error(`Failed to delete post ${postId}:`, error);
+        } finally {
+            setIsDeleting(prev => {
+                const newSet = new Set(prev);
+                newSet.delete(postId);
+                return newSet;
+            });
+        }
     };
     
     const handleRefreshInsights = useCallback(async (postId: string) => {
@@ -242,7 +257,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ posts, connectionD
                                 isDeleting={isDeleting.has(post.id)}
                                 onSelect={handleSelectPost}
                                 onDelete={handleDelete}
-                                onEdit={onEditPost}
                                 onRefreshInsights={handleRefreshInsights}
                             />
                         </div>

@@ -5,7 +5,6 @@ import type { Post, ConnectionDetails } from '../types';
 import { Platform as PlatformEnum, type Platform } from '../types';
 import { FacebookIcon } from './icons/FacebookIcon';
 import { InstagramIcon } from './icons/InstagramIcon';
-import { EditIcon } from './icons/EditIcon';
 import { TrashIcon } from './icons/TrashIcon';
 import { RefreshIcon } from './icons/RefreshIcon';
 import { DotsVerticalIcon } from './icons/DotsVerticalIcon';
@@ -22,7 +21,6 @@ interface PostCardProps {
   isDeleting: boolean;
   onSelect: (postId: string) => void;
   onDelete: (postId: string) => Promise<void>;
-  onEdit: (post: Post) => void;
   onRefreshInsights: (postId: string) => Promise<void>;
 }
 
@@ -33,7 +31,7 @@ const LoadingSpinner: React.FC<{ size?: string }> = ({ size = 'h-8 w-8' }) => (
     </svg>
 );
 
-const PostCardComponent = forwardRef<HTMLDivElement, PostCardProps>(({ post, isSelected, connectionDetails, isDeleting, onSelect, onDelete, onEdit, onRefreshInsights }, ref) => {
+const PostCardComponent = forwardRef<HTMLDivElement, PostCardProps>(({ post, isSelected, connectionDetails, isDeleting, onSelect, onDelete, onRefreshInsights }, ref) => {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [modalConfig, setModalConfig] = useState<{type: 'likes' | 'comments', platform: Platform} | null>(null);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -121,9 +119,6 @@ const PostCardComponent = forwardRef<HTMLDivElement, PostCardProps>(({ post, isS
           {isMenuOpen && (
               <div className="absolute right-0 mt-2 w-48 bg-dark-card border border-dark-border rounded-md shadow-lg z-10 animate-fade-in divide-y divide-dark-border">
                   <div className="py-1">
-                      <button onClick={() => { onEdit(post); setIsMenuOpen(false); }} disabled={isDeletedOnPlatform} className="w-full text-left flex items-center gap-2 px-4 py-2 text-sm text-dark-text hover:bg-dark-bg disabled:opacity-50 disabled:cursor-not-allowed">
-                          <EditIcon className="w-4 h-4" /> Edit Post
-                      </button>
                       <button onClick={() => { handleRefresh(); setIsMenuOpen(false); }} disabled={isRefreshing || !isFacebookConnected || isDeletedOnPlatform} className="w-full text-left flex items-center gap-2 px-4 py-2 text-sm text-dark-text hover:bg-dark-bg disabled:opacity-50 disabled:cursor-not-allowed">
                           <RefreshIcon className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} /> Refresh Insights
                       </button>
@@ -228,7 +223,7 @@ const PostCardComponent = forwardRef<HTMLDivElement, PostCardProps>(({ post, isS
                 <p className="font-semibold text-sm text-dark-text">{post.engagement.total.likes.toLocaleString()} likes</p>
             </div>
 
-            <div className="mt-2 text-sm text-dark-text cursor-pointer" onClick={() => onEdit(post)}>
+            <div className="mt-2 text-sm text-dark-text">
                 <p>
                     <span className="font-bold mr-1">{authorName}</span>
                     {displayedCaption}

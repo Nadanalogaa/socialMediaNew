@@ -93,6 +93,8 @@ const App: React.FC = () => {
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setGlobalError(message);
+      // Re-throw the error so the caller knows the operation failed.
+      throw err;
     }
   }, [posts, connectionDetails]);
 
@@ -156,6 +158,8 @@ const App: React.FC = () => {
     } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         setGlobalError(message);
+        // Re-throw the error so the caller knows the operation failed.
+        throw err;
     }
   }, [posts, connectionDetails]);
 
@@ -327,7 +331,6 @@ const App: React.FC = () => {
                     onDeletePost={deletePost}
                     onDeletePosts={deletePosts}
                     onUpdatePost={updatePost}
-                    onEditPost={(post) => navigateTo(View.CREATE_POST, post)}
                     onError={setGlobalError}
                 />;
     }
