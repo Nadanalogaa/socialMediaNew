@@ -1,6 +1,8 @@
 
 
 
+
+
 export enum Platform {
   Facebook = 'Facebook',
   Instagram = 'Instagram',
@@ -72,6 +74,7 @@ export interface SeoSuggestions {
 export interface ConnectionStatus {
     [Platform.Facebook]: boolean;
     [Platform.Instagram]: boolean;
+
     [Platform.YouTube]: boolean;
 }
 
@@ -147,6 +150,11 @@ export interface Comment {
 
 export interface SmartReplySuggestion {
     sentiment: 'positive' | 'neutral' | 'negative' | 'question';
+    suggestedReply: string;
+}
+
+export interface SmartBulkReply {
+    commentId: string;
     suggestedReply: string;
 }
 

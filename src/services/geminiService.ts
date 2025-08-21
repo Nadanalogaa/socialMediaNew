@@ -1,7 +1,9 @@
 
 
 
-import type { Platform, SeoSuggestions, Post, ConnectionStatus, GeneratedAssetContent, GeneratedPostIdea, ConnectionDetails, Comment, FacebookUser, PostInsightResponse, SmartReplySuggestion } from '../types';
+
+
+import type { Platform, SeoSuggestions, Post, ConnectionStatus, GeneratedAssetContent, GeneratedPostIdea, ConnectionDetails, Comment, FacebookUser, PostInsightResponse, SmartReplySuggestion, SmartBulkReply } from '../types';
 
 const handleResponse = async (response: Response) => {
     if (!response.ok) {
@@ -181,11 +183,11 @@ export const generateCommentReply = async (commentText: string): Promise<SmartRe
     return handleResponse(response);
 };
 
-export const generateBulkReply = async (commentTexts: string[]): Promise<{ suggestedReply: string }> => {
-    const response = await fetch('/api/generate-bulk-reply', {
+export const generateSmartBulkReplies = async (comments: {id: string; message: string}[]): Promise<SmartBulkReply[]> => {
+    const response = await fetch('/api/generate-smart-bulk-replies', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ commentTexts }),
+        body: JSON.stringify({ comments }),
     });
     return handleResponse(response);
 };

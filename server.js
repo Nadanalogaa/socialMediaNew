@@ -4,6 +4,8 @@
 
 
 
+
+
 import express from 'express';
 import 'dotenv/config';
 import { GoogleGenAI, Type } from '@google/genai';
@@ -158,16 +160,21 @@ const commentReplySchema = {
     }
 };
 
-const bulkReplySchema = {
-    type: Type.OBJECT,
-    properties: {
-        suggestedReply: {
-            type: Type.STRING,
-            description: "A single, concise, and friendly reply that can be used to respond to all provided user comments. It should be positive and generic enough to fit multiple contexts."
-        }
-    },
-    required: ["suggestedReply"]
+const smartBulkReplySchema = {
+    type: Type.ARRAY,
+    description: "An array of suggested replies, one for each of the user comments provided in the prompt. The order of replies must match the order of the input comments.",
+    items: {
+        type: Type.OBJECT,
+        properties: {
+            suggestedReply: {
+                type: Type.STRING,
+                description: "A unique, concise, and context-aware reply for a single user comment. It should be friendly and maintain the brand's voice."
+            }
+        },
+        required: ["suggestedReply"]
+    }
 };
+
 
 
 // --- Mock OAuth HTML Templates ---
@@ -411,34 +418,54 @@ app.post('/api/generate-comment-reply', async (req, res) => {
     }
 });
 
-app.post('/api/generate-bulk-reply', async (req, res) => {
-    const { commentTexts } = req.body;
-    if (!commentTexts || !Array.isArray(commentTexts) || commentTexts.length === 0) {
-        return res.status(400).json({ message: 'Missing required field: commentTexts array' });
+app.post('/api/generate-smart-bulk-replies', async (req, res) => {
+    const { comments } = req.body; // Expects [{ id: string, message: string }]
+    if (!comments || !Array.isArray(comments) || comments.length === 0) {
+        return res.status(400).json({ message: 'Missing required field: comments array with id and message.' });
     }
 
     if (!hasApiKey) {
-        return setTimeout(() => res.json({ suggestedReply: 'Thank you all for your wonderful comments! We appreciate your support. ❤️' }), 1000);
+        // Mock response for development
+        const mockReplies = comments.map(c => ({
+            commentId: c.id,
+            suggestedReply: `Thank you for your comment: "${c.message.substring(0, 20)}..."! We appreciate it.`
+        }));
+        return setTimeout(() => res.json(mockReplies), 1000);
     }
     
-    const systemInstruction = `You are a helpful and friendly social media assistant for 'Nadanaloga', an Indian classical dance school. Your task is to generate a single, short, and positive reply that can be used to respond to a batch of user comments. The reply should be generic enough to apply to all comments, thanking them for their engagement.`;
+    const systemInstruction = `You are a helpful and friendly social media assistant for 'Nadanaloga', an Indian classical dance school. Your task is to generate a unique, short, and positive reply for EACH of the user comments provided. The reply should be context-aware and appreciative. Return a JSON array of objects, where each object contains a single key 'suggestedReply'. The order of your replies in the array MUST exactly match the order of the input comments.`;
     
     try {
-        const comments = commentTexts.map(c => `- "${c}"`).join('\n');
+        const formattedComments = comments.map((c, index) => `${index + 1}. "${c.message}"`).join('\n');
+        
         const response = await ai.models.generateContent({
             model: "gemini-2.5-flash",
-            contents: `Generate a single bulk reply for the following comments:\n${comments}`,
+            contents: `Generate a unique reply for each of the following comments. Maintain the original order in your response:\n${formattedComments}`,
             config: {
                 systemInstruction,
                 responseMimeType: "application/json",
-                responseSchema: bulkReplySchema,
+                responseSchema: smartBulkReplySchema,
             }
         });
+        
         const jsonText = response.text.trim();
-        res.json(JSON.parse(jsonText));
+        const generatedReplies = JSON.parse(jsonText);
+
+        if (generatedReplies.length !== comments.length) {
+            throw new Error(`AI returned ${generatedReplies.length} replies, but ${comments.length} were expected. Mismatch occurred.`);
+        }
+
+        // Map the generated replies back to their original comment IDs
+        const finalResponse = comments.map((originalComment, index) => ({
+            commentId: originalComment.id,
+            suggestedReply: generatedReplies[index].suggestedReply,
+        }));
+
+        res.json(finalResponse);
+
     } catch (error) {
-        console.error("Error generating bulk reply:", error);
-        res.status(500).json({ message: `Failed to generate bulk reply: ${error.message || 'Please check server logs.'}` });
+        console.error("Error generating smart bulk replies:", error);
+        res.status(500).json({ message: `Failed to generate smart bulk replies: ${error.message || 'Please check server logs.'}` });
     }
 });
 

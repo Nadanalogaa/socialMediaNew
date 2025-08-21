@@ -95,6 +95,30 @@ const PostCardComponent = forwardRef<HTMLDivElement, PostCardProps>(({ post, isS
     }
   }
   
+    const handleShare = () => {
+        const isFacebookPost = post.platforms.includes(PlatformEnum.Facebook) && !!post.permalinkUrl;
+        if (isFacebookPost && post.permalinkUrl) {
+            // Use the integrated FB.ui share dialog for a better experience if the SDK is available
+            if (window.FB && window.FB.ui) {
+                window.FB.ui({
+                    method: 'share',
+                    href: post.permalinkUrl,
+                }, function(response: any){
+                    if (response && !response.error_message) {
+                        console.log('Posting completed via FB.ui.');
+                    } else if (response && response.error_message) {
+                        console.error('Error while posting via FB.ui:', response.error_message);
+                    } else {
+                        console.log('Share dialog was closed.');
+                    }
+                });
+            } else {
+                // Fallback for when SDK is not ready or blocked
+                window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(post.permalinkUrl)}`, '_blank', 'noopener,noreferrer');
+            }
+        }
+    };
+
   // Defensive coding: Correct the image URL if it's a video post with a video URL in the imageUrl field.
   // This handles legacy data that might be stored in the user's IndexedDB.
   let displayImageUrl = post.imageUrl;
@@ -162,31 +186,6 @@ const PostCardComponent = forwardRef<HTMLDivElement, PostCardProps>(({ post, isS
   }
 
   const ActionsMenu = () => {
-    const isFacebookPost = post.platforms.includes(PlatformEnum.Facebook) && !!post.permalinkUrl;
-    
-    const handleShare = () => {
-        if (isFacebookPost && post.permalinkUrl) {
-            // Use the integrated FB.ui share dialog for a better experience if the SDK is available
-            if (window.FB && window.FB.ui) {
-                window.FB.ui({
-                    method: 'share',
-                    href: post.permalinkUrl,
-                }, function(response: any){
-                    if (response && !response.error_message) {
-                        console.log('Posting completed via FB.ui.');
-                    } else if (response && response.error_message) {
-                        console.error('Error while posting via FB.ui:', response.error_message);
-                    } else {
-                        console.log('Share dialog was closed.');
-                    }
-                });
-            } else {
-                // Fallback for when SDK is not ready or blocked
-                window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(post.permalinkUrl)}`, '_blank', 'noopener,noreferrer');
-            }
-        }
-    };
-      
     return (
         <div className="relative" ref={menuRef}>
             <button
@@ -205,14 +204,6 @@ const PostCardComponent = forwardRef<HTMLDivElement, PostCardProps>(({ post, isS
                             className="w-full text-left flex items-center gap-2 px-4 py-2 text-sm text-dark-text hover:bg-dark-bg disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                             <EditIcon className="w-4 h-4" /> Use as Template
-                        </button>
-                        <button
-                            onClick={() => { handleShare(); setIsMenuOpen(false); }}
-                            disabled={!isFacebookPost}
-                            title={!isFacebookPost ? "Sharing is only available for Facebook posts. Instagram API does not support this." : "Share on Facebook"}
-                            className="w-full text-left flex items-center gap-2 px-4 py-2 text-sm text-dark-text hover:bg-dark-bg disabled:opacity-50 disabled:cursor-not-allowed"
-                        >
-                            <ShareIcon className="w-4 h-4" /> Share Post
                         </button>
                     </div>
                      <div className="py-1">
@@ -316,6 +307,14 @@ const PostCardComponent = forwardRef<HTMLDivElement, PostCardProps>(({ post, isS
                         aria-label="Refresh post insights"
                       >
                          <RefreshIcon className={`w-5 h-5 ${isRefreshing ? 'animate-spin' : ''}`} />
+                      </button>
+                      <button
+                            onClick={handleShare}
+                            disabled={!(post.platforms.includes(PlatformEnum.Facebook) && !!post.permalinkUrl)}
+                            title={!(post.platforms.includes(PlatformEnum.Facebook) && !!post.permalinkUrl) ? "Sharing is only available for Facebook posts." : "Share on Facebook"}
+                            className="p-1.5 rounded-full text-dark-text-secondary hover:bg-dark-bg hover:text-dark-text disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        >
+                            <ShareIcon className="w-5 h-5" />
                       </button>
                       <ActionsMenu />
                   </div>
