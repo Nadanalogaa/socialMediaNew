@@ -1,10 +1,11 @@
 import React, { useState, useCallback, useEffect, useMemo } from 'react';
 import type { Post, ConnectionDetails, Comment, FacebookUser, SmartReplySuggestion, Platform } from '../types';
 import { Platform as PlatformEnum } from '../types';
-import { getComments, getLikes, replyToComment, generateCommentReply } from '../services/geminiService';
+import { getComments, getLikes, replyToComment, generateCommentReply, generateBulkReply, deleteComment } from '../services/geminiService';
 import { timeAgo } from '../utils/time';
 import { FacebookIcon } from './icons/FacebookIcon';
 import { InstagramIcon } from './icons/InstagramIcon';
+import { TrashIcon } from './icons/TrashIcon';
 
 const LoadingSpinner: React.FC<{ size?: string }> = ({ size = 'h-8 w-8' }) => (
     <svg className={`animate-spin ${size} text-white`} xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -50,6 +51,7 @@ const CommentItem: React.FC<CommentItemProps> = ({ comment, level, isSelected, r
     const [smartReplies, setSmartReplies] = useState<SmartReplySuggestion[]>([]);
     const [isLoadingReplies, setIsLoadingReplies] = useState(false);
     const [replySuggestionsFor, setReplySuggestionsFor] = useState<string | null>(null);
+    const [isDeleting, setIsDeleting] = useState(false);
     const [error, setError] = useState<string|null>(null);
 
     const handleReplySubmit = async (commentId: string) => {
@@ -67,6 +69,22 @@ const CommentItem: React.FC<CommentItemProps> = ({ comment, level, isSelected, r
             setIsSubmitting(false);
         }
     };
+    
+    const handleDelete = async () => {
+        if (window.confirm('Are you sure you want to permanently delete this comment?')) {
+            setIsDeleting(true);
+            setError(null);
+            try {
+                await deleteComment(comment.id, pageAccessToken);
+                onRefresh();
+            } catch (err) {
+                setError(err instanceof Error ? err.message : 'Failed to delete comment.');
+                // Don't clear deleting state on error, so user knows it failed.
+                setTimeout(() => setIsDeleting(false), 3000);
+            }
+        }
+    }
+
 
     const handleGetSmartReplies = async (comment: Comment) => {
         if (replySuggestionsFor === comment.id) { // Toggle off
@@ -88,6 +106,8 @@ const CommentItem: React.FC<CommentItemProps> = ({ comment, level, isSelected, r
             setIsLoadingReplies(false);
         }
     };
+    
+    const canBeSelected = !(comment.comments && comment.comments.length > 0);
 
     return (
         <li className={`bg-dark-bg p-3 rounded-lg ${level > 0 ? `ml-${level * 4}` : ''}`}>
@@ -96,16 +116,18 @@ const CommentItem: React.FC<CommentItemProps> = ({ comment, level, isSelected, r
                     type="checkbox"
                     checked={isSelected}
                     onChange={() => onSelect(comment.id)}
-                    className="h-4 w-4 mt-2 rounded bg-dark-card border-dark-border text-brand-primary focus:ring-brand-primary"
+                    disabled={!canBeSelected}
+                    title={!canBeSelected ? "This comment already has replies and cannot be selected for bulk actions." : ""}
+                    className="h-4 w-4 mt-2 rounded bg-dark-card border-dark-border text-brand-primary focus:ring-brand-primary disabled:opacity-50 disabled:cursor-not-allowed"
                     aria-label={`Select comment from ${comment.from.name}`}
                 />
-               <img src={comment.from.picture?.data.url} alt={comment.from.name} className="w-8 h-8 rounded-full"/>
+               <img src={comment.from.picture?.data.url || `https://ui-avatars.com/api/?name=${encodeURIComponent(comment.from.name)}&background=374151&color=e5e7eb&size=40`} alt={comment.from.name} className="w-8 h-8 rounded-full"/>
                <div className="flex-1">
                     <div className="flex justify-between items-center text-xs">
                         <p className="font-bold text-white">{comment.from.name}</p>
                         <p className="text-dark-text-secondary">{timeAgo(comment.created_time)}</p>
                     </div>
-                    <p className="text-sm text-dark-text mt-1">{comment.message}</p>
+                    <p className="text-sm text-dark-text mt-1 whitespace-pre-wrap">{comment.message}</p>
                     <div className="flex items-center gap-4 mt-2">
                         <button onClick={() => onToggleReply(comment.id)} className="text-xs text-brand-secondary hover:underline">
                            {replyingTo === comment.id ? 'Cancel' : 'Reply'}
@@ -117,6 +139,14 @@ const CommentItem: React.FC<CommentItemProps> = ({ comment, level, isSelected, r
                         >
                             {isLoadingReplies && replySuggestionsFor === comment.id ? <LoadingSpinner size="h-3 w-3" /> : '✨'}
                             <span>Smart Reply</span>
+                        </button>
+                        <button
+                            onClick={handleDelete}
+                            disabled={isDeleting}
+                            className="text-xs text-red-400 hover:underline disabled:opacity-50"
+                        >
+                            {isDeleting ? <LoadingSpinner size="h-3 w-3"/> : <TrashIcon className="w-3 h-3 inline-block mr-1"/>}
+                            <span>Delete</span>
                         </button>
                     </div>
                </div>
@@ -169,6 +199,7 @@ const CommentItem: React.FC<CommentItemProps> = ({ comment, level, isSelected, r
                     </div>
                 </div>
             )}
+            {error && <p className="text-xs text-red-400 mt-2 pl-16">{error}</p>}
              {comment.comments && comment.comments.length > 0 && (
                 <ul className="mt-3 space-y-3 pl-6 border-l border-dark-border">
                     {comment.comments.map(reply => (
@@ -176,11 +207,11 @@ const CommentItem: React.FC<CommentItemProps> = ({ comment, level, isSelected, r
                             key={reply.id}
                             comment={reply}
                             level={level + 1}
-                            isSelected={isSelected}
+                            isSelected={false} // Replies cannot be selected
                             replyingTo={replyingTo}
                             pageAccessToken={pageAccessToken}
                             platform={platform}
-                            onSelect={onSelect}
+                            onSelect={() => {}} // No-op for replies
                             onToggleReply={onToggleReply}
                             onRefresh={onRefresh}
                         />
@@ -210,6 +241,7 @@ export const EngagementModal: React.FC<EngagementModalProps> = ({ post, type, pl
     const [selectedComments, setSelectedComments] = useState<Set<string>>(new Set());
     const [bulkReplyText, setBulkReplyText] = useState('');
     const [isBulkReplying, setIsBulkReplying] = useState(false);
+    const [isGeneratingBulkReply, setIsGeneratingBulkReply] = useState(false);
     const [bulkReplyStatus, setBulkReplyStatus] = useState<{success: number, failed: number} | null>(null);
 
     const pageAccessToken = connectionDetails.facebook?.pageAccessToken;
@@ -257,25 +289,53 @@ export const EngagementModal: React.FC<EngagementModalProps> = ({ post, type, pl
         });
     };
     
-    const allCommentIds = useMemo(() => {
-        const ids: string[] = [];
+    const allCommentsMap = useMemo(() => {
+        const map = new Map<string, { message: string, hasReplies: boolean }>();
         const recurse = (comments: Comment[]) => {
             for (const comment of comments) {
-                ids.push(comment.id);
+                const hasReplies = !!(comment.comments && comment.comments.length > 0);
+                map.set(comment.id, { message: comment.message, hasReplies });
                 if (comment.comments) {
                     recurse(comment.comments);
                 }
             }
         }
         if (type === 'comments') recurse(data as Comment[]);
-        return ids;
+        return map;
     }, [data, type]);
     
+    const allSelectableCommentIds = useMemo(() => {
+        return Array.from(allCommentsMap.entries())
+            .filter(([, { hasReplies }]) => !hasReplies)
+            .map(([id]) => id);
+    }, [allCommentsMap]);
+    
     const handleSelectAllComments = () => {
-        if (selectedComments.size === allCommentIds.length) {
+        if (selectedComments.size === allSelectableCommentIds.length) {
             setSelectedComments(new Set());
         } else {
-            setSelectedComments(new Set(allCommentIds));
+            setSelectedComments(new Set(allSelectableCommentIds));
+        }
+    };
+    
+    const handleGenerateBulkReply = async () => {
+        if (selectedComments.size === 0) return;
+        setIsGeneratingBulkReply(true);
+        setError(null);
+        try {
+            const commentTexts = Array.from(selectedComments)
+                .map(id => allCommentsMap.get(id)?.message)
+                .filter((text): text is string => !!text);
+
+            if (commentTexts.length > 0) {
+                const { suggestedReply } = await generateBulkReply(commentTexts);
+                setBulkReplyText(suggestedReply);
+            }
+        } catch (err) {
+            const message = err instanceof Error ? err.message : 'Failed to generate bulk reply.';
+            setError(message);
+        } finally {
+            setIsGeneratingBulkReply(false);
         }
     };
 
@@ -314,7 +374,7 @@ export const EngagementModal: React.FC<EngagementModalProps> = ({ post, type, pl
 
     const renderContent = () => {
         if (isLoading) return <div className="p-8 text-center"><LoadingSpinner size="h-10 w-10"/></div>;
-        if (error) return <div className="p-4 text-center text-red-400">{error}</div>;
+        if (error && data.length === 0) return <div className="p-4 text-center text-red-400">{error}</div>;
         if (data.length === 0) return <p className="p-8 text-center text-dark-text-secondary">No {type} on this post yet.</p>;
 
         if (type === 'likes') {
@@ -339,11 +399,12 @@ export const EngagementModal: React.FC<EngagementModalProps> = ({ post, type, pl
                     <input
                         type="checkbox"
                         id="select-all-comments"
-                        checked={allCommentIds.length > 0 && selectedComments.size === allCommentIds.length}
+                        checked={allSelectableCommentIds.length > 0 && selectedComments.size === allSelectableCommentIds.length}
                         onChange={handleSelectAllComments}
+                        disabled={allSelectableCommentIds.length === 0}
                         className="h-4 w-4 rounded bg-dark-card border-dark-border text-brand-primary focus:ring-brand-primary"
                     />
-                    <label htmlFor="select-all-comments" className="text-sm font-medium text-dark-text-secondary">Select All</label>
+                    <label htmlFor="select-all-comments" className="text-sm font-medium text-dark-text-secondary">Select All ({allSelectableCommentIds.length})</label>
                 </div>
                 <ul className="space-y-3 pt-2">
                     {comments.map(comment => (
@@ -379,6 +440,7 @@ export const EngagementModal: React.FC<EngagementModalProps> = ({ post, type, pl
                     <button onClick={onClose} className="text-dark-text-secondary hover:text-white text-2xl leading-none">&times;</button>
                 </div>
                 <div className="p-4 overflow-y-auto min-h-[200px] max-h-[60vh] flex-grow">
+                    {error && <p className="text-sm text-red-400 mb-2 text-center">{error}</p>}
                     {renderContent()}
                 </div>
                 {type === 'comments' && selectedComments.size > 0 && (
@@ -391,18 +453,28 @@ export const EngagementModal: React.FC<EngagementModalProps> = ({ post, type, pl
                             placeholder="Write a single reply for all selected comments..."
                             rows={2}
                         />
-                        <div className="flex justify-between items-center">
-                            <div className="text-xs text-dark-text-secondary">
-                                {isBulkReplying && `Replying... ${bulkReplyStatus?.success || 0}/${selectedComments.size} sent.`}
-                                {bulkReplyStatus && !isBulkReplying && `Finished: ${bulkReplyStatus.success} succeeded, ${bulkReplyStatus.failed} failed.`}
-                            </div>
+                        <div className="flex justify-between items-center gap-2">
                             <button
-                                onClick={handleBulkReply}
-                                disabled={isBulkReplying || !bulkReplyText.trim()}
-                                className="flex items-center justify-center gap-2 px-4 py-2 text-xs font-medium text-white bg-brand-primary hover:bg-brand-secondary rounded-md disabled:bg-gray-500 disabled:cursor-not-allowed"
+                                onClick={handleGenerateBulkReply}
+                                disabled={isGeneratingBulkReply || selectedComments.size === 0 || isBulkReplying}
+                                className="flex items-center justify-center gap-2 px-3 py-2 border border-transparent rounded-md shadow-sm text-xs font-medium text-white bg-purple-600 hover:bg-purple-700 disabled:bg-gray-500 disabled:cursor-not-allowed"
                             >
-                                {isBulkReplying ? <LoadingSpinner size="h-4 w-4"/> : `Send Reply`}
+                                {isGeneratingBulkReply ? <LoadingSpinner size="h-4 w-4" /> : '✨'}
+                                <span>Generate AI Reply</span>
                             </button>
+                            <div className="flex items-center gap-2">
+                                <div className="text-xs text-dark-text-secondary">
+                                    {isBulkReplying && `Replying... ${bulkReplyStatus?.success || 0}/${selectedComments.size} sent.`}
+                                    {bulkReplyStatus && !isBulkReplying && `Finished: ${bulkReplyStatus.success} succeeded, ${bulkReplyStatus.failed} failed.`}
+                                </div>
+                                <button
+                                    onClick={handleBulkReply}
+                                    disabled={isBulkReplying || !bulkReplyText.trim()}
+                                    className="flex items-center justify-center gap-2 px-4 py-2 text-xs font-medium text-white bg-brand-primary hover:bg-brand-secondary rounded-md disabled:bg-gray-500 disabled:cursor-not-allowed"
+                                >
+                                    {isBulkReplying ? <LoadingSpinner size="h-4 w-4"/> : `Send Reply`}
+                                </button>
+                            </div>
                         </div>
                      </div>
                 )}

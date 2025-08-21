@@ -1,5 +1,6 @@
 
 
+
 import type { Platform, SeoSuggestions, Post, ConnectionStatus, GeneratedAssetContent, GeneratedPostIdea, ConnectionDetails, Comment, FacebookUser, PostInsightResponse, SmartReplySuggestion } from '../types';
 
 const handleResponse = async (response: Response) => {
@@ -176,6 +177,24 @@ export const generateCommentReply = async (commentText: string): Promise<SmartRe
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ commentText }),
+    });
+    return handleResponse(response);
+};
+
+export const generateBulkReply = async (commentTexts: string[]): Promise<{ suggestedReply: string }> => {
+    const response = await fetch('/api/generate-bulk-reply', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ commentTexts }),
+    });
+    return handleResponse(response);
+};
+
+export const deleteComment = async (commentId: string, pageAccessToken: string): Promise<{ success: boolean }> => {
+    const response = await fetch(`/api/comment/${commentId}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pageAccessToken }),
     });
     return handleResponse(response);
 };

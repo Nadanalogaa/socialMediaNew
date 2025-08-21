@@ -1,5 +1,6 @@
 
 
+
 export enum Platform {
   Facebook = 'Facebook',
   Instagram = 'Instagram',
@@ -131,7 +132,15 @@ export interface FacebookUser {
 export interface Comment {
     id: string;
     message: string;
-    from: FacebookUser;
+    from: {
+      id: string;
+      name: string;
+      picture?: {
+          data: {
+              url: string;
+          }
+      };
+    };
     created_time: string;
     comments?: Comment[];
 }

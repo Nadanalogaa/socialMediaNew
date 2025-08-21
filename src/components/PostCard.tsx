@@ -165,8 +165,25 @@ const PostCardComponent = forwardRef<HTMLDivElement, PostCardProps>(({ post, isS
     const isFacebookPost = post.platforms.includes(PlatformEnum.Facebook) && !!post.permalinkUrl;
     
     const handleShare = () => {
-        if (isFacebookPost) {
-            window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(post.permalinkUrl!)}`, '_blank', 'noopener,noreferrer');
+        if (isFacebookPost && post.permalinkUrl) {
+            // Use the integrated FB.ui share dialog for a better experience if the SDK is available
+            if (window.FB && window.FB.ui) {
+                window.FB.ui({
+                    method: 'share',
+                    href: post.permalinkUrl,
+                }, function(response: any){
+                    if (response && !response.error_message) {
+                        console.log('Posting completed via FB.ui.');
+                    } else if (response && response.error_message) {
+                        console.error('Error while posting via FB.ui:', response.error_message);
+                    } else {
+                        console.log('Share dialog was closed.');
+                    }
+                });
+            } else {
+                // Fallback for when SDK is not ready or blocked
+                window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(post.permalinkUrl)}`, '_blank', 'noopener,noreferrer');
+            }
         }
     };
       

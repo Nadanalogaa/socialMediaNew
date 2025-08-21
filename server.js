@@ -2,6 +2,8 @@
 
 
 
+
+
 import express from 'express';
 import 'dotenv/config';
 import { GoogleGenAI, Type } from '@google/genai';
@@ -154,6 +156,17 @@ const commentReplySchema = {
         },
         required: ["sentiment", "suggestedReply"]
     }
+};
+
+const bulkReplySchema = {
+    type: Type.OBJECT,
+    properties: {
+        suggestedReply: {
+            type: Type.STRING,
+            description: "A single, concise, and friendly reply that can be used to respond to all provided user comments. It should be positive and generic enough to fit multiple contexts."
+        }
+    },
+    required: ["suggestedReply"]
 };
 
 
@@ -395,6 +408,37 @@ app.post('/api/generate-comment-reply', async (req, res) => {
     } catch (error) {
         console.error("Error generating comment reply:", error);
         res.status(500).json({ message: `Failed to generate comment reply: ${error.message || 'Please check server logs.'}` });
+    }
+});
+
+app.post('/api/generate-bulk-reply', async (req, res) => {
+    const { commentTexts } = req.body;
+    if (!commentTexts || !Array.isArray(commentTexts) || commentTexts.length === 0) {
+        return res.status(400).json({ message: 'Missing required field: commentTexts array' });
+    }
+
+    if (!hasApiKey) {
+        return setTimeout(() => res.json({ suggestedReply: 'Thank you all for your wonderful comments! We appreciate your support. ❤️' }), 1000);
+    }
+    
+    const systemInstruction = `You are a helpful and friendly social media assistant for 'Nadanaloga', an Indian classical dance school. Your task is to generate a single, short, and positive reply that can be used to respond to a batch of user comments. The reply should be generic enough to apply to all comments, thanking them for their engagement.`;
+    
+    try {
+        const comments = commentTexts.map(c => `- "${c}"`).join('\n');
+        const response = await ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: `Generate a single bulk reply for the following comments:\n${comments}`,
+            config: {
+                systemInstruction,
+                responseMimeType: "application/json",
+                responseSchema: bulkReplySchema,
+            }
+        });
+        const jsonText = response.text.trim();
+        res.json(JSON.parse(jsonText));
+    } catch (error) {
+        console.error("Error generating bulk reply:", error);
+        res.status(500).json({ message: `Failed to generate bulk reply: ${error.message || 'Please check server logs.'}` });
     }
 });
 
@@ -1157,6 +1201,26 @@ app.post('/api/comment/:commentId/reply', async (req, res) => {
     } catch (error) {
         console.error(`Failed to reply to comment ${commentId}:`, error);
         res.status(500).json({ message: `Failed to reply: ${error.message}` });
+    }
+});
+
+app.delete('/api/comment/:commentId', async (req, res) => {
+    const { commentId } = req.params;
+    const { pageAccessToken } = req.body;
+
+    if (!pageAccessToken) return res.status(400).json({ message: 'Missing pageAccessToken.' });
+
+    try {
+        const url = `https://graph.facebook.com/v23.0/${commentId}?access_token=${pageAccessToken}`;
+        const response = await fetch(url, { method: 'DELETE' });
+        const data = await response.json();
+
+        if (data.error) throw new Error(data.error.message);
+
+        res.json({ success: data.success || false });
+    } catch (error) {
+        console.error(`Failed to delete comment ${commentId}:`, error);
+        res.status(500).json({ message: `Failed to delete comment: ${error.message}` });
     }
 });
 
