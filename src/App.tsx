@@ -221,8 +221,11 @@ const App: React.FC = () => {
   useEffect(() => {
     // This function will be called by FB.getLoginStatus and handles state changes.
     function statusChangeCallback(response: any) {
+        const isConnecting = sessionStorage.getItem('isConnectingFacebook') === 'true';
+
         console.log('Facebook statusChangeCallback:', response);
         if (response.status === 'connected') {
+            sessionStorage.removeItem('isConnectingFacebook'); // Clear flag on success
             console.log('User is connected to Facebook and has authorized the app. Syncing status...');
             const accessToken = response.authResponse.accessToken;
             // This call ensures we get a fresh page access token and page details.
@@ -234,17 +237,29 @@ const App: React.FC = () => {
                 })
                 .catch(err => {
                      console.error('Failed to sync Facebook connection on backend:', err);
+                     const message = err instanceof Error ? err.message : String(err);
+                     setGlobalError(`Facebook login was successful, but the backend couldn't connect. Error: ${message}. Please see the connection guide for help.`);
                 });
 
         } else {
-            // Handle cases where the user is not connected to the app.
+            // Handle cases where the user is not connected to the app, providing feedback if a login was just attempted.
+            if (isConnecting) {
+                sessionStorage.removeItem('isConnectingFacebook'); // Clear flag on failure
+                let failureReason = "The user cancelled the login or did not fully authorize the application.";
+                if (response.status === 'not_authorized') {
+                    failureReason = "The user is logged into Facebook, but has not authorized our app or has denied required permissions.";
+                } else if (response.status) {
+                    failureReason = `Facebook status: ${response.status}. The login could not be completed.`;
+                }
+                setGlobalError(`Facebook login failed. Reason: ${failureReason} Please see the guide below for likely solutions.`);
+            }
+
             if (response.status === 'not_authorized') {
                 console.log('User is logged into Facebook, but has not authorized our app.');
             } else {
                 console.log('User is not logged into Facebook or has logged out.');
             }
             // If the app's state thinks Facebook is connected, but it's not, we sync the state to false.
-            // This handles cases like the user revoking permissions on Facebook's website.
             setConnections(prev => ({ ...prev, [Platform.Facebook]: false, [Platform.Instagram]: false }));
         }
     }

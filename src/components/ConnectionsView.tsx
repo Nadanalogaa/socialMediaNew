@@ -182,6 +182,11 @@ export const ConnectionsView: React.FC<ConnectionsViewProps> = ({ connections, s
             // The md breakpoint in Tailwind is 768px.
             const isMobileView = window.innerWidth < 768;
 
+            if (isMobileView) {
+                // For the redirect flow, set a flag so we can provide better feedback after the redirect.
+                sessionStorage.setItem('isConnectingFacebook', 'true');
+            }
+
             window.FB.login(loginCallback, {
                 scope: required_scope,
                 enable_profile_selector: true,
