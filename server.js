@@ -1,13 +1,4 @@
 
-
-
-
-
-
-
-
-
-
 import express from 'express';
 import 'dotenv/config';
 import { GoogleGenAI, Type } from '@google/genai';
@@ -581,11 +572,45 @@ app.get('/api/posts', async (req, res) => {
         const fbPosts = (fbResult.data || []).map(transformFbPostToStandard);
         const igPosts = (igResult.data || []).map(transformIgPostToStandard);
         
-        const allPosts = [...fbPosts, ...igPosts];
-        // The lists are already sorted by date from the API. Merging and re-sorting the whole list on every page
-        // can lead to items shifting. For infinite scroll, it's often better to just append.
-        // The client will receive a mixed block of items. The overall list will be mostly chronological.
-        // For a true unified chronological feed, more complex server-side logic would be needed.
+        // --- Merge Posts Logic ---
+        const finalPosts = [...igPosts]; // Start with all IG posts
+        const matchedFbPostIds = new Set();
+
+        for (const igPost of finalPosts) {
+            // Find a matching FB post that hasn't been matched yet
+            const matchingFbPost = fbPosts.find(fbPost => {
+                if (matchedFbPostIds.has(fbPost.id)) return false;
+
+                const timeDiff = Math.abs(new Date(fbPost.postedAt).getTime() - new Date(igPost.postedAt).getTime());
+                const isCloseInTime = timeDiff < 60000; // 1 minute window
+                const isSameMediaType = fbPost.mediaType === igPost.mediaType;
+
+                return isCloseInTime && isSameMediaType;
+            });
+
+            if (matchingFbPost) {
+                // Merge FB data into the IG post
+                igPost.platforms.push('Facebook');
+                if (!igPost.platformPostIds) igPost.platformPostIds = { Instagram: igPost.id };
+                igPost.platformPostIds.Facebook = matchingFbPost.id;
+
+                // Merge engagement
+                igPost.engagement.total.likes += matchingFbPost.engagement.total.likes;
+                igPost.engagement.total.comments += matchingFbPost.engagement.total.comments;
+                igPost.engagement.total.shares += matchingFbPost.engagement.total.shares;
+                igPost.engagement.facebook = matchingFbPost.engagement.facebook;
+                
+                // Add the fb post ID to the matched set
+                matchedFbPostIds.add(matchingFbPost.id);
+            }
+        }
+
+        // Add any Facebook posts that didn't have a match
+        const unmatchedFbPosts = fbPosts.filter(fbPost => !matchedFbPostIds.has(fbPost.id));
+        finalPosts.push(...unmatchedFbPosts);
+
+        // Sort the final combined list by date
+        finalPosts.sort((a, b) => new Date(b.postedAt).getTime() - new Date(a.postedAt).getTime());
         
         const nextCursors = {
             facebook: fbResult.paging?.next ? encodeURIComponent(fbResult.paging.next) : null,
@@ -593,7 +618,7 @@ app.get('/api/posts', async (req, res) => {
         };
 
         res.json({
-            posts: allPosts,
+            posts: finalPosts,
             nextCursors,
         });
 
@@ -1119,7 +1144,7 @@ app.delete('/api/post/:postId', async (req, res) => {
         const data = await response.json();
 
         if (data.error) {
-            if (data.error.code === 100) {
+            if (data.error.code === 100) { // Post already deleted
                  return res.json({ success: true });
             }
             throw new Error(`Graph API error: ${data.error.message}`);

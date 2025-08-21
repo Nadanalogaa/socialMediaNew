@@ -192,7 +192,7 @@ const PostCardComponent = forwardRef<HTMLDivElement, PostCardProps>(({ post, isS
             )}
              <div className="absolute top-3 right-3 flex items-center gap-2 bg-black/50 text-white p-1.5 rounded-lg text-xs backdrop-blur-sm">
                 {post.platforms.includes(PlatformEnum.Instagram) && <InstagramIcon className="w-4 h-4" />}
-                {post.platforms.includes(PlatformEnum.Facebook) && !post.platforms.includes(PlatformEnum.Instagram) && <FacebookIcon className="w-4 h-4" />}
+                {post.platforms.includes(PlatformEnum.Facebook) && <FacebookIcon className="w-4 h-4" />}
                 <span>{timeAgo(post.postedAt)}</span>
             </div>
         </div>
