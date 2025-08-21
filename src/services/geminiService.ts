@@ -3,7 +3,10 @@
 
 
 
-import type { Platform, SeoSuggestions, Post, ConnectionStatus, GeneratedAssetContent, GeneratedPostIdea, ConnectionDetails, Comment, FacebookUser, PostInsightResponse, SmartReplySuggestion, SmartBulkReply } from '../types';
+
+
+
+import type { Platform, SeoSuggestions, Post, ConnectionStatus, GeneratedAssetContent, GeneratedPostIdea, ConnectionDetails, Comment, FacebookUser, PostInsightResponse, SmartReplySuggestion, SmartBulkReply, KpiData } from '../types';
 
 const handleResponse = async (response: Response) => {
     if (!response.ok) {
@@ -69,6 +72,15 @@ export const fetchPlatformPosts = async (
     const response = await fetch(`/api/posts?${params.toString()}`);
     return handleResponse(response);
 };
+
+export const getKpis = async (connectionDetails: ConnectionDetails): Promise<KpiData> => {
+    const response = await fetch('/api/kpis', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(connectionDetails),
+    });
+    return handleResponse(response);
+}
 
 export const generateAssetContent = async (prompt: string): Promise<GeneratedAssetContent> => {
     const response = await fetch('/api/generate-asset-content', {

@@ -5,6 +5,7 @@
 
 
 
+
 export enum Platform {
   Facebook = 'Facebook',
   Instagram = 'Instagram',
@@ -165,4 +166,13 @@ export interface PostInsightResponse {
   engagement: Post['engagement'];
   activePlatforms: Platform[];
   status: 'active' | 'deleted';
+}
+
+export interface KpiData {
+    facebook: {
+        followerHistory: { value: number; end_time: string }[];
+    };
+    instagram: {
+        followerHistory: { value: number; end_time: string }[];
+    };
 }

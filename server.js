@@ -1,4 +1,5 @@
 
+
 import express from 'express';
 import 'dotenv/config';
 import { GoogleGenAI, Type } from '@google/genai';
@@ -625,6 +626,65 @@ app.get('/api/posts', async (req, res) => {
     } catch (error) {
         console.error("Failed to fetch platform posts:", error);
         res.status(500).json({ message: `Failed to fetch posts: ${error.message}` });
+    }
+});
+
+app.post('/api/kpis', async (req, res) => {
+    const { facebook, instagram } = req.body;
+    const pageAccessToken = facebook?.pageAccessToken;
+
+    if (!pageAccessToken) {
+        return res.status(401).json({ message: 'Missing page access token.' });
+    }
+
+    try {
+        const until = new Date();
+        const since = new Date();
+        since.setDate(until.getDate() - 30); // 30 days ago
+
+        const untilTimestamp = Math.floor(until.getTime() / 1000);
+        const sinceTimestamp = Math.floor(since.getTime() / 1000);
+
+        const kpis = {
+            facebook: { followerHistory: [] },
+            instagram: { followerHistory: [] }
+        };
+
+        // Fetch Facebook Page Fans history
+        if (facebook?.pageId) {
+            const fbUrl = `https://graph.facebook.com/v23.0/${facebook.pageId}/insights?metric=page_fans&period=day&since=${sinceTimestamp}&until=${untilTimestamp}&access_token=${pageAccessToken}`;
+            const fbResponse = await fetch(fbUrl);
+            const fbData = await fbResponse.json();
+            if (fbData.error) {
+                console.error("FB KPI Error:", fbData.error.message);
+            } else if (fbData.data && fbData.data[0]?.values) {
+                kpis.facebook.followerHistory = fbData.data[0].values.map(item => ({
+                    value: item.value,
+                    end_time: item.end_time
+                }));
+            }
+        }
+
+        // Fetch Instagram Follower Count history
+        if (instagram?.igUserId) {
+            const igUrl = `https://graph.facebook.com/v23.0/${instagram.igUserId}/insights?metric=follower_count&period=day&since=${sinceTimestamp}&until=${untilTimestamp}&access_token=${pageAccessToken}`;
+            const igResponse = await fetch(igUrl);
+            const igData = await igResponse.json();
+             if (igData.error) {
+                console.error("IG KPI Error:", igData.error.message);
+            } else if (igData.data && igData.data[0]?.values) {
+                kpis.instagram.followerHistory = igData.data[0].values.map(item => ({
+                    value: item.value,
+                    end_time: item.end_time
+                }));
+            }
+        }
+        
+        res.json(kpis);
+
+    } catch (error) {
+        console.error("Failed to fetch KPIs:", error);
+        res.status(500).json({ message: `Failed to fetch KPIs: ${error.message}` });
     }
 });
 

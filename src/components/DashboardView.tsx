@@ -1,14 +1,20 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import type { Post, ConnectionDetails, Platform as PlatformType } from '../types';
+import type { Post, ConnectionDetails, Platform as PlatformType, KpiData } from '../types';
 import { Platform } from '../types';
 import { PostCard } from './PostCard';
 import { AnalyticsChart } from './AnalyticsChart';
-import { getPostInsights, fetchPlatformPosts } from '../services/geminiService';
+import { getPostInsights, fetchPlatformPosts, getKpis } from '../services/geminiService';
 import { TrashIcon } from './icons/TrashIcon';
 import { FacebookIcon } from './icons/FacebookIcon';
 import { InstagramIcon } from './icons/InstagramIcon';
 import { YoutubeIcon } from './icons/YoutubeIcon';
 import { AllPlatformsIcon } from './icons/AllPlatformsIcon';
+import { KpiCard } from './KpiCard';
+import { HeartIcon } from './icons/HeartIcon';
+import { CommentBubbleIcon } from './icons/CommentBubbleIcon';
+import { ShareIcon } from './icons/ShareIcon';
+import { UsersIcon } from './icons/UsersIcon';
+import { SparklineChart } from './SparklineChart';
 
 interface DashboardViewProps {
   posts: Post[];
@@ -26,14 +32,26 @@ const LoadingSpinner: React.FC = () => (
     </svg>
 );
 
+type TimeFilter = 'daily' | 'weekly' | 'monthly' | 'yearly';
+
+const timeFilters: { label: string; value: TimeFilter }[] = [
+    { label: 'Today', value: 'daily' },
+    { label: 'Last 7 Days', value: 'weekly' },
+    { label: 'Last 30 Days', value: 'monthly' },
+    { label: 'Last Year', value: 'yearly' },
+];
+
 export const DashboardView: React.FC<DashboardViewProps> = ({ posts, connectionDetails, onDeletePost, onDeletePosts, onUpdatePost, onError }) => {
     const [allPosts, setAllPosts] = useState<Post[]>([]);
     const [selectedPosts, setSelectedPosts] = useState<Set<string>>(new Set());
     const [isDeleting, setIsDeleting] = useState<Set<string>>(new Set());
-    const [activeFilter, setActiveFilter] = useState<PlatformType | 'All'>('All');
+    const [activePlatformFilter, setActivePlatformFilter] = useState<PlatformType | 'All'>('All');
+    const [activeTimeFilter, setActiveTimeFilter] = useState<TimeFilter>('monthly');
     const [isLoading, setIsLoading] = useState(true);
     const [hasMore, setHasMore] = useState(true);
     const [nextCursors, setNextCursors] = useState<{ facebook: string | null; instagram: string | null; } | null>(null);
+    const [kpiData, setKpiData] = useState<KpiData | null>(null);
+    const [isLoadingKpis, setIsLoadingKpis] = useState(true);
 
     const observer = useRef<IntersectionObserver | null>(null);
 
@@ -71,15 +89,32 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ posts, connectionD
     }, [isLoading, hasMore, loadMorePosts]);
 
     useEffect(() => {
-        // This effect runs once to perform the initial fetch.
         const isConnected = !!connectionDetails.facebook;
         if (isConnected) {
-            setAllPosts([]); // Clear previous posts when connection is established
+            setIsLoadingKpis(true);
+            getKpis(connectionDetails)
+                .then(setKpiData)
+                .catch(err => {
+                    const message = err instanceof Error ? err.message : String(err);
+                    onError(`Failed to load follower data. You may need to grant the 'read_insights' permission. Error: ${message}`);
+                    setKpiData(null);
+                })
+                .finally(() => setIsLoadingKpis(false));
+        } else {
+            setIsLoadingKpis(false);
+            setKpiData(null);
+        }
+    }, [connectionDetails, onError]);
+
+
+    useEffect(() => {
+        const isConnected = !!connectionDetails.facebook;
+        if (isConnected) {
+            setAllPosts([]);
             setIsLoading(true);
             setNextCursors(null);
             fetchPlatformPosts(10, null, connectionDetails)
                 .then(response => {
-                    // Combine fetched posts with local posts from props.
                     const uniquePosts = new Map<string, Post>();
                     posts.forEach(p => uniquePosts.set(p.id, p));
                     response.posts.forEach(p => uniquePosts.set(p.id, p));
@@ -91,19 +126,17 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ posts, connectionD
                 .catch(err => {
                     const message = err instanceof Error ? err.message : String(err);
                     onError(`Failed to fetch initial posts: ${message}`);
-                    setAllPosts(posts); // Fallback to local posts
+                    setAllPosts(posts);
                 })
                 .finally(() => setIsLoading(false));
         } else {
-            // Not connected, just show local posts.
             setAllPosts([...posts].sort((a, b) => new Date(b.postedAt).getTime() - new Date(a.postedAt).getTime()));
             setIsLoading(false);
             setHasMore(false);
         }
-    }, [connectionDetails.facebook?.pageId]); // Re-fetch only when connection details *actually* change
+    }, [connectionDetails.facebook?.pageId]);
 
     useEffect(() => {
-        // This effect syncs changes from the `posts` prop (e.g., new local posts, or updates) into `allPosts`.
         const postMap = new Map(allPosts.map(p => [p.id, p]));
         let hasChanges = false;
 
@@ -148,7 +181,6 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ posts, connectionD
                 await onDeletePosts(idsToDelete);
                 setSelectedPosts(new Set());
             } catch (error) {
-                // Error is handled globally in App.tsx
                 console.error("Bulk delete failed:", error);
             } finally {
                 setIsDeleting(new Set());
@@ -160,9 +192,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ posts, connectionD
         setIsDeleting(prev => new Set(prev).add(postId));
         try {
             await onDeletePost(postId);
-            // Successful deletion will trigger a state update via props, removing the post.
         } catch (error) {
-            // Error is handled globally in App.tsx, the post remains in the UI.
              console.error(`Failed to delete post ${postId}:`, error);
         } finally {
             setIsDeleting(prev => {
@@ -190,10 +220,72 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ posts, connectionD
         }
     }, [allPosts, connectionDetails, onUpdatePost, onError]);
 
-    const filteredPosts = useMemo(() => {
-        if (activeFilter === 'All') return allPosts;
-        return allPosts.filter(p => p.platforms.includes(activeFilter));
-    }, [allPosts, activeFilter]);
+    const postsInTimeframe = useMemo(() => {
+        const now = new Date();
+        const getStartDate = () => {
+            const start = new Date(now);
+            switch (activeTimeFilter) {
+                case 'daily':
+                    start.setDate(now.getDate() - 1);
+                    return start;
+                case 'weekly':
+                    start.setDate(now.getDate() - 7);
+                    return start;
+                case 'monthly':
+                    start.setMonth(now.getMonth() - 1);
+                    return start;
+                case 'yearly':
+                    start.setFullYear(now.getFullYear() - 1);
+                    return start;
+                default:
+                    return new Date(0); // Epoch if something goes wrong
+            }
+        };
+        const startDate = getStartDate();
+        return allPosts.filter(p => new Date(p.postedAt) >= startDate);
+    }, [allPosts, activeTimeFilter]);
+
+    const platformFilteredPosts = useMemo(() => {
+        if (activePlatformFilter === 'All') return allPosts;
+        return allPosts.filter(p => p.platforms.includes(activePlatformFilter));
+    }, [allPosts, activePlatformFilter]);
+
+    const aggregatedKpis = useMemo(() => {
+        const isFb = activePlatformFilter === 'All' || activePlatformFilter === Platform.Facebook;
+        const isIg = activePlatformFilter === 'All' || activePlatformFilter === Platform.Instagram;
+
+        const engagement = postsInTimeframe.reduce((acc, post) => {
+            if (isFb && post.engagement.facebook) {
+                acc.likes += post.engagement.facebook.likes;
+                acc.comments += post.engagement.facebook.comments;
+                acc.shares += post.engagement.facebook.shares;
+            }
+            if (isIg && post.engagement.instagram) {
+                acc.likes += post.engagement.instagram.likes;
+                acc.comments += post.engagement.instagram.comments;
+            }
+            return acc;
+        }, { likes: 0, comments: 0, shares: 0 });
+
+        const getFollowerData = (history: { value: number; end_time: string }[] | undefined) => {
+            if (!history || history.length === 0) return { current: 0, change: 0, data: [] };
+            const sorted = history.sort((a, b) => new Date(b.end_time).getTime() - new Date(a.end_time).getTime());
+            const current = sorted[0]?.value || 0;
+            const previous = sorted[1]?.value || current;
+            const change = current && previous ? ((current - previous) / previous) * 100 : 0;
+            return { current, change, data: sorted.map(d => ({name: d.end_time, value: d.value})).reverse() };
+        };
+
+        const fbFollowers = isFb ? getFollowerData(kpiData?.facebook?.followerHistory) : getFollowerData([]);
+        const igFollowers = isIg ? getFollowerData(kpiData?.instagram?.followerHistory) : getFollowerData([]);
+        
+        return {
+            ...engagement,
+            followers: fbFollowers.current + igFollowers.current,
+            followerChange: ((fbFollowers.current + igFollowers.current) - (fbFollowers.current / (1 + fbFollowers.change / 100) + igFollowers.current / (1 + igFollowers.change / 100))) / ((fbFollowers.current / (1 + fbFollowers.change / 100) + igFollowers.current / (1 + igFollowers.change / 100)) || 1) * 100,
+            followerChartData: [...fbFollowers.data, ...igFollowers.data] // Simplified for now
+        };
+    }, [postsInTimeframe, activePlatformFilter, kpiData]);
 
     const platformFilters: { name: PlatformType | 'All', icon: JSX.Element }[] = [
         { name: 'All', icon: <AllPlatformsIcon className="w-5 h-5" /> },
@@ -209,7 +301,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ posts, connectionD
                     <h1 className="text-3xl font-bold text-white">Dashboard</h1>
                     <p className="text-dark-text-secondary mt-1">Overview of your social media performance.</p>
                 </div>
-                {selectedPosts.size > 0 && (
+                 {selectedPosts.size > 0 && (
                      <button
                         onClick={handleBulkDelete}
                         className="flex items-center gap-2 px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-lg shadow-md transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
@@ -221,35 +313,58 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ posts, connectionD
                 )}
             </div>
 
+            <div className="bg-dark-card p-4 rounded-lg border border-dark-border flex flex-col md:flex-row items-center justify-between gap-4">
+                 <div className="flex items-center p-1 bg-dark-bg rounded-lg border border-dark-border">
+                    {timeFilters.map(filter => (
+                        <button
+                            key={filter.value}
+                            onClick={() => setActiveTimeFilter(filter.value)}
+                            className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${activeTimeFilter === filter.value ? 'bg-brand-primary text-white' : 'text-dark-text-secondary hover:bg-dark-card'}`}
+                        >
+                            {filter.label}
+                        </button>
+                    ))}
+                </div>
+                 <div className="flex items-center p-1 bg-dark-bg rounded-lg border border-dark-border">
+                    {platformFilters.map(filter => (
+                        <button
+                            key={filter.name}
+                            onClick={() => setActivePlatformFilter(filter.name)}
+                            className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${activePlatformFilter === filter.name ? 'bg-brand-primary text-white' : 'text-dark-text-secondary hover:bg-dark-card'}`}
+                            aria-label={`Filter by ${filter.name}`}
+                        >
+                            {filter.icon}
+                        </button>
+                    ))}
+                </div>
+            </div>
+
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <KpiCard title="Total Followers" icon={<UsersIcon className="w-6 h-6"/>} value={aggregatedKpis.followers} delta={aggregatedKpis.followerChange} isLoading={isLoadingKpis}>
+                    {aggregatedKpis.followerChartData.length > 1 && <SparklineChart data={aggregatedKpis.followerChartData} />}
+                </KpiCard>
+                <KpiCard title="Total Likes" icon={<HeartIcon className="w-6 h-6"/>} value={aggregatedKpis.likes} isLoading={isLoading} />
+                <KpiCard title="Total Comments" icon={<CommentBubbleIcon className="w-6 h-6"/>} value={aggregatedKpis.comments} isLoading={isLoading} />
+                <KpiCard title="Total Shares" icon={<ShareIcon className="w-6 h-6"/>} value={aggregatedKpis.shares} isLoading={isLoading} />
+            </div>
+
             <div className="bg-dark-card p-4 sm:p-6 rounded-lg border border-dark-border">
                 <h2 className="text-xl font-bold text-white mb-4">Engagement Analytics</h2>
-                {allPosts.length > 0 ? (
-                    <AnalyticsChart posts={allPosts} />
+                {postsInTimeframe.length > 0 ? (
+                    <AnalyticsChart posts={postsInTimeframe} />
                 ) : (
-                    <p className="text-dark-text-secondary text-center py-10">No post data to display.</p>
+                    <p className="text-dark-text-secondary text-center py-10">No post data to display for the selected period.</p>
                 )}
             </div>
             
             <div className="space-y-4">
                 <div className="flex items-center justify-between">
                     <h2 className="text-xl font-bold text-white">Recent Posts</h2>
-                    <div className="flex items-center p-1 bg-dark-card rounded-lg border border-dark-border">
-                        {platformFilters.map(filter => (
-                            <button
-                                key={filter.name}
-                                onClick={() => setActiveFilter(filter.name)}
-                                className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${activeFilter === filter.name ? 'bg-brand-primary text-white' : 'text-dark-text-secondary hover:bg-dark-bg'}`}
-                                aria-label={`Filter by ${filter.name}`}
-                            >
-                                {filter.icon}
-                            </button>
-                        ))}
-                    </div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-                    {filteredPosts.map((post, index) => (
-                         <div key={post.id} ref={filteredPosts.length === index + 1 ? lastPostElementRef : null}>
+                    {platformFilteredPosts.map((post, index) => (
+                         <div key={post.id} ref={platformFilteredPosts.length === index + 1 ? lastPostElementRef : null}>
                             <PostCard 
                                 post={post}
                                 isSelected={selectedPosts.has(post.id)}
@@ -272,7 +387,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ posts, connectionD
                  {!isLoading && !hasMore && connectionDetails.facebook && (
                     <p className="text-center text-dark-text-secondary py-8">You've reached the end of your posts.</p>
                 )}
-                 {!isLoading && filteredPosts.length === 0 && (
+                 {!isLoading && platformFilteredPosts.length === 0 && (
                      <div className="text-center py-16 bg-dark-card rounded-lg border border-dark-border">
                         <p className="text-dark-text-secondary">No posts found.</p>
                         <p className="text-xs text-dark-text-secondary mt-1">
