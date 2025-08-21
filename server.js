@@ -6,6 +6,8 @@
 
 
 
+
+
 import express from 'express';
 import 'dotenv/config';
 import { GoogleGenAI, Type } from '@google/genai';
@@ -517,6 +519,7 @@ const transformIgPostToStandard = (post) => {
         videoUrl: post.media_type === 'VIDEO' ? post.media_url : undefined,
         mediaType: post.media_type === 'VIDEO' ? 'VIDEO' : 'IMAGE',
         prompt: post.caption || `Post from ${post.username}`,
+        username: post.username,
         permalinkUrl: post.permalink, // Instagram calls it permalink
         generatedContent: {
             facebook: '',

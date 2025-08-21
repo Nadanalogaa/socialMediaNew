@@ -3,6 +3,8 @@
 
 
 
+
+
 export enum Platform {
   Facebook = 'Facebook',
   Instagram = 'Instagram',
@@ -36,6 +38,7 @@ export interface Post {
   permalinkUrl?: string;
   mediaType: 'IMAGE' | 'VIDEO';
   prompt: string;
+  username?: string; // For Instagram posts
   generatedContent: {
       facebook: string;
       instagram: string;
