@@ -10,6 +10,7 @@ import { EditIcon } from './icons/EditIcon';
 import { TrashIcon } from './icons/TrashIcon';
 import { RefreshIcon } from './icons/RefreshIcon';
 import { DotsVerticalIcon } from './icons/DotsVerticalIcon';
+import { ShareIcon } from './icons/ShareIcon';
 import { timeAgo } from '../utils/time';
 import { EngagementModal } from './EngagementModal';
 
@@ -160,34 +161,56 @@ const PostCardComponent = forwardRef<HTMLDivElement, PostCardProps>(({ post, isS
     );
   }
 
-  const ActionsMenu = () => (
-     <div className="relative" ref={menuRef}>
-        <button
-            onClick={() => setIsMenuOpen(prev => !prev)}
-            className="p-1.5 rounded-full text-dark-text-secondary hover:bg-dark-bg hover:text-dark-text transition-colors"
-            aria-label="Post options"
-        >
-            <DotsVerticalIcon className="w-5 h-5" />
-        </button>
-        {isMenuOpen && (
-            <div className="absolute right-0 mt-2 w-48 bg-dark-card border border-dark-border rounded-md shadow-lg z-10 animate-fade-in">
-                <button
-                    onClick={() => { onEdit(post); setIsMenuOpen(false); }}
-                    disabled={isDeletedOnPlatform}
-                    className="w-full text-left flex items-center gap-2 px-4 py-2 text-sm text-dark-text hover:bg-dark-bg disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                    <EditIcon className="w-4 h-4" /> Use as Template
-                </button>
-                <button
-                    onClick={() => { handleDeleteClick(); setIsMenuOpen(false); }}
-                    className="w-full text-left flex items-center gap-2 px-4 py-2 text-sm text-red-400 hover:bg-dark-bg"
-                >
-                    <TrashIcon className="w-4 h-4" /> {isDeletedOnPlatform ? "Remove" : "Delete"}
-                </button>
-            </div>
-        )}
-    </div>
-  );
+  const ActionsMenu = () => {
+    const isFacebookPost = post.platforms.includes(PlatformEnum.Facebook) && !!post.permalinkUrl;
+    
+    const handleShare = () => {
+        if (isFacebookPost) {
+            window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(post.permalinkUrl!)}`, '_blank', 'noopener,noreferrer');
+        }
+    };
+      
+    return (
+        <div className="relative" ref={menuRef}>
+            <button
+                onClick={() => setIsMenuOpen(prev => !prev)}
+                className="p-1.5 rounded-full text-dark-text-secondary hover:bg-dark-bg hover:text-dark-text transition-colors"
+                aria-label="Post options"
+            >
+                <DotsVerticalIcon className="w-5 h-5" />
+            </button>
+            {isMenuOpen && (
+                <div className="absolute right-0 mt-2 w-48 bg-dark-card border border-dark-border rounded-md shadow-lg z-10 animate-fade-in divide-y divide-dark-border">
+                    <div className="py-1">
+                        <button
+                            onClick={() => { onEdit(post); setIsMenuOpen(false); }}
+                            disabled={isDeletedOnPlatform}
+                            className="w-full text-left flex items-center gap-2 px-4 py-2 text-sm text-dark-text hover:bg-dark-bg disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            <EditIcon className="w-4 h-4" /> Use as Template
+                        </button>
+                        <button
+                            onClick={() => { handleShare(); setIsMenuOpen(false); }}
+                            disabled={!isFacebookPost}
+                            title={!isFacebookPost ? "Sharing is only available for Facebook posts. Instagram API does not support this." : "Share on Facebook"}
+                            className="w-full text-left flex items-center gap-2 px-4 py-2 text-sm text-dark-text hover:bg-dark-bg disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                            <ShareIcon className="w-4 h-4" /> Share Post
+                        </button>
+                    </div>
+                     <div className="py-1">
+                        <button
+                            onClick={() => { handleDeleteClick(); setIsMenuOpen(false); }}
+                            className="w-full text-left flex items-center gap-2 px-4 py-2 text-sm text-red-400 hover:bg-dark-bg"
+                        >
+                            <TrashIcon className="w-4 h-4" /> {isDeletedOnPlatform ? "Remove" : "Delete"}
+                        </button>
+                    </div>
+                </div>
+            )}
+        </div>
+      );
+  };
 
   return (
     <>

@@ -1,4 +1,5 @@
 
+
 export enum Platform {
   Facebook = 'Facebook',
   Instagram = 'Instagram',
@@ -29,6 +30,7 @@ export interface Post {
   audience: Audience;
   imageUrl?: string; // Thumbnail for videos, image for images
   videoUrl?: string; // Actual video URL from Cloudinary etc.
+  permalinkUrl?: string;
   mediaType: 'IMAGE' | 'VIDEO';
   prompt: string;
   generatedContent: {
@@ -131,6 +133,7 @@ export interface Comment {
     message: string;
     from: FacebookUser;
     created_time: string;
+    comments?: Comment[];
 }
 
 export interface SmartReplySuggestion {

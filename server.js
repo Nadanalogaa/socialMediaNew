@@ -1,6 +1,7 @@
 
 
 
+
 import express from 'express';
 import 'dotenv/config';
 import { GoogleGenAI, Type } from '@google/genai';
@@ -410,6 +411,7 @@ const transformFbPostToStandard = (post) => {
         videoUrl: isVideo ? post.attachments.data[0].url : undefined,
         mediaType: isVideo ? 'VIDEO' : 'IMAGE',
         prompt: post.message || 'Post from Facebook',
+        permalinkUrl: post.permalink_url,
         generatedContent: {
             facebook: post.message || '',
             instagram: '',
@@ -444,6 +446,7 @@ const transformIgPostToStandard = (post) => {
         videoUrl: post.media_type === 'VIDEO' ? post.media_url : undefined,
         mediaType: post.media_type === 'VIDEO' ? 'VIDEO' : 'IMAGE',
         prompt: post.caption || `Post from ${post.username}`,
+        permalinkUrl: post.permalink, // Instagram calls it permalink
         generatedContent: {
             facebook: '',
             instagram: post.caption || '',
@@ -478,7 +481,7 @@ app.get('/api/posts', async (req, res) => {
     const platformPromises = [];
 
     // Facebook Promise
-    const fbFields = 'id,message,created_time,full_picture,attachments,likes.summary(true),comments.summary(true),shares';
+    const fbFields = 'id,message,created_time,full_picture,attachments,likes.summary(true),comments.summary(true),shares,permalink_url';
     const fbUrl = fbNext ?
         decodeURIComponent(fbNext) :
         `https://graph.facebook.com/v23.0/${pageId}/posts?fields=${fbFields}&limit=${limit}&access_token=${pageAccessToken}`;
@@ -486,7 +489,7 @@ app.get('/api/posts', async (req, res) => {
 
     // Instagram Promise (only if igUserId is provided)
     if (igUserId) {
-        const igFields = 'id,caption,timestamp,media_url,media_type,thumbnail_url,like_count,comments_count,username';
+        const igFields = 'id,caption,timestamp,media_url,media_type,thumbnail_url,like_count,comments_count,username,permalink';
         const igUrl = igNext ?
             decodeURIComponent(igNext) :
             `https://graph.facebook.com/v23.0/${igUserId}/media?fields=${igFields}&limit=${limit}&access_token=${pageAccessToken}`;
@@ -1082,11 +1085,11 @@ app.get('/api/post/:postId/comments', async (req, res) => {
     try {
         let fields;
         if (platform === 'Instagram') {
-            // Instagram Comment has 'text' not 'message', and 'timestamp' not 'created_time'.
-            fields = 'id,text,from{id,username},timestamp';
+            // Instagram Comment: 'text', 'timestamp', 'username', and nested 'replies'
+            fields = 'id,text,from{id,username},timestamp,replies{id,text,from{id,username},timestamp}';
         } else {
-            // Default to Facebook fields
-            fields = 'id,message,from{id,name,picture},created_time';
+            // Facebook Comment: 'message', 'created_time', 'name', and nested 'comments'
+            fields = 'id,message,from{id,name,picture},created_time,comments{id,message,from{id,name,picture},created_time}';
         }
 
         const url = `https://graph.facebook.com/v23.0/${postId}/comments?fields=${fields}&limit=100&access_token=${pageAccessToken}`;
@@ -1100,22 +1103,32 @@ app.get('/api/post/:postId/comments', async (req, res) => {
 
         let comments = data.data || [];
 
-        // If it was an Instagram request, transform the response to match the client's expected `Comment` structure.
+        // Transform the response to match the client's expected unified `Comment` structure.
         if (platform === 'Instagram') {
-            comments = comments.map(comment => ({
+            const transformIgComment = (comment) => ({
                 id: comment.id,
-                message: comment.text, // Map `text` to `message`
-                created_time: comment.timestamp, // Map `timestamp` to `created_time`
+                message: comment.text,
+                created_time: comment.timestamp,
                 from: {
                     id: comment.from.id,
-                    name: comment.from.username, // Map username to name
-                    picture: { // Add a placeholder picture
+                    name: comment.from.username,
+                    picture: {
                         data: {
                             url: `https://ui-avatars.com/api/?name=${encodeURIComponent(comment.from.username)}&background=374151&color=e5e7eb&size=40`
                         }
                     }
-                }
-            }));
+                },
+                // Recursively transform replies into the unified 'comments' array
+                comments: (comment.replies && comment.replies.data) ? comment.replies.data.map(transformIgComment) : []
+            });
+            comments = comments.map(transformIgComment);
+        } else { // Facebook
+            // Normalize FB's `comments.data` structure into a simple array.
+            const normalizeFbComments = (comment) => ({
+                ...comment,
+                comments: (comment.comments && comment.comments.data) ? comment.comments.data.map(normalizeFbComments) : []
+            });
+            comments = comments.map(normalizeFbComments);
         }
 
         res.json(comments);
