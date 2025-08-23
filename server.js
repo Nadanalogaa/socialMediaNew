@@ -650,13 +650,13 @@ app.post('/api/kpis', async (req, res) => {
             instagram: { followerHistory: [] }
         };
 
-        // Fetch Facebook Page Fans history
+        // --- FETCH HISTORICAL DATA ---
         if (facebook?.pageId) {
             const fbUrl = `https://graph.facebook.com/v23.0/${facebook.pageId}/insights?metric=page_fans&period=day&since=${sinceTimestamp}&until=${untilTimestamp}&access_token=${pageAccessToken}`;
             const fbResponse = await fetch(fbUrl);
             const fbData = await fbResponse.json();
             if (fbData.error) {
-                console.error("FB KPI Error:", fbData.error.message);
+                console.warn("FB KPI History Error:", fbData.error.message);
             } else if (fbData.data && fbData.data[0]?.values) {
                 kpis.facebook.followerHistory = fbData.data[0].values.map(item => ({
                     value: item.value,
@@ -665,19 +665,51 @@ app.post('/api/kpis', async (req, res) => {
             }
         }
 
-        // Fetch Instagram Follower Count history
         if (instagram?.igUserId) {
             const igUrl = `https://graph.facebook.com/v23.0/${instagram.igUserId}/insights?metric=follower_count&period=day&since=${sinceTimestamp}&until=${untilTimestamp}&access_token=${pageAccessToken}`;
             const igResponse = await fetch(igUrl);
             const igData = await igResponse.json();
-             if (igData.error) {
-                console.error("IG KPI Error:", igData.error.message);
+            if (igData.error) {
+                console.warn("IG KPI History Error:", igData.error.message);
             } else if (igData.data && igData.data[0]?.values) {
                 kpis.instagram.followerHistory = igData.data[0].values.map(item => ({
                     value: item.value,
                     end_time: item.end_time
                 }));
             }
+        }
+
+        // --- FALLBACK TO CURRENT COUNT IF HISTORY IS UNAVAILABLE ---
+        const fallbackPromises = [];
+
+        if (facebook?.pageId && kpis.facebook.followerHistory.length === 0) {
+            const fbCurrentUrl = `https://graph.facebook.com/v23.0/${facebook.pageId}?fields=fan_count&access_token=${pageAccessToken}`;
+            fallbackPromises.push(
+                fetch(fbCurrentUrl).then(r => r.json()).then(data => {
+                    if (data.fan_count !== undefined) {
+                        kpis.facebook.followerHistory.push({ value: data.fan_count, end_time: new Date().toISOString() });
+                    } else if (data.error) {
+                        console.warn("FB KPI Fallback Error:", data.error.message);
+                    }
+                }).catch(e => console.warn("FB KPI Fallback fetch failed", e))
+            );
+        }
+
+        if (instagram?.igUserId && kpis.instagram.followerHistory.length === 0) {
+            const igCurrentUrl = `https://graph.facebook.com/v23.0/${instagram.igUserId}?fields=followers_count&access_token=${pageAccessToken}`;
+            fallbackPromises.push(
+                fetch(igCurrentUrl).then(r => r.json()).then(data => {
+                    if (data.followers_count !== undefined) {
+                        kpis.instagram.followerHistory.push({ value: data.followers_count, end_time: new Date().toISOString() });
+                    } else if (data.error) {
+                        console.warn("IG KPI Fallback Error:", data.error.message);
+                    }
+                }).catch(e => console.warn("IG KPI Fallback fetch failed", e))
+            );
+        }
+
+        if (fallbackPromises.length > 0) {
+            await Promise.all(fallbackPromises);
         }
         
         res.json(kpis);

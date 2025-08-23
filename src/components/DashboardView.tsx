@@ -269,7 +269,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ posts, connectionD
 
         const getFollowerData = (history: { value: number; end_time: string }[] | undefined) => {
             if (!history || history.length === 0) return { current: 0, change: 0, data: [] };
-            const sorted = history.sort((a, b) => new Date(b.end_time).getTime() - new Date(a.end_time).getTime());
+            const sorted = [...history].sort((a, b) => new Date(b.end_time).getTime() - new Date(a.end_time).getTime());
             const current = sorted[0]?.value || 0;
             const previous = sorted[1]?.value || current;
             const change = current && previous ? ((current - previous) / previous) * 100 : 0;
@@ -279,11 +279,40 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ posts, connectionD
         const fbFollowers = isFb ? getFollowerData(kpiData?.facebook?.followerHistory) : getFollowerData([]);
         const igFollowers = isIg ? getFollowerData(kpiData?.instagram?.followerHistory) : getFollowerData([]);
         
+        const combinedFollowerData = () => {
+            if ((fbFollowers.data.length + igFollowers.data.length) === 0) return [];
+            
+            const dataMap = new Map<string, number>();
+        
+            const processData = (data: { name: string, value: number }[]) => {
+                data.forEach(point => {
+                    const dateKey = point.name.split('T')[0];
+                    dataMap.set(dateKey, (dataMap.get(dateKey) || 0) + point.value);
+                });
+            };
+            
+            if (isFb) processData(fbFollowers.data);
+            if (isIg) processData(igFollowers.data);
+        
+            const sortedData = Array.from(dataMap.entries())
+                .map(([date, value]) => ({ name: date, value }))
+                .sort((a, b) => new Date(a.name).getTime() - new Date(b.name).getTime());
+        
+            if (sortedData.length === 1) {
+                const singlePoint = sortedData[0];
+                const yesterday = new Date(singlePoint.name);
+                yesterday.setDate(yesterday.getDate() - 1);
+                return [{ name: yesterday.toISOString().split('T')[0], value: singlePoint.value }, singlePoint];
+            }
+            
+            return sortedData;
+        };
+
         return {
             ...engagement,
             followers: fbFollowers.current + igFollowers.current,
             followerChange: ((fbFollowers.current + igFollowers.current) - (fbFollowers.current / (1 + fbFollowers.change / 100) + igFollowers.current / (1 + igFollowers.change / 100))) / ((fbFollowers.current / (1 + fbFollowers.change / 100) + igFollowers.current / (1 + igFollowers.change / 100)) || 1) * 100,
-            followerChartData: [...fbFollowers.data, ...igFollowers.data] // Simplified for now
+            followerChartData: combinedFollowerData()
         };
     }, [postsInTimeframe, activePlatformFilter, kpiData]);
 
