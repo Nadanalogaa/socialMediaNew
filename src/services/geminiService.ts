@@ -1,7 +1,4 @@
-
-
-
-import type { Platform, SeoSuggestions, Post, ConnectionStatus, GeneratedAssetContent, GeneratedPostIdea, ConnectionDetails, Comment, FacebookUser, PostInsightResponse, SmartReplySuggestion, SmartBulkReply, KpiData } from '../types';
+import type { Platform, SeoSuggestions, Post, ConnectionStatus, GeneratedAssetContent, GeneratedPostIdea, ConnectionDetails, Comment, FacebookUser, PostInsightResponse, SmartReplySuggestion, SmartBulkReply, KpiData, TimeFilter } from '../types';
 
 const handleResponse = async (response: Response) => {
     if (!response.ok) {
@@ -68,18 +65,18 @@ export const fetchPlatformPosts = async (
     return handleResponse(response);
 };
 
-export const getKpis = async (details: ConnectionDetails): Promise<KpiData> => {
+export const getKpis = async (details: ConnectionDetails, filter: TimeFilter, tz?: string): Promise<KpiData> => {
     const body: any = {
       facebook: {
         pageId: details.facebook?.pageId,
         pageAccessToken: details.facebook?.pageAccessToken,
-      }
+      },
+      range: filter,
+      tz
     };
     if (details.instagram?.igUserId) {
       body.instagram = { igUserId: String(details.instagram.igUserId) };
     }
-
-    console.log('[KPI REQ BODY]', JSON.stringify(body));
   
     const res = await fetch('/api/kpis', {
       method: 'POST',

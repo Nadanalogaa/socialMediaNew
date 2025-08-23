@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import type { Post, ConnectionDetails, Platform as PlatformType, KpiData } from '../types';
+import type { Post, ConnectionDetails, Platform as PlatformType, KpiData, TimeFilter } from '../types';
 import { Platform } from '../types';
 import { PostCard } from './PostCard';
 import { AnalyticsChart } from './AnalyticsChart';
@@ -32,14 +32,23 @@ const LoadingSpinner: React.FC = () => (
     </svg>
 );
 
-type TimeFilter = 'daily' | 'weekly' | 'monthly' | 'yearly';
-
 const timeFilters: { label: string; value: TimeFilter }[] = [
     { label: 'Today', value: 'daily' },
     { label: 'Last 7 Days', value: 'weekly' },
     { label: 'Last 30 Days', value: 'monthly' },
     { label: 'Last Year', value: 'yearly' },
 ];
+
+const timeRangeFor = (f: TimeFilter) => {
+    const now = new Date();
+    const end = now;
+    const start = new Date(now);
+    if (f === 'daily') start.setHours(0, 0, 0, 0);
+    else if (f === 'weekly') start.setDate(now.getDate() - 7);
+    else if (f === 'monthly') start.setDate(now.getDate() - 30);
+    else start.setFullYear(now.getFullYear() - 1);
+    return { start, end, tz: Intl.DateTimeFormat().resolvedOptions().timeZone };
+};
 
 export const DashboardView: React.FC<DashboardViewProps> = ({ posts, connectionDetails, onDeletePost, onDeletePosts, onUpdatePost, onError }) => {
     const [allPosts, setAllPosts] = useState<Post[]>([]);
@@ -90,22 +99,23 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ posts, connectionD
 
     useEffect(() => {
         const isConnected = !!connectionDetails.facebook;
-        if (isConnected) {
-            setIsLoadingKpis(true);
-            console.log("[KPI CALL] facebook.pageId:", connectionDetails.facebook?.pageId, "igUserId:", connectionDetails.instagram?.igUserId);
-            getKpis(connectionDetails)
-                .then(setKpiData)
-                .catch(err => {
-                    const message = err instanceof Error ? err.message : String(err);
-                    onError(`Failed to load follower data: ${message}`);
-                    setKpiData(null);
-                })
-                .finally(() => setIsLoadingKpis(false));
-        } else {
+        if (!isConnected) {
             setIsLoadingKpis(false);
             setKpiData(null);
+            return;
         }
-    }, [connectionDetails, onError]);
+    
+        setIsLoadingKpis(true);
+        const range = timeRangeFor(activeTimeFilter);
+        getKpis(connectionDetails, activeTimeFilter, range.tz)
+            .then(setKpiData)
+            .catch(err => {
+                const message = err instanceof Error ? err.message : String(err);
+                onError(`Failed to load follower data: ${message}`);
+                setKpiData(null);
+            })
+            .finally(() => setIsLoadingKpis(false));
+    }, [connectionDetails, activeTimeFilter, onError]);
 
     useEffect(() => {
         if (kpiData) {
@@ -227,31 +237,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ posts, connectionD
         }
     }, [allPosts, connectionDetails, onUpdatePost, onError]);
 
-    const getStartDate = useCallback((filter: TimeFilter): Date => {
-        const now = new Date();
-        const start = new Date(now);
-    
-        switch (filter) {
-            case 'daily':
-                start.setHours(0, 0, 0, 0); // Start of today
-                break;
-            case 'weekly':
-                start.setDate(now.getDate() - 7);
-                break;
-            case 'monthly':
-                start.setDate(now.getDate() - 30);
-                break;
-            case 'yearly':
-                start.setFullYear(now.getFullYear() - 1);
-                break;
-        }
-        return start;
-    }, []);
-
     const postsInTimeframe = useMemo(() => {
-        const startDate = getStartDate(activeTimeFilter);
-        return allPosts.filter(p => new Date(p.postedAt) >= startDate);
-    }, [allPosts, activeTimeFilter, getStartDate]);
+        const { start, end } = timeRangeFor(activeTimeFilter);
+        return allPosts.filter(p => {
+            const t = new Date(p.postedAt).getTime();
+            return t >= start.getTime() && t <= end.getTime();
+        });
+    }, [allPosts, activeTimeFilter]);
 
     const displayedPosts = useMemo(() => {
         if (activePlatformFilter === 'All') return postsInTimeframe;
@@ -262,55 +254,54 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ posts, connectionD
         const isFb = activePlatformFilter === 'All' || activePlatformFilter === Platform.Facebook;
         const isIg = activePlatformFilter === 'All' || activePlatformFilter === Platform.Instagram;
     
-        const startDate = getStartDate(activeTimeFilter);
-    
-        const getFollowerData = (
+        const followerDeltaForRange = (
             history: { value: number; end_time: string }[] | undefined,
             absoluteNow: number | null | undefined,
-            periodStartDate: Date
+            start: Date,
+            end: Date
           ) => {
-            const fullHistory = [...(history || [])];
+            const series = [...(history || [])]
+              .map(p => ({ t: new Date(p.end_time).getTime(), v: p.value }))
+              .sort((a, b) => a.t - b.t);
+      
+            // Append "now" if today's point is missing
             if (typeof absoluteNow === 'number') {
-                const todayKey = new Date().toISOString().split('T')[0];
-                if (!fullHistory.some(p => p.end_time.startsWith(todayKey))) {
-                    fullHistory.push({ value: absoluteNow, end_time: new Date().toISOString() });
-                }
+              const last = series[series.length - 1];
+              const todayUTC = new Date().toISOString().split('T')[0];
+              const hasToday = last && new Date(last.t).toISOString().startsWith(todayUTC);
+              if (!hasToday) series.push({ t: Date.now(), v: absoluteNow });
             }
-            
-            fullHistory.sort((a, b) => new Date(a.end_time).getTime() - new Date(b.end_time).getTime());
-    
-            const current = absoluteNow ?? (fullHistory[fullHistory.length - 1]?.value ?? 0);
-            
-            if (fullHistory.length === 0) {
-                return { current, startValue: current, change: 0, data: [] };
+      
+            if (series.length === 0) {
+              return { current: 0, startValue: 0, net: 0, data: [] };
             }
-    
-            const firstPointInPeriod = fullHistory.find(p => new Date(p.end_time) >= periodStartDate);
-            const lastPointBeforePeriod = [...fullHistory].reverse().find(p => new Date(p.end_time) < periodStartDate);
-            const startValue = lastPointBeforePeriod?.value ?? firstPointInPeriod?.value ?? current;
+      
+            const startMs = start.getTime();
+            const endMs = end.getTime();
+      
+            const lastBeforeStartPoint = [...series].reverse().find(p => p.t < startMs);
+            const lastBeforeStart = lastBeforeStartPoint?.v;
             
-            const change = startValue > 0 ? ((current - startValue) / startValue) * 100 : 0;
-            
-            let chartData = fullHistory
-                .filter(d => new Date(d.end_time) >= periodStartDate)
-                .map(d => ({ name: d.end_time, value: d.value }));
-    
-            if (lastPointBeforePeriod && chartData.length > 0) {
-                chartData.unshift({ name: lastPointBeforePeriod.end_time, value: lastPointBeforePeriod.value });
+            const lastAtOrBeforeEndPoint = [...series].reverse().find(p => p.t <= endMs);
+            const lastAtOrBeforeEnd = lastAtOrBeforeEndPoint?.v ?? (typeof absoluteNow === 'number' ? absoluteNow : 0);
+      
+            const startValue = lastBeforeStart ?? (series[0]?.v ?? lastAtOrBeforeEnd);
+            const current = lastAtOrBeforeEnd;
+            const net = current - startValue;
+      
+            let chartData = series
+                .filter(d => d.t >= startMs && d.t <= endMs)
+                .map(d => ({ name: new Date(d.t).toISOString(), value: d.v }));
+      
+            if (lastBeforeStartPoint && chartData.length > 0) {
+                chartData.unshift({ name: new Date(lastBeforeStartPoint.t).toISOString(), value: lastBeforeStartPoint.v });
             }
-            
-            if (chartData.length === 1 && fullHistory.length > 1) {
-                const lastPoint = chartData[0];
-                const lastPointIndexInFull = fullHistory.findIndex(p => p.end_time === lastPoint.name);
-                if (lastPointIndexInFull > 0) {
-                    const previousPoint = fullHistory[lastPointIndexInFull - 1];
-                     chartData.unshift({ name: previousPoint.end_time, value: previousPoint.value });
-                }
-            }
-    
-            return { current, startValue, change, data: chartData };
+      
+            return { current, startValue, net, data: chartData };
         };
-    
+        
+        const { start, end } = timeRangeFor(activeTimeFilter);
+
         const engagement = postsInTimeframe.reduce((acc, post) => {
             if (isFb && post.engagement.facebook) {
                 acc.likes += post.engagement.facebook.likes;
@@ -325,22 +316,22 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ posts, connectionD
         }, { likes: 0, comments: 0, shares: 0 });
     
         const fbFollowers = isFb
-            ? getFollowerData(kpiData?.facebook?.followerHistory, kpiData?.facebook?.currentFollowers, startDate)
-            : { current: 0, startValue: 0, change: 0, data: [] };
+            ? followerDeltaForRange(kpiData?.facebook?.followerHistory, kpiData?.facebook?.currentFollowers, start, end)
+            : { current: 0, startValue: 0, net: 0, data: [] };
         const igFollowers = isIg
-            ? getFollowerData(kpiData?.instagram?.followerHistory, kpiData?.instagram?.currentFollowers, startDate)
-            : { current: 0, startValue: 0, change: 0, data: [] };
+            ? followerDeltaForRange(kpiData?.instagram?.followerHistory, kpiData?.instagram?.currentFollowers, start, end)
+            : { current: 0, startValue: 0, net: 0, data: [] };
         
-        const totalCurrentFollowers = fbFollowers.current + igFollowers.current;
         const totalStartFollowers = fbFollowers.startValue + igFollowers.startValue;
-    
-        const netFollowerChange = totalCurrentFollowers - totalStartFollowers;
+        const netFollowerChange = fbFollowers.net + igFollowers.net;
         const followerChangePercentage = totalStartFollowers > 0 
             ? ((netFollowerChange) / totalStartFollowers) * 100 
             : (netFollowerChange !== 0 ? undefined : 0);
     
         const combinedFollowerData = () => {
-            if ((fbFollowers.data.length + igFollowers.data.length) === 0) return [];
+            const fbData = fbFollowers.data;
+            const igData = igFollowers.data;
+            if ((fbData.length + igData.length) === 0) return [];
             
             const dataMap = new Map<string, number>();
         
@@ -351,8 +342,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ posts, connectionD
                 });
             };
             
-            if (isFb) processData(fbFollowers.data);
-            if (isIg) processData(igFollowers.data);
+            if (isFb) processData(fbData);
+            if (isIg) processData(igData);
         
             const sortedData = Array.from(dataMap.entries())
                 .map(([date, value]) => ({ name: date, value }))
@@ -367,7 +358,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ posts, connectionD
             followerChangePercentage,
             followerChartData: combinedFollowerData()
         };
-    }, [postsInTimeframe, activePlatformFilter, kpiData, getStartDate, activeTimeFilter]);
+    }, [postsInTimeframe, activePlatformFilter, kpiData, activeTimeFilter]);
 
 
     const platformFilters: { name: PlatformType | 'All', icon: JSX.Element }[] = [

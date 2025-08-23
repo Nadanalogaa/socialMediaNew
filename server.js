@@ -1,7 +1,3 @@
-
-
-
-
 import express from 'express';
 import 'dotenv/config';
 import { GoogleGenAI, Type } from '@google/genai';
@@ -632,23 +628,28 @@ app.get('/api/posts', async (req, res) => {
 });
 
 app.post('/api/kpis', async (req, res) => {
-    const { facebook, instagram } = req.body;
+    const { facebook, instagram, range = 'monthly' } = req.body;
     const pageAccessToken = facebook?.pageAccessToken;
 
     if (!pageAccessToken) {
         return res.status(401).json({ message: 'Missing page access token.' });
     }
 
-    console.log("[KPIS] pageId:", facebook?.pageId, "igUserId:", instagram?.igUserId?.toString());
-    console.log('[KPI CALL] token looks like:', (pageAccessToken||'').slice(0,12)+'...');
-
     try {
-        const until = new Date();
-        const since = new Date();
-        since.setDate(until.getDate() - 30); // 30 days ago
+        const now = new Date();
+        const end = now;
+        const start = new Date(now);
+        const daysMap = { daily: 1, weekly: 7, monthly: 30, yearly: 365 };
+        const days = daysMap[range] || 30;
 
-        const untilTimestamp = Math.floor(until.getTime() / 1000);
-        const sinceTimestamp = Math.floor(since.getTime() / 1000);
+        if (range === 'daily') {
+            start.setHours(0, 0, 0, 0);
+        } else {
+            start.setDate(now.getDate() - days);
+        }
+
+        const untilTimestamp = Math.floor(end.getTime() / 1000);
+        const sinceTimestamp = Math.floor(start.getTime() / 1000);
 
         const kpis = {
             facebook: { followerHistory: [], currentFollowers: null },
@@ -668,7 +669,6 @@ app.post('/api/kpis', async (req, res) => {
                 kpis.facebook.followerHistory = hist.data[0].values.map(v => ({ value: v.value, end_time: v.end_time }));
             }
             
-            // Always fetch current fan_count
             const curUrl = `https://graph.facebook.com/v23.0/${facebook.pageId}?fields=fan_count&access_token=${pageAccessToken}`;
             const curRes = await fetch(curUrl);
             const cur = await curRes.json();
@@ -677,9 +677,6 @@ app.post('/api/kpis', async (req, res) => {
             }
             if (typeof cur.fan_count === 'number') {
                 kpis.facebook.currentFollowers = cur.fan_count;
-                if (kpis.facebook.followerHistory.length === 0) {
-                    kpis.facebook.followerHistory.push({ value: cur.fan_count, end_time: new Date().toISOString() });
-                }
             }
         }
         
@@ -687,11 +684,11 @@ app.post('/api/kpis', async (req, res) => {
         if (instagram?.igUserId) {
             const igUserId = String(instagram.igUserId);
             const token = pageAccessToken;
-            console.log('[KPIS IG] Using igUserId:', igUserId);
-            console.log('[KPIS IG] Token starts with:', (token||'').slice(0,12)+'...');
+            // Instagram insights window is limited; clamp 'since' to a max of 30 days ago.
+            const thirtyDaysAgo = Math.floor((Date.now() - 30 * 86400 * 1000) / 1000);
+            const igSinceTimestamp = Math.max(sinceTimestamp, thirtyDaysAgo);
 
-            // Try to fetch history first (daily net change)
-            const histUrl = `https://graph.facebook.com/v23.0/${igUserId}/insights?metric=follower_count&period=day&since=${sinceTimestamp}&until=${untilTimestamp}&access_token=${token}`;
+            const histUrl = `https://graph.facebook.com/v23.0/${igUserId}/insights?metric=follower_count&period=day&since=${igSinceTimestamp}&until=${untilTimestamp}&access_token=${token}`;
             try {
                 const histRes = await fetch(histUrl);
                 const hist = await histRes.json();
@@ -704,21 +701,12 @@ app.post('/api/kpis', async (req, res) => {
                 console.warn("Instagram insights fetch failed:", e.message);
             }
             
-            // Always fetch absolute followers_count
-            const igCurrentUrl =
-              `https://graph.facebook.com/v23.0/${igUserId}` +
-              `?fields=followers_count&access_token=${token}`;
+            const igCurrentUrl = `https://graph.facebook.com/v23.0/${igUserId}?fields=followers_count&access_token=${token}`;
             try {
               const igCurRes = await fetch(igCurrentUrl);
               const igCur = await igCurRes.json();
               if (typeof igCur.followers_count === 'number') {
                 kpis.instagram.currentFollowers = igCur.followers_count;
-                if (kpis.instagram.followerHistory.length === 0) {
-                  kpis.instagram.followerHistory.push({
-                    value: igCur.followers_count,
-                    end_time: new Date().toISOString()
-                  });
-                }
               } else if (igCur.error) {
                 console.warn('IG followers_count error:', igCur.error.message);
               }

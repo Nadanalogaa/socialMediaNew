@@ -1,12 +1,3 @@
-
-
-
-
-
-
-
-
-
 export enum Platform {
   Facebook = 'Facebook',
   Instagram = 'Instagram',
@@ -29,6 +20,7 @@ export enum View {
   PRIVACY_POLICY = 'PRIVACY_POLICY',
 }
 
+export type TimeFilter = 'daily' | 'weekly' | 'monthly' | 'yearly';
 
 export interface Post {
   id: string;
