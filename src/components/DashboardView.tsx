@@ -274,17 +274,27 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ posts, connectionD
             return acc;
         }, { likes: 0, comments: 0, shares: 0 });
 
-        const getFollowerData = (history: { value: number; end_time: string }[] | undefined) => {
-            if (!history || history.length === 0) return { current: 0, change: 0, data: [] };
+        const getFollowerData = (
+            history: { value: number; end_time: string }[] | undefined,
+            absoluteNow?: number | null
+          ) => {
+            if (!history || history.length === 0) {
+              return { current: absoluteNow ?? 0, change: 0, data: [] };
+            }
             const sorted = [...history].sort((a, b) => new Date(b.end_time).getTime() - new Date(a.end_time).getTime());
-            const current = sorted[0]?.value || 0;
-            const previous = sorted[1]?.value || current;
-            const change = current && previous ? ((current - previous) / previous) * 100 : 0;
-            return { current, change, data: sorted.map(d => ({name: d.end_time, value: d.value})).reverse() };
-        };
+            // If absoluteNow is provided, use it for the “current” total.
+            const current = typeof absoluteNow === 'number' ? absoluteNow : (sorted[0]?.value || 0);
+             const previous = sorted[1]?.value || current;
+             const change = current && previous ? ((current - previous) / previous) * 100 : 0;
+             return { current, change, data: sorted.map(d => ({name: d.end_time, value: d.value})).reverse() };
+          };
 
-        const fbFollowers = isFb ? getFollowerData(kpiData?.facebook?.followerHistory) : getFollowerData([]);
-        const igFollowers = isIg ? getFollowerData(kpiData?.instagram?.followerHistory) : getFollowerData([]);
+        const fbFollowers = isFb
+            ? getFollowerData(kpiData?.facebook?.followerHistory, kpiData?.facebook?.currentFollowers)
+            : getFollowerData([]);
+        const igFollowers = isIg
+            ? getFollowerData(kpiData?.instagram?.followerHistory, kpiData?.instagram?.currentFollowers)
+            : getFollowerData([]);
         
         const combinedFollowerData = () => {
             if ((fbFollowers.data.length + igFollowers.data.length) === 0) return [];
@@ -377,7 +387,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ posts, connectionD
 
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
                 <KpiCard title="Total Followers" icon={<UsersIcon className="w-6 h-6"/>} value={aggregatedKpis.followers} delta={aggregatedKpis.followerChange} isLoading={isLoadingKpis}>
-                    {aggregatedKpis.followerChartData.length > 1 && <SparklineChart data={aggregatedKpis.followerChartData} />}
+                    {aggregatedKpis.followerChartData.length >= 1 && <SparklineChart data={aggregatedKpis.followerChartData} />}
                 </KpiCard>
                 <KpiCard title="Total Likes" icon={<HeartIcon className="w-6 h-6"/>} value={aggregatedKpis.likes} isLoading={isLoading} />
                 <KpiCard title="Total Comments" icon={<CommentBubbleIcon className="w-6 h-6"/>} value={aggregatedKpis.comments} isLoading={isLoading} />

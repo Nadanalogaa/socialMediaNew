@@ -651,8 +651,8 @@ app.post('/api/kpis', async (req, res) => {
         const sinceTimestamp = Math.floor(since.getTime() / 1000);
 
         const kpis = {
-            facebook: { followerHistory: [] },
-            instagram: { followerHistory: [] }
+            facebook: { followerHistory: [], currentFollowers: null },
+            instagram: { followerHistory: [], currentFollowers: null }
         };
 
         // --- FETCH FACEBOOK DATA ---
@@ -663,21 +663,21 @@ app.post('/api/kpis', async (req, res) => {
 
             if (hist.error) {
                 console.warn("Facebook insights error:", hist.error.message);
-                // Don't kill the request, just move on to fallback
             }
             if (Array.isArray(hist.data) && hist.data[0]?.values) {
                 kpis.facebook.followerHistory = hist.data[0].values.map(v => ({ value: v.value, end_time: v.end_time }));
             }
             
-            // Fallback to current count if history empty
-            if (kpis.facebook.followerHistory.length === 0) {
-                const curUrl = `https://graph.facebook.com/v23.0/${facebook.pageId}?fields=fan_count&access_token=${pageAccessToken}`;
-                const curRes = await fetch(curUrl);
-                const cur = await curRes.json();
-                if (cur.error) {
-                    console.warn(`Facebook fan_count error: ${cur.error.message}`);
-                }
-                if (typeof cur.fan_count === 'number') {
+            // Always fetch current fan_count
+            const curUrl = `https://graph.facebook.com/v23.0/${facebook.pageId}?fields=fan_count&access_token=${pageAccessToken}`;
+            const curRes = await fetch(curUrl);
+            const cur = await curRes.json();
+            if (cur.error) {
+                console.warn(`Facebook fan_count error: ${cur.error.message}`);
+            }
+            if (typeof cur.fan_count === 'number') {
+                kpis.facebook.currentFollowers = cur.fan_count;
+                if (kpis.facebook.followerHistory.length === 0) {
                     kpis.facebook.followerHistory.push({ value: cur.fan_count, end_time: new Date().toISOString() });
                 }
             }
@@ -690,39 +690,40 @@ app.post('/api/kpis', async (req, res) => {
             console.log('[KPIS IG] Using igUserId:', igUserId);
             console.log('[KPIS IG] Token starts with:', (token||'').slice(0,12)+'...');
 
-            // Try to fetch history first
+            // Try to fetch history first (daily net change)
             const histUrl = `https://graph.facebook.com/v23.0/${igUserId}/insights?metric=follower_count&period=day&since=${sinceTimestamp}&until=${untilTimestamp}&access_token=${token}`;
             try {
                 const histRes = await fetch(histUrl);
                 const hist = await histRes.json();
                 if (hist.error) {
-                    console.warn("Instagram insights error:", hist.error.message, "Attempting fallback.");
+                    console.warn("Instagram insights error:", hist.error.message, "This metric provides daily net change.");
                 } else if (Array.isArray(hist.data) && hist.data[0]?.values) {
                     kpis.instagram.followerHistory = hist.data[0].values.map(v => ({ value: v.value, end_time: v.end_time }));
                 }
             } catch (e) {
-                console.warn("Instagram insights fetch failed:", e.message, "Attempting fallback.");
+                console.warn("Instagram insights fetch failed:", e.message);
             }
             
-            // Fallback to current count if history empty
-            if (kpis.instagram.followerHistory.length === 0) {
-              const igCurrentUrl =
-                `https://graph.facebook.com/v23.0/${igUserId}` +
-                `?fields=followers_count&access_token=${token}`;
-              try {
-                const igCurRes = await fetch(igCurrentUrl);
-                const igCur = await igCurRes.json();
-                if (typeof igCur.followers_count === 'number') {
+            // Always fetch absolute followers_count
+            const igCurrentUrl =
+              `https://graph.facebook.com/v23.0/${igUserId}` +
+              `?fields=followers_count&access_token=${token}`;
+            try {
+              const igCurRes = await fetch(igCurrentUrl);
+              const igCur = await igCurRes.json();
+              if (typeof igCur.followers_count === 'number') {
+                kpis.instagram.currentFollowers = igCur.followers_count;
+                if (kpis.instagram.followerHistory.length === 0) {
                   kpis.instagram.followerHistory.push({
                     value: igCur.followers_count,
                     end_time: new Date().toISOString()
                   });
-                } else if (igCur.error) {
-                  console.warn('IG followers_count error:', igCur.error.message);
                 }
-              } catch (e) {
-                console.warn('IG followers_count fetch failed', e);
+              } else if (igCur.error) {
+                console.warn('IG followers_count error:', igCur.error.message);
               }
+            } catch (e) {
+              console.warn('IG followers_count fetch failed', e);
             }
         }
 

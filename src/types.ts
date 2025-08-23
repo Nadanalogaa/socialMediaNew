@@ -6,6 +6,7 @@
 
 
 
+
 export enum Platform {
   Facebook = 'Facebook',
   Instagram = 'Instagram',
@@ -171,8 +172,10 @@ export interface PostInsightResponse {
 export interface KpiData {
     facebook: {
         followerHistory: { value: number; end_time: string }[];
+        currentFollowers: number | null;
     };
     instagram: {
         followerHistory: { value: number; end_time: string }[];
+        currentFollowers: number | null;
     };
 }
