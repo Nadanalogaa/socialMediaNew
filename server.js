@@ -1,6 +1,7 @@
 
 
 
+
 import express from 'express';
 import 'dotenv/config';
 import { GoogleGenAI, Type } from '@google/genai';
@@ -684,8 +685,13 @@ app.post('/api/kpis', async (req, res) => {
         
         // --- FETCH INSTAGRAM DATA ---
         if (instagram?.igUserId) {
+            const igUserId = String(instagram.igUserId);
+            const token = pageAccessToken;
+            console.log('[KPIS IG] Using igUserId:', igUserId);
+            console.log('[KPIS IG] Token starts with:', (token||'').slice(0,12)+'...');
+
             // Try to fetch history first
-            const histUrl = `https://graph.facebook.com/v23.0/${instagram.igUserId}/insights?metric=follower_count&period=day&since=${sinceTimestamp}&until=${untilTimestamp}&access_token=${pageAccessToken}`;
+            const histUrl = `https://graph.facebook.com/v23.0/${igUserId}/insights?metric=follower_count&period=day&since=${sinceTimestamp}&until=${untilTimestamp}&access_token=${token}`;
             try {
                 const histRes = await fetch(histUrl);
                 const hist = await histRes.json();
@@ -701,8 +707,8 @@ app.post('/api/kpis', async (req, res) => {
             // Fallback to current count if history empty
             if (kpis.instagram.followerHistory.length === 0) {
               const igCurrentUrl =
-                `https://graph.facebook.com/v23.0/${instagram.igUserId}` +
-                `?fields=followers_count&access_token=${pageAccessToken}`;
+                `https://graph.facebook.com/v23.0/${igUserId}` +
+                `?fields=followers_count&access_token=${token}`;
               try {
                 const igCurRes = await fetch(igCurrentUrl);
                 const igCur = await igCurRes.json();

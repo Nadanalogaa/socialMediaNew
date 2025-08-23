@@ -109,7 +109,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ posts, connectionD
 
     useEffect(() => {
         if (kpiData) {
-            console.log('[KPI DATA]', kpiData);
+            console.log('[KPI DATA]', JSON.stringify(kpiData, null, 2));
         }
     }, [kpiData]);
 

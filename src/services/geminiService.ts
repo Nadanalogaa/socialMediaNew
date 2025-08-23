@@ -1,5 +1,6 @@
 
 
+
 import type { Platform, SeoSuggestions, Post, ConnectionStatus, GeneratedAssetContent, GeneratedPostIdea, ConnectionDetails, Comment, FacebookUser, PostInsightResponse, SmartReplySuggestion, SmartBulkReply, KpiData } from '../types';
 
 const handleResponse = async (response: Response) => {
@@ -75,8 +76,10 @@ export const getKpis = async (details: ConnectionDetails): Promise<KpiData> => {
       }
     };
     if (details.instagram?.igUserId) {
-      body.instagram = { igUserId: details.instagram.igUserId };
+      body.instagram = { igUserId: String(details.instagram.igUserId) };
     }
+
+    console.log('[KPI REQ BODY]', JSON.stringify(body));
   
     const res = await fetch('/api/kpis', {
       method: 'POST',
