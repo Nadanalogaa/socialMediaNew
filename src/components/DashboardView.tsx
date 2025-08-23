@@ -334,9 +334,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ posts, connectionD
         const totalCurrentFollowers = fbFollowers.current + igFollowers.current;
         const totalStartFollowers = fbFollowers.startValue + igFollowers.startValue;
     
-        const combinedFollowerChange = totalStartFollowers > 0 
-            ? ((totalCurrentFollowers - totalStartFollowers) / totalStartFollowers) * 100 
-            : 0;
+        const netFollowerChange = totalCurrentFollowers - totalStartFollowers;
+        const followerChangePercentage = totalStartFollowers > 0 
+            ? ((netFollowerChange) / totalStartFollowers) * 100 
+            : (netFollowerChange !== 0 ? undefined : 0);
     
         const combinedFollowerData = () => {
             if ((fbFollowers.data.length + igFollowers.data.length) === 0) return [];
@@ -362,8 +363,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ posts, connectionD
     
         return {
             ...engagement,
-            followers: totalCurrentFollowers,
-            followerChange: combinedFollowerChange,
+            netFollowerChange,
+            followerChangePercentage,
             followerChartData: combinedFollowerData()
         };
     }, [postsInTimeframe, activePlatformFilter, kpiData, getStartDate, activeTimeFilter]);
@@ -422,7 +423,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ posts, connectionD
             </div>
 
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <KpiCard title="Total Followers" icon={<UsersIcon className="w-6 h-6"/>} value={aggregatedKpis.followers} delta={aggregatedKpis.followerChange} isLoading={isLoadingKpis}>
+                <KpiCard title="Follower Change" icon={<UsersIcon className="w-6 h-6"/>} value={aggregatedKpis.netFollowerChange} delta={aggregatedKpis.followerChangePercentage} isLoading={isLoadingKpis}>
                     {aggregatedKpis.followerChartData.length >= 1 && <SparklineChart data={aggregatedKpis.followerChartData} />}
                 </KpiCard>
                 <KpiCard title="Total Likes" icon={<HeartIcon className="w-6 h-6"/>} value={aggregatedKpis.likes} isLoading={isLoading} />
