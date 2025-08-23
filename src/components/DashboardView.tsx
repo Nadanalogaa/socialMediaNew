@@ -227,44 +227,13 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ posts, connectionD
         }
     }, [allPosts, connectionDetails, onUpdatePost, onError]);
 
-    const postsInTimeframe = useMemo(() => {
-        const now = new Date();
-        const getStartDate = () => {
-            const start = new Date(now);
-            switch (activeTimeFilter) {
-                case 'daily':
-                    start.setDate(now.getDate() - 1);
-                    return start;
-                case 'weekly':
-                    start.setDate(now.getDate() - 7);
-                    return start;
-                case 'monthly':
-                    start.setMonth(now.getMonth() - 1);
-                    return start;
-                case 'yearly':
-                    start.setFullYear(now.getFullYear() - 1);
-                    return start;
-                default:
-                    return new Date(0); // Epoch if something goes wrong
-            }
-        };
-        const startDate = getStartDate();
-        return allPosts.filter(p => new Date(p.postedAt) >= startDate);
-    }, [allPosts, activeTimeFilter]);
-
-    const platformFilteredPosts = useMemo(() => {
-        if (activePlatformFilter === 'All') return allPosts;
-        return allPosts.filter(p => p.platforms.includes(activePlatformFilter));
-    }, [allPosts, activePlatformFilter]);
-
     const getStartDate = useCallback((filter: TimeFilter): Date => {
         const now = new Date();
         const start = new Date(now);
-        start.setHours(0, 0, 0, 0);
     
         switch (filter) {
             case 'daily':
-                start.setDate(now.getDate() - 1);
+                start.setHours(0, 0, 0, 0); // Start of today
                 break;
             case 'weekly':
                 start.setDate(now.getDate() - 7);
@@ -278,6 +247,16 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ posts, connectionD
         }
         return start;
     }, []);
+
+    const postsInTimeframe = useMemo(() => {
+        const startDate = getStartDate(activeTimeFilter);
+        return allPosts.filter(p => new Date(p.postedAt) >= startDate);
+    }, [allPosts, activeTimeFilter, getStartDate]);
+
+    const displayedPosts = useMemo(() => {
+        if (activePlatformFilter === 'All') return postsInTimeframe;
+        return postsInTimeframe.filter(p => p.platforms.includes(activePlatformFilter));
+    }, [postsInTimeframe, activePlatformFilter]);
 
     const aggregatedKpis = useMemo(() => {
         const isFb = activePlatformFilter === 'All' || activePlatformFilter === Platform.Facebook;
@@ -466,8 +445,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ posts, connectionD
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-                    {platformFilteredPosts.map((post, index) => (
-                         <div key={post.id} ref={platformFilteredPosts.length === index + 1 ? lastPostElementRef : null}>
+                    {displayedPosts.map((post, index) => (
+                         <div key={post.id} ref={displayedPosts.length === index + 1 ? lastPostElementRef : null}>
                             <PostCard 
                                 post={post}
                                 isSelected={selectedPosts.has(post.id)}
@@ -490,7 +469,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ posts, connectionD
                  {!isLoading && !hasMore && connectionDetails.facebook && (
                     <p className="text-center text-dark-text-secondary py-8">You've reached the end of your posts.</p>
                 )}
-                 {!isLoading && platformFilteredPosts.length === 0 && (
+                 {!isLoading && displayedPosts.length === 0 && (
                      <div className="text-center py-16 bg-dark-card rounded-lg border border-dark-border">
                         <p className="text-dark-text-secondary">No posts found.</p>
                         <p className="text-xs text-dark-text-secondary mt-1">
