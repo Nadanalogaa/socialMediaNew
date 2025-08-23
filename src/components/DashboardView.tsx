@@ -107,6 +107,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ posts, connectionD
         }
     }, [connectionDetails, onError]);
 
+    useEffect(() => {
+        if (kpiData) {
+            console.log('[KPI DATA]', kpiData);
+        }
+    }, [kpiData]);
+
 
     useEffect(() => {
         const isConnected = !!connectionDetails.facebook;

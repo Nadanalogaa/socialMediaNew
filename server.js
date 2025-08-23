@@ -1,5 +1,6 @@
 
 
+
 import express from 'express';
 import 'dotenv/config';
 import { GoogleGenAI, Type } from '@google/genai';
@@ -638,6 +639,7 @@ app.post('/api/kpis', async (req, res) => {
     }
 
     console.log("[KPIS] pageId:", facebook?.pageId, "igUserId:", instagram?.igUserId?.toString());
+    console.log('[KPI CALL] token looks like:', (pageAccessToken||'').slice(0,12)+'...');
 
     try {
         const until = new Date();
@@ -681,41 +683,39 @@ app.post('/api/kpis', async (req, res) => {
         }
         
         // --- FETCH INSTAGRAM DATA ---
-        if (instagram) {
-            if (!instagram.igUserId) {
-                return res.status(400).json({ message: "Missing instagram.igUserId. Link an Instagram Business/Creator to the selected Page." });
+        if (instagram?.igUserId) {
+            // Try to fetch history first
+            const histUrl = `https://graph.facebook.com/v23.0/${instagram.igUserId}/insights?metric=follower_count&period=day&since=${sinceTimestamp}&until=${untilTimestamp}&access_token=${pageAccessToken}`;
+            try {
+                const histRes = await fetch(histUrl);
+                const hist = await histRes.json();
+                if (hist.error) {
+                    console.warn("Instagram insights error:", hist.error.message, "Attempting fallback.");
+                } else if (Array.isArray(hist.data) && hist.data[0]?.values) {
+                    kpis.instagram.followerHistory = hist.data[0].values.map(v => ({ value: v.value, end_time: v.end_time }));
+                }
+            } catch (e) {
+                console.warn("Instagram insights fetch failed:", e.message, "Attempting fallback.");
             }
-
-            const histUrl =
-              `https://graph.facebook.com/v23.0/${instagram.igUserId}/insights` +
-              `?metric=follower_count&period=day&since=${sinceTimestamp}&until=${untilTimestamp}` +
-              `&access_token=${pageAccessToken}`;
-            const histRes = await fetch(histUrl);
-            const hist = await histRes.json();
-
-            if (hist.error) {
-              return res.status(400).json({
-                message: `Instagram insights error: ${hist.error.message}`,
-                code: hist.error.code,
-                type: hist.error.type,
-                subcode: hist.error.error_subcode
-              });
-            }
-
-            if (Array.isArray(hist.data) && hist.data[0]?.values) {
-              kpis.instagram.followerHistory = hist.data[0].values.map(v => ({ value: v.value, end_time: v.end_time }));
-            }
-
+            
             // Fallback to current count if history empty
             if (kpis.instagram.followerHistory.length === 0) {
-              const curUrl = `https://graph.facebook.com/v23.0/${instagram.igUserId}?fields=followers_count&access_token=${pageAccessToken}`;
-              const curRes = await fetch(curUrl);
-              const cur = await curRes.json();
-              if (cur.error) {
-                return res.status(400).json({ message: `Instagram followers_count error: ${cur.error.message}` });
-              }
-              if (typeof cur.followers_count === 'number') {
-                kpis.instagram.followerHistory.push({ value: cur.followers_count, end_time: new Date().toISOString() });
+              const igCurrentUrl =
+                `https://graph.facebook.com/v23.0/${instagram.igUserId}` +
+                `?fields=followers_count&access_token=${pageAccessToken}`;
+              try {
+                const igCurRes = await fetch(igCurrentUrl);
+                const igCur = await igCurRes.json();
+                if (typeof igCur.followers_count === 'number') {
+                  kpis.instagram.followerHistory.push({
+                    value: igCur.followers_count,
+                    end_time: new Date().toISOString()
+                  });
+                } else if (igCur.error) {
+                  console.warn('IG followers_count error:', igCur.error.message);
+                }
+              } catch (e) {
+                console.warn('IG followers_count fetch failed', e);
               }
             }
         }
