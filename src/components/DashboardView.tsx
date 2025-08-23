@@ -92,11 +92,12 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ posts, connectionD
         const isConnected = !!connectionDetails.facebook;
         if (isConnected) {
             setIsLoadingKpis(true);
+            console.log("[KPI CALL] facebook.pageId:", connectionDetails.facebook?.pageId, "igUserId:", connectionDetails.instagram?.igUserId);
             getKpis(connectionDetails)
                 .then(setKpiData)
                 .catch(err => {
                     const message = err instanceof Error ? err.message : String(err);
-                    onError(`Failed to load follower data. You may need to grant the 'read_insights' permission. Error: ${message}`);
+                    onError(`Failed to load follower data: ${message}`);
                     setKpiData(null);
                 })
                 .finally(() => setIsLoadingKpis(false));

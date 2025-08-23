@@ -637,9 +637,6 @@ app.post('/api/kpis', async (req, res) => {
         return res.status(401).json({ message: 'Missing page access token.' });
     }
 
-    if (!instagram?.igUserId) {
-      return res.status(400).json({ message: "Missing instagram.igUserId (IG Business account id). Is the Page linked to IG and did you return it from /api/connect/facebook?" });
-    }
     console.log("[KPIS] pageId:", facebook?.pageId, "igUserId:", instagram?.igUserId?.toString());
 
     try {
@@ -684,14 +681,18 @@ app.post('/api/kpis', async (req, res) => {
         }
         
         // --- FETCH INSTAGRAM DATA ---
-        if (instagram?.igUserId) {
+        if (instagram) {
+            if (!instagram.igUserId) {
+                return res.status(400).json({ message: "Missing instagram.igUserId. Link an Instagram Business/Creator to the selected Page." });
+            }
+
             const histUrl =
               `https://graph.facebook.com/v23.0/${instagram.igUserId}/insights` +
               `?metric=follower_count&period=day&since=${sinceTimestamp}&until=${untilTimestamp}` +
               `&access_token=${pageAccessToken}`;
             const histRes = await fetch(histUrl);
             const hist = await histRes.json();
-          
+
             if (hist.error) {
               return res.status(400).json({
                 message: `Instagram insights error: ${hist.error.message}`,
@@ -700,11 +701,11 @@ app.post('/api/kpis', async (req, res) => {
                 subcode: hist.error.error_subcode
               });
             }
-          
+
             if (Array.isArray(hist.data) && hist.data[0]?.values) {
               kpis.instagram.followerHistory = hist.data[0].values.map(v => ({ value: v.value, end_time: v.end_time }));
             }
-          
+
             // Fallback to current count if history empty
             if (kpis.instagram.followerHistory.length === 0) {
               const curUrl = `https://graph.facebook.com/v23.0/${instagram.igUserId}?fields=followers_count&access_token=${pageAccessToken}`;

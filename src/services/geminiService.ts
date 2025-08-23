@@ -1,11 +1,5 @@
 
 
-
-
-
-
-
-
 import type { Platform, SeoSuggestions, Post, ConnectionStatus, GeneratedAssetContent, GeneratedPostIdea, ConnectionDetails, Comment, FacebookUser, PostInsightResponse, SmartReplySuggestion, SmartBulkReply, KpiData } from '../types';
 
 const handleResponse = async (response: Response) => {
@@ -73,13 +67,36 @@ export const fetchPlatformPosts = async (
     return handleResponse(response);
 };
 
-export const getKpis = async (connectionDetails: ConnectionDetails): Promise<KpiData> => {
-    const response = await fetch('/api/kpis', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(connectionDetails),
+export const getKpis = async (details: ConnectionDetails): Promise<KpiData> => {
+    const body: any = {
+      facebook: {
+        pageId: details.facebook?.pageId,
+        pageAccessToken: details.facebook?.pageAccessToken,
+      }
+    };
+    if (details.instagram?.igUserId) {
+      body.instagram = { igUserId: details.instagram.igUserId };
+    }
+  
+    const res = await fetch('/api/kpis', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
     });
-    return handleResponse(response);
+  
+    const text = await res.text();
+    let json: any;
+    try { 
+        json = text ? JSON.parse(text) : {}; 
+    } catch { 
+        // If parsing fails, the text itself is the error message.
+        json = { message: text }; 
+    }
+  
+    if (!res.ok) {
+      throw new Error(json?.message || `KPIs failed with HTTP ${res.status}`);
+    }
+    return json as KpiData;
 }
 
 export const generateAssetContent = async (prompt: string): Promise<GeneratedAssetContent> => {
