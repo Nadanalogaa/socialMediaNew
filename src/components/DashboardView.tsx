@@ -257,10 +257,81 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ posts, connectionD
         return allPosts.filter(p => p.platforms.includes(activePlatformFilter));
     }, [allPosts, activePlatformFilter]);
 
+    const getStartDate = useCallback((filter: TimeFilter): Date => {
+        const now = new Date();
+        const start = new Date(now);
+        start.setHours(0, 0, 0, 0);
+    
+        switch (filter) {
+            case 'daily':
+                start.setDate(now.getDate() - 1);
+                break;
+            case 'weekly':
+                start.setDate(now.getDate() - 7);
+                break;
+            case 'monthly':
+                start.setDate(now.getDate() - 30);
+                break;
+            case 'yearly':
+                start.setFullYear(now.getFullYear() - 1);
+                break;
+        }
+        return start;
+    }, []);
+
     const aggregatedKpis = useMemo(() => {
         const isFb = activePlatformFilter === 'All' || activePlatformFilter === Platform.Facebook;
         const isIg = activePlatformFilter === 'All' || activePlatformFilter === Platform.Instagram;
-
+    
+        const startDate = getStartDate(activeTimeFilter);
+    
+        const getFollowerData = (
+            history: { value: number; end_time: string }[] | undefined,
+            absoluteNow: number | null | undefined,
+            periodStartDate: Date
+          ) => {
+            const fullHistory = [...(history || [])];
+            if (typeof absoluteNow === 'number') {
+                const todayKey = new Date().toISOString().split('T')[0];
+                if (!fullHistory.some(p => p.end_time.startsWith(todayKey))) {
+                    fullHistory.push({ value: absoluteNow, end_time: new Date().toISOString() });
+                }
+            }
+            
+            fullHistory.sort((a, b) => new Date(a.end_time).getTime() - new Date(b.end_time).getTime());
+    
+            const current = absoluteNow ?? (fullHistory[fullHistory.length - 1]?.value ?? 0);
+            
+            if (fullHistory.length === 0) {
+                return { current, startValue: current, change: 0, data: [] };
+            }
+    
+            const firstPointInPeriod = fullHistory.find(p => new Date(p.end_time) >= periodStartDate);
+            const lastPointBeforePeriod = [...fullHistory].reverse().find(p => new Date(p.end_time) < periodStartDate);
+            const startValue = lastPointBeforePeriod?.value ?? firstPointInPeriod?.value ?? current;
+            
+            const change = startValue > 0 ? ((current - startValue) / startValue) * 100 : 0;
+            
+            let chartData = fullHistory
+                .filter(d => new Date(d.end_time) >= periodStartDate)
+                .map(d => ({ name: d.end_time, value: d.value }));
+    
+            if (lastPointBeforePeriod && chartData.length > 0) {
+                chartData.unshift({ name: lastPointBeforePeriod.end_time, value: lastPointBeforePeriod.value });
+            }
+            
+            if (chartData.length === 1 && fullHistory.length > 1) {
+                const lastPoint = chartData[0];
+                const lastPointIndexInFull = fullHistory.findIndex(p => p.end_time === lastPoint.name);
+                if (lastPointIndexInFull > 0) {
+                    const previousPoint = fullHistory[lastPointIndexInFull - 1];
+                     chartData.unshift({ name: previousPoint.end_time, value: previousPoint.value });
+                }
+            }
+    
+            return { current, startValue, change, data: chartData };
+        };
+    
         const engagement = postsInTimeframe.reduce((acc, post) => {
             if (isFb && post.engagement.facebook) {
                 acc.likes += post.engagement.facebook.likes;
@@ -273,29 +344,21 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ posts, connectionD
             }
             return acc;
         }, { likes: 0, comments: 0, shares: 0 });
-
-        const getFollowerData = (
-            history: { value: number; end_time: string }[] | undefined,
-            absoluteNow?: number | null
-          ) => {
-            if (!history || history.length === 0) {
-              return { current: absoluteNow ?? 0, change: 0, data: [] };
-            }
-            const sorted = [...history].sort((a, b) => new Date(b.end_time).getTime() - new Date(a.end_time).getTime());
-            // If absoluteNow is provided, use it for the “current” total.
-            const current = typeof absoluteNow === 'number' ? absoluteNow : (sorted[0]?.value || 0);
-             const previous = sorted[1]?.value || current;
-             const change = current && previous ? ((current - previous) / previous) * 100 : 0;
-             return { current, change, data: sorted.map(d => ({name: d.end_time, value: d.value})).reverse() };
-          };
-
+    
         const fbFollowers = isFb
-            ? getFollowerData(kpiData?.facebook?.followerHistory, kpiData?.facebook?.currentFollowers)
-            : getFollowerData([]);
+            ? getFollowerData(kpiData?.facebook?.followerHistory, kpiData?.facebook?.currentFollowers, startDate)
+            : { current: 0, startValue: 0, change: 0, data: [] };
         const igFollowers = isIg
-            ? getFollowerData(kpiData?.instagram?.followerHistory, kpiData?.instagram?.currentFollowers)
-            : getFollowerData([]);
+            ? getFollowerData(kpiData?.instagram?.followerHistory, kpiData?.instagram?.currentFollowers, startDate)
+            : { current: 0, startValue: 0, change: 0, data: [] };
         
+        const totalCurrentFollowers = fbFollowers.current + igFollowers.current;
+        const totalStartFollowers = fbFollowers.startValue + igFollowers.startValue;
+    
+        const combinedFollowerChange = totalStartFollowers > 0 
+            ? ((totalCurrentFollowers - totalStartFollowers) / totalStartFollowers) * 100 
+            : 0;
+    
         const combinedFollowerData = () => {
             if ((fbFollowers.data.length + igFollowers.data.length) === 0) return [];
             
@@ -315,23 +378,17 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ posts, connectionD
                 .map(([date, value]) => ({ name: date, value }))
                 .sort((a, b) => new Date(a.name).getTime() - new Date(b.name).getTime());
         
-            if (sortedData.length === 1) {
-                const singlePoint = sortedData[0];
-                const yesterday = new Date(singlePoint.name);
-                yesterday.setDate(yesterday.getDate() - 1);
-                return [{ name: yesterday.toISOString().split('T')[0], value: singlePoint.value }, singlePoint];
-            }
-            
             return sortedData;
         };
-
+    
         return {
             ...engagement,
-            followers: fbFollowers.current + igFollowers.current,
-            followerChange: ((fbFollowers.current + igFollowers.current) - (fbFollowers.current / (1 + fbFollowers.change / 100) + igFollowers.current / (1 + igFollowers.change / 100))) / ((fbFollowers.current / (1 + fbFollowers.change / 100) + igFollowers.current / (1 + igFollowers.change / 100)) || 1) * 100,
+            followers: totalCurrentFollowers,
+            followerChange: combinedFollowerChange,
             followerChartData: combinedFollowerData()
         };
-    }, [postsInTimeframe, activePlatformFilter, kpiData]);
+    }, [postsInTimeframe, activePlatformFilter, kpiData, getStartDate, activeTimeFilter]);
+
 
     const platformFilters: { name: PlatformType | 'All', icon: JSX.Element }[] = [
         { name: 'All', icon: <AllPlatformsIcon className="w-5 h-5" /> },
