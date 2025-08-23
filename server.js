@@ -637,6 +637,11 @@ app.post('/api/kpis', async (req, res) => {
         return res.status(401).json({ message: 'Missing page access token.' });
     }
 
+    if (!instagram?.igUserId) {
+      return res.status(400).json({ message: "Missing instagram.igUserId (IG Business account id). Is the Page linked to IG and did you return it from /api/connect/facebook?" });
+    }
+    console.log("[KPIS] pageId:", facebook?.pageId, "igUserId:", instagram?.igUserId?.toString());
+
     try {
         const until = new Date();
         const since = new Date();
@@ -686,23 +691,27 @@ app.post('/api/kpis', async (req, res) => {
               `&access_token=${pageAccessToken}`;
             const histRes = await fetch(histUrl);
             const hist = await histRes.json();
-        
+          
             if (hist.error) {
-              console.warn("Instagram insights error:", hist.error.message);
-              // Fall through to fallback, but log the error
+              return res.status(400).json({
+                message: `Instagram insights error: ${hist.error.message}`,
+                code: hist.error.code,
+                type: hist.error.type,
+                subcode: hist.error.error_subcode
+              });
             }
+          
             if (Array.isArray(hist.data) && hist.data[0]?.values) {
               kpis.instagram.followerHistory = hist.data[0].values.map(v => ({ value: v.value, end_time: v.end_time }));
             }
-        
+          
             // Fallback to current count if history empty
             if (kpis.instagram.followerHistory.length === 0) {
               const curUrl = `https://graph.facebook.com/v23.0/${instagram.igUserId}?fields=followers_count&access_token=${pageAccessToken}`;
               const curRes = await fetch(curUrl);
               const cur = await curRes.json();
               if (cur.error) {
-                // This can fail if permissions like instagram_manage_insights are missing.
-                console.warn(`Instagram followers_count error: ${cur.error.message}`);
+                return res.status(400).json({ message: `Instagram followers_count error: ${cur.error.message}` });
               }
               if (typeof cur.followers_count === 'number') {
                 kpis.instagram.followerHistory.push({ value: cur.followers_count, end_time: new Date().toISOString() });
@@ -715,6 +724,37 @@ app.post('/api/kpis', async (req, res) => {
     } catch (error) {
         console.error("Failed to fetch KPIs:", error);
         res.status(500).json({ message: `Failed to fetch KPIs: ${error.message}` });
+    }
+});
+
+app.get('/api/debug/tokens', async (req, res) => {
+    const { userAccessToken, pageAccessToken } = req.query;
+    try {
+        const appId = process.env.FACEBOOK_APP_ID;
+        const appSecret = process.env.FACEBOOK_APP_SECRET;
+
+        if (!appId || !appSecret) {
+            return res.status(500).json({ message: 'Facebook App ID or Secret is not configured on the server. Please set FACEBOOK_APP_ID and FACEBOOK_APP_SECRET in your .env file.' });
+        }
+
+        const appTokenRes = await fetch(`https://graph.facebook.com/oauth/access_token?client_id=${appId}&client_secret=${appSecret}&grant_type=client_credentials`);
+        const appToken = await appTokenRes.json();
+
+        if (appToken.error) {
+            throw new Error(`Failed to get app token: ${appToken.error.message}`);
+        }
+
+        const debugUser = userAccessToken
+            ? await (await fetch(`https://graph.facebook.com/debug_token?input_token=${userAccessToken}&access_token=${appToken.access_token}`)).json()
+            : null;
+
+        const debugPage = pageAccessToken
+            ? await (await fetch(`https://graph.facebook.com/debug_token?input_token=${pageAccessToken}&access_token=${appToken.access_token}`)).json()
+            : null;
+
+        res.json({ debugUser, debugPage });
+    } catch (e) {
+        res.status(500).json({ message: e.message });
     }
 });
 
