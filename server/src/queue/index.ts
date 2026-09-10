@@ -2,16 +2,28 @@
  * Job queues.
  *
  * Publishing, rendering and WhatsApp sends all outlive an HTTP request — an
- * Instagram video container alone can take 80 seconds to process — so they run
- * as jobs here rather than blocking a response.
+ * Instagram video container alone can take 90 seconds to transcode — so they
+ * run as jobs here rather than blocking a response.
+ *
+ * Connections are lazy and created once per process. In a serverless runtime a
+ * warm invocation reuses the socket; a cold one opens exactly one. Eager
+ * connection at import time would open a socket on every cold start, which
+ * burns through a metered Redis plan quickly.
  */
 
 import { Queue } from 'bullmq';
 import { Redis } from 'ioredis';
 import { env } from '../lib/env.js';
 
-/** BullMQ requires this setting and errors loudly without it. */
-export const connection = new Redis(env.REDIS_URL, { maxRetriesPerRequest: null });
+export const connection = new Redis(env.REDIS_URL, {
+  /** Required by BullMQ; it manages its own retry semantics. */
+  maxRetriesPerRequest: null,
+  /** Defer the socket until something actually uses the queue. */
+  lazyConnect: true,
+  enableReadyCheck: false,
+  /** Upstash and other hosted Redis require TLS on rediss:// URLs. */
+  ...(env.REDIS_URL.startsWith('rediss://') ? { tls: {} } : {}),
+});
 
 export const QUEUE_NAMES = {
   publish: 'publish',
