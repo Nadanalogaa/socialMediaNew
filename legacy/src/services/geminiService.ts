@@ -1,6 +1,4 @@
-
-
-import type { Platform, SeoSuggestions, Post, ConnectionStatus, GeneratedAssetContent, GeneratedPostIdea, ConnectionDetails, Comment, FacebookUser, PostInsightResponse, SmartReplySuggestion } from '../types';
+import type { Platform, SeoSuggestions, Post, ConnectionStatus, GeneratedAssetContent, GeneratedPostIdea, ConnectionDetails, Comment, FacebookUser, PostInsightResponse, SmartReplySuggestion, SmartBulkReply, KpiData, TimeFilter } from '../types';
 
 const handleResponse = async (response: Response) => {
     if (!response.ok) {
@@ -66,6 +64,40 @@ export const fetchPlatformPosts = async (
     const response = await fetch(`/api/posts?${params.toString()}`);
     return handleResponse(response);
 };
+
+export const getKpis = async (details: ConnectionDetails, filter: TimeFilter, tz?: string): Promise<KpiData> => {
+    const body: any = {
+      facebook: {
+        pageId: details.facebook?.pageId,
+        pageAccessToken: details.facebook?.pageAccessToken,
+      },
+      range: filter,
+      tz
+    };
+    if (details.instagram?.igUserId) {
+      body.instagram = { igUserId: String(details.instagram.igUserId) };
+    }
+  
+    const res = await fetch('/api/kpis', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+  
+    const text = await res.text();
+    let json: any;
+    try { 
+        json = text ? JSON.parse(text) : {}; 
+    } catch { 
+        // If parsing fails, the text itself is the error message.
+        json = { message: text }; 
+    }
+  
+    if (!res.ok) {
+      throw new Error(json?.message || `KPIs failed with HTTP ${res.status}`);
+    }
+    return json as KpiData;
+}
 
 export const generateAssetContent = async (prompt: string): Promise<GeneratedAssetContent> => {
     const response = await fetch('/api/generate-asset-content', {
@@ -176,6 +208,24 @@ export const generateCommentReply = async (commentText: string): Promise<SmartRe
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ commentText }),
+    });
+    return handleResponse(response);
+};
+
+export const generateSmartBulkReplies = async (comments: {id: string; message: string}[]): Promise<SmartBulkReply[]> => {
+    const response = await fetch('/api/generate-smart-bulk-replies', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ comments }),
+    });
+    return handleResponse(response);
+};
+
+export const deleteComment = async (commentId: string, pageAccessToken: string): Promise<{ success: boolean }> => {
+    const response = await fetch(`/api/comment/${commentId}`, {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pageAccessToken }),
     });
     return handleResponse(response);
 };

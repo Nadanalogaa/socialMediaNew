@@ -1,6 +1,3 @@
-
-
-
 import express from 'express';
 import 'dotenv/config';
 import { GoogleGenAI, Type } from '@google/genai';
@@ -154,6 +151,22 @@ const commentReplySchema = {
         required: ["sentiment", "suggestedReply"]
     }
 };
+
+const smartBulkReplySchema = {
+    type: Type.ARRAY,
+    description: "An array of suggested replies, one for each of the user comments provided in the prompt. The order of replies must match the order of the input comments.",
+    items: {
+        type: Type.OBJECT,
+        properties: {
+            suggestedReply: {
+                type: Type.STRING,
+                description: "A unique, concise, and context-aware reply for a single user comment. It should be friendly and maintain the brand's voice."
+            }
+        },
+        required: ["suggestedReply"]
+    }
+};
+
 
 
 // --- Mock OAuth HTML Templates ---
@@ -397,6 +410,57 @@ app.post('/api/generate-comment-reply', async (req, res) => {
     }
 });
 
+app.post('/api/generate-smart-bulk-replies', async (req, res) => {
+    const { comments } = req.body; // Expects [{ id: string, message: string }]
+    if (!comments || !Array.isArray(comments) || comments.length === 0) {
+        return res.status(400).json({ message: 'Missing required field: comments array with id and message.' });
+    }
+
+    if (!hasApiKey) {
+        // Mock response for development
+        const mockReplies = comments.map(c => ({
+            commentId: c.id,
+            suggestedReply: `Thank you for your comment: "${c.message.substring(0, 20)}..."! We appreciate it.`
+        }));
+        return setTimeout(() => res.json(mockReplies), 1000);
+    }
+    
+    const systemInstruction = `You are a helpful and friendly social media assistant for 'Nadanaloga', an Indian classical dance school. Your task is to generate a unique, short, and positive reply for EACH of the user comments provided. The reply should be context-aware and appreciative. Return a JSON array of objects, where each object contains a single key 'suggestedReply'. The order of your replies in the array MUST exactly match the order of the input comments.`;
+    
+    try {
+        const formattedComments = comments.map((c, index) => `${index + 1}. "${c.message}"`).join('\n');
+        
+        const response = await ai.models.generateContent({
+            model: "gemini-2.5-flash",
+            contents: `Generate a unique reply for each of the following comments. Maintain the original order in your response:\n${formattedComments}`,
+            config: {
+                systemInstruction,
+                responseMimeType: "application/json",
+                responseSchema: smartBulkReplySchema,
+            }
+        });
+        
+        const jsonText = response.text.trim();
+        const generatedReplies = JSON.parse(jsonText);
+
+        if (generatedReplies.length !== comments.length) {
+            throw new Error(`AI returned ${generatedReplies.length} replies, but ${comments.length} were expected. Mismatch occurred.`);
+        }
+
+        // Map the generated replies back to their original comment IDs
+        const finalResponse = comments.map((originalComment, index) => ({
+            commentId: originalComment.id,
+            suggestedReply: generatedReplies[index].suggestedReply,
+        }));
+
+        res.json(finalResponse);
+
+    } catch (error) {
+        console.error("Error generating smart bulk replies:", error);
+        res.status(500).json({ message: `Failed to generate smart bulk replies: ${error.message || 'Please check server logs.'}` });
+    }
+});
+
 
 // --- Helper Functions for Post Fetching ---
 const transformFbPostToStandard = (post) => {
@@ -410,6 +474,7 @@ const transformFbPostToStandard = (post) => {
         videoUrl: isVideo ? post.attachments.data[0].url : undefined,
         mediaType: isVideo ? 'VIDEO' : 'IMAGE',
         prompt: post.message || 'Post from Facebook',
+        permalinkUrl: post.permalink_url,
         generatedContent: {
             facebook: post.message || '',
             instagram: '',
@@ -444,6 +509,8 @@ const transformIgPostToStandard = (post) => {
         videoUrl: post.media_type === 'VIDEO' ? post.media_url : undefined,
         mediaType: post.media_type === 'VIDEO' ? 'VIDEO' : 'IMAGE',
         prompt: post.caption || `Post from ${post.username}`,
+        username: post.username,
+        permalinkUrl: post.permalink, // Instagram calls it permalink
         generatedContent: {
             facebook: '',
             instagram: post.caption || '',
@@ -478,7 +545,7 @@ app.get('/api/posts', async (req, res) => {
     const platformPromises = [];
 
     // Facebook Promise
-    const fbFields = 'id,message,created_time,full_picture,attachments,likes.summary(true),comments.summary(true),shares';
+    const fbFields = 'id,message,created_time,full_picture,attachments,likes.summary(true),comments.summary(true),shares,permalink_url';
     const fbUrl = fbNext ?
         decodeURIComponent(fbNext) :
         `https://graph.facebook.com/v23.0/${pageId}/posts?fields=${fbFields}&limit=${limit}&access_token=${pageAccessToken}`;
@@ -486,7 +553,7 @@ app.get('/api/posts', async (req, res) => {
 
     // Instagram Promise (only if igUserId is provided)
     if (igUserId) {
-        const igFields = 'id,caption,timestamp,media_url,media_type,thumbnail_url,like_count,comments_count,username';
+        const igFields = 'id,caption,timestamp,media_url,media_type,thumbnail_url,like_count,comments_count,username,permalink';
         const igUrl = igNext ?
             decodeURIComponent(igNext) :
             `https://graph.facebook.com/v23.0/${igUserId}/media?fields=${igFields}&limit=${limit}&access_token=${pageAccessToken}`;
@@ -504,11 +571,45 @@ app.get('/api/posts', async (req, res) => {
         const fbPosts = (fbResult.data || []).map(transformFbPostToStandard);
         const igPosts = (igResult.data || []).map(transformIgPostToStandard);
         
-        const allPosts = [...fbPosts, ...igPosts];
-        // The lists are already sorted by date from the API. Merging and re-sorting the whole list on every page
-        // can lead to items shifting. For infinite scroll, it's often better to just append.
-        // The client will receive a mixed block of items. The overall list will be mostly chronological.
-        // For a true unified chronological feed, more complex server-side logic would be needed.
+        // --- Merge Posts Logic ---
+        const finalPosts = [...igPosts]; // Start with all IG posts
+        const matchedFbPostIds = new Set();
+
+        for (const igPost of finalPosts) {
+            // Find a matching FB post that hasn't been matched yet
+            const matchingFbPost = fbPosts.find(fbPost => {
+                if (matchedFbPostIds.has(fbPost.id)) return false;
+
+                const timeDiff = Math.abs(new Date(fbPost.postedAt).getTime() - new Date(igPost.postedAt).getTime());
+                const isCloseInTime = timeDiff < 60000; // 1 minute window
+                const isSameMediaType = fbPost.mediaType === igPost.mediaType;
+
+                return isCloseInTime && isSameMediaType;
+            });
+
+            if (matchingFbPost) {
+                // Merge FB data into the IG post
+                igPost.platforms.push('Facebook');
+                if (!igPost.platformPostIds) igPost.platformPostIds = { Instagram: igPost.id };
+                igPost.platformPostIds.Facebook = matchingFbPost.id;
+
+                // Merge engagement
+                igPost.engagement.total.likes += matchingFbPost.engagement.total.likes;
+                igPost.engagement.total.comments += matchingFbPost.engagement.total.comments;
+                igPost.engagement.total.shares += matchingFbPost.engagement.total.shares;
+                igPost.engagement.facebook = matchingFbPost.engagement.facebook;
+                
+                // Add the fb post ID to the matched set
+                matchedFbPostIds.add(matchingFbPost.id);
+            }
+        }
+
+        // Add any Facebook posts that didn't have a match
+        const unmatchedFbPosts = fbPosts.filter(fbPost => !matchedFbPostIds.has(fbPost.id));
+        finalPosts.push(...unmatchedFbPosts);
+
+        // Sort the final combined list by date
+        finalPosts.sort((a, b) => new Date(b.postedAt).getTime() - new Date(a.postedAt).getTime());
         
         const nextCursors = {
             facebook: fbResult.paging?.next ? encodeURIComponent(fbResult.paging.next) : null,
@@ -516,13 +617,140 @@ app.get('/api/posts', async (req, res) => {
         };
 
         res.json({
-            posts: allPosts,
+            posts: finalPosts,
             nextCursors,
         });
 
     } catch (error) {
         console.error("Failed to fetch platform posts:", error);
         res.status(500).json({ message: `Failed to fetch posts: ${error.message}` });
+    }
+});
+
+app.post('/api/kpis', async (req, res) => {
+    const { facebook, instagram, range = 'monthly' } = req.body;
+    const pageAccessToken = facebook?.pageAccessToken;
+
+    if (!pageAccessToken) {
+        return res.status(401).json({ message: 'Missing page access token.' });
+    }
+
+    try {
+        const now = new Date();
+        const end = now;
+        const start = new Date(now);
+        const daysMap = { daily: 1, weekly: 7, monthly: 30, yearly: 365 };
+        const days = daysMap[range] || 30;
+
+        if (range === 'daily') {
+            start.setHours(0, 0, 0, 0);
+        } else {
+            start.setDate(now.getDate() - days);
+        }
+
+        const untilTimestamp = Math.floor(end.getTime() / 1000);
+        const sinceTimestamp = Math.floor(start.getTime() / 1000);
+
+        const kpis = {
+            facebook: { followerHistory: [], currentFollowers: null },
+            instagram: { followerHistory: [], currentFollowers: null }
+        };
+
+        // --- FETCH FACEBOOK DATA ---
+        if (facebook?.pageId) {
+            const histUrl = `https://graph.facebook.com/v23.0/${facebook.pageId}/insights?metric=page_fans&period=day&since=${sinceTimestamp}&until=${untilTimestamp}&access_token=${pageAccessToken}`;
+            const histRes = await fetch(histUrl);
+            const hist = await histRes.json();
+
+            if (hist.error) {
+                console.warn("Facebook insights error:", hist.error.message);
+            }
+            if (Array.isArray(hist.data) && hist.data[0]?.values) {
+                kpis.facebook.followerHistory = hist.data[0].values.map(v => ({ value: v.value, end_time: v.end_time }));
+            }
+            
+            const curUrl = `https://graph.facebook.com/v23.0/${facebook.pageId}?fields=fan_count&access_token=${pageAccessToken}`;
+            const curRes = await fetch(curUrl);
+            const cur = await curRes.json();
+            if (cur.error) {
+                console.warn(`Facebook fan_count error: ${cur.error.message}`);
+            }
+            if (typeof cur.fan_count === 'number') {
+                kpis.facebook.currentFollowers = cur.fan_count;
+            }
+        }
+        
+        // --- FETCH INSTAGRAM DATA ---
+        if (instagram?.igUserId) {
+            const igUserId = String(instagram.igUserId);
+            const token = pageAccessToken;
+            // Instagram insights window is limited; clamp 'since' to a max of 30 days ago.
+            const thirtyDaysAgo = Math.floor((Date.now() - 30 * 86400 * 1000) / 1000);
+            const igSinceTimestamp = Math.max(sinceTimestamp, thirtyDaysAgo);
+
+            const histUrl = `https://graph.facebook.com/v23.0/${igUserId}/insights?metric=follower_count&period=day&since=${igSinceTimestamp}&until=${untilTimestamp}&access_token=${token}`;
+            try {
+                const histRes = await fetch(histUrl);
+                const hist = await histRes.json();
+                if (hist.error) {
+                    console.warn("Instagram insights error:", hist.error.message, "This metric provides daily net change.");
+                } else if (Array.isArray(hist.data) && hist.data[0]?.values) {
+                    kpis.instagram.followerHistory = hist.data[0].values.map(v => ({ value: v.value, end_time: v.end_time }));
+                }
+            } catch (e) {
+                console.warn("Instagram insights fetch failed:", e.message);
+            }
+            
+            const igCurrentUrl = `https://graph.facebook.com/v23.0/${igUserId}?fields=followers_count&access_token=${token}`;
+            try {
+              const igCurRes = await fetch(igCurrentUrl);
+              const igCur = await igCurRes.json();
+              if (typeof igCur.followers_count === 'number') {
+                kpis.instagram.currentFollowers = igCur.followers_count;
+              } else if (igCur.error) {
+                console.warn('IG followers_count error:', igCur.error.message);
+              }
+            } catch (e) {
+              console.warn('IG followers_count fetch failed', e);
+            }
+        }
+
+        res.json(kpis);
+
+    } catch (error) {
+        console.error("Failed to fetch KPIs:", error);
+        res.status(500).json({ message: `Failed to fetch KPIs: ${error.message}` });
+    }
+});
+
+app.get('/api/debug/tokens', async (req, res) => {
+    const { userAccessToken, pageAccessToken } = req.query;
+    try {
+        const appId = process.env.FACEBOOK_APP_ID;
+        const appSecret = process.env.FACEBOOK_APP_SECRET;
+
+        if (!appId || !appSecret) {
+            return res.status(500).json({ message: 'Facebook App ID or Secret is not configured on the server. Please set FACEBOOK_APP_ID and FACEBOOK_APP_SECRET in your .env file.' });
+        }
+
+        const appTokenRes = await fetch(`https://graph.facebook.com/oauth/access_token?client_id=${appId}&client_secret=${appSecret}&grant_type=client_credentials`);
+        const appToken = await appTokenRes.json();
+
+        if (appToken.error) {
+            throw new Error(`Failed to get app token: ${appToken.error.message}`);
+        }
+
+        const debugUser = userAccessToken
+            ? await (await fetch(`https://graph.facebook.com/debug_token?input_token=${userAccessToken}&access_token=${appToken.access_token}`)).json()
+            : null;
+
+        const debugPage = pageAccessToken
+            ? await (await fetch(`https://graph.facebook.com/debug_token?input_token=${pageAccessToken}&access_token=${appToken.access_token}`)).json()
+            : null;
+
+        res.json({ debugUser, debugPage });
+    } catch (e) {
+        res.status(500).json({ message: e.message });
     }
 });
 
@@ -577,15 +805,11 @@ app.post('/api/connect/facebook', async (req, res) => {
             console.warn(`[REAL AUTH] Could not fetch linked Instagram account: ${igData.error.message}`);
         } else if (igData.instagram_business_account) {
             const igAccount = igData.instagram_business_account;
-            if (igAccount.id === TARGET_IG_USER_ID) {
-                instagramDetails = {
-                    igUserId: igAccount.id,
-                    username: igAccount.username,
-                };
-                console.log(`[REAL AUTH] Successfully got details for Instagram account: ${igAccount.username} (ID: ${igAccount.id})`);
-            } else {
-                console.warn(`[REAL AUTH] Found Instagram account ID '${igAccount.id}', but it does not match target '${TARGET_IG_USER_ID}'.`);
-            }
+            instagramDetails = {
+                igUserId: igAccount.id,
+                username: igAccount.username,
+            };
+            console.log(`[REAL AUTH] Successfully got details for Instagram account: ${igAccount.username} (ID: ${igAccount.id})`);
         } else {
             console.log('[REAL AUTH] No Instagram Business Account linked to this Facebook page.');
         }
@@ -1042,7 +1266,7 @@ app.delete('/api/post/:postId', async (req, res) => {
         const data = await response.json();
 
         if (data.error) {
-            if (data.error.code === 100) {
+            if (data.error.code === 100) { // Post already deleted
                  return res.json({ success: true });
             }
             throw new Error(`Graph API error: ${data.error.message}`);
@@ -1082,11 +1306,11 @@ app.get('/api/post/:postId/comments', async (req, res) => {
     try {
         let fields;
         if (platform === 'Instagram') {
-            // Instagram Comment has 'text' not 'message', and 'timestamp' not 'created_time'.
-            fields = 'id,text,from{id,username},timestamp';
+            // Instagram Comment: 'text', 'timestamp', 'username', and nested 'replies'
+            fields = 'id,text,from{id,username},timestamp,replies{id,text,from{id,username},timestamp}';
         } else {
-            // Default to Facebook fields
-            fields = 'id,message,from{id,name,picture},created_time';
+            // Facebook Comment: 'message', 'created_time', 'name', and nested 'comments'
+            fields = 'id,message,from{id,name,picture},created_time,comments{id,message,from{id,name,picture},created_time}';
         }
 
         const url = `https://graph.facebook.com/v23.0/${postId}/comments?fields=${fields}&limit=100&access_token=${pageAccessToken}`;
@@ -1100,22 +1324,32 @@ app.get('/api/post/:postId/comments', async (req, res) => {
 
         let comments = data.data || [];
 
-        // If it was an Instagram request, transform the response to match the client's expected `Comment` structure.
+        // Transform the response to match the client's expected unified `Comment` structure.
         if (platform === 'Instagram') {
-            comments = comments.map(comment => ({
+            const transformIgComment = (comment) => ({
                 id: comment.id,
-                message: comment.text, // Map `text` to `message`
-                created_time: comment.timestamp, // Map `timestamp` to `created_time`
+                message: comment.text,
+                created_time: comment.timestamp,
                 from: {
                     id: comment.from.id,
-                    name: comment.from.username, // Map username to name
-                    picture: { // Add a placeholder picture
+                    name: comment.from.username,
+                    picture: {
                         data: {
                             url: `https://ui-avatars.com/api/?name=${encodeURIComponent(comment.from.username)}&background=374151&color=e5e7eb&size=40`
                         }
                     }
-                }
-            }));
+                },
+                // Recursively transform replies into the unified 'comments' array
+                comments: (comment.replies && comment.replies.data) ? comment.replies.data.map(transformIgComment) : []
+            });
+            comments = comments.map(transformIgComment);
+        } else { // Facebook
+            // Normalize FB's `comments.data` structure into a simple array.
+            const normalizeFbComments = (comment) => ({
+                ...comment,
+                comments: (comment.comments && comment.comments.data) ? comment.comments.data.map(normalizeFbComments) : []
+            });
+            comments = comments.map(normalizeFbComments);
         }
 
         res.json(comments);
@@ -1144,6 +1378,26 @@ app.post('/api/comment/:commentId/reply', async (req, res) => {
     } catch (error) {
         console.error(`Failed to reply to comment ${commentId}:`, error);
         res.status(500).json({ message: `Failed to reply: ${error.message}` });
+    }
+});
+
+app.delete('/api/comment/:commentId', async (req, res) => {
+    const { commentId } = req.params;
+    const { pageAccessToken } = req.body;
+
+    if (!pageAccessToken) return res.status(400).json({ message: 'Missing pageAccessToken.' });
+
+    try {
+        const url = `https://graph.facebook.com/v23.0/${commentId}?access_token=${pageAccessToken}`;
+        const response = await fetch(url, { method: 'DELETE' });
+        const data = await response.json();
+
+        if (data.error) throw new Error(data.error.message);
+
+        res.json({ success: data.success || false });
+    } catch (error) {
+        console.error(`Failed to delete comment ${commentId}:`, error);
+        res.status(500).json({ message: `Failed to delete comment: ${error.message}` });
     }
 });
 

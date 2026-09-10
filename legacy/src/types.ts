@@ -1,4 +1,3 @@
-
 export enum Platform {
   Facebook = 'Facebook',
   Instagram = 'Instagram',
@@ -21,6 +20,7 @@ export enum View {
   PRIVACY_POLICY = 'PRIVACY_POLICY',
 }
 
+export type TimeFilter = 'daily' | 'weekly' | 'monthly' | 'yearly';
 
 export interface Post {
   id: string;
@@ -29,8 +29,10 @@ export interface Post {
   audience: Audience;
   imageUrl?: string; // Thumbnail for videos, image for images
   videoUrl?: string; // Actual video URL from Cloudinary etc.
+  permalinkUrl?: string;
   mediaType: 'IMAGE' | 'VIDEO';
   prompt: string;
+  username?: string; // For Instagram posts
   generatedContent: {
       facebook: string;
       instagram: string;
@@ -69,6 +71,7 @@ export interface SeoSuggestions {
 export interface ConnectionStatus {
     [Platform.Facebook]: boolean;
     [Platform.Instagram]: boolean;
+
     [Platform.YouTube]: boolean;
 }
 
@@ -129,8 +132,17 @@ export interface FacebookUser {
 export interface Comment {
     id: string;
     message: string;
-    from: FacebookUser;
+    from: {
+      id: string;
+      name: string;
+      picture?: {
+          data: {
+              url: string;
+          }
+      };
+    };
     created_time: string;
+    comments?: Comment[];
 }
 
 export interface SmartReplySuggestion {
@@ -138,8 +150,24 @@ export interface SmartReplySuggestion {
     suggestedReply: string;
 }
 
+export interface SmartBulkReply {
+    commentId: string;
+    suggestedReply: string;
+}
+
 export interface PostInsightResponse {
   engagement: Post['engagement'];
   activePlatforms: Platform[];
   status: 'active' | 'deleted';
+}
+
+export interface KpiData {
+    facebook: {
+        followerHistory: { value: number; end_time: string }[];
+        currentFollowers: number | null;
+    };
+    instagram: {
+        followerHistory: { value: number; end_time: string }[];
+        currentFollowers: number | null;
+    };
 }

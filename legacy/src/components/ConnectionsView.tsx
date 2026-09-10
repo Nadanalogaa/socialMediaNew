@@ -40,7 +40,8 @@ const FacebookTroubleshooter: React.FC = () => (
                 <li><strong className="text-white">`instagram_manage_comments`</strong>: Allows the app to reply to comments on your Instagram posts.</li>
                 <li><strong className="text-white">`instagram_basic`</strong> & <strong className="text-white">`pages_show_list`</strong>: Allows the app to find your accounts.</li>
                 <li><strong className="text-white">`pages_read_engagement`</strong>: Allows the app to fetch likes and comments for your posts.</li>
-                <li><strong className="text-white">`read_insights`</strong>: Allows fetching of more detailed analytics and post performance data.</li>
+                <li><strong className="text-white">`read_insights`</strong>: Allows fetching of more detailed analytics for your Facebook Page.</li>
+                <li><strong className="text-white">`instagram_manage_insights`</strong>: Allows fetching follower counts and analytics for your Instagram account.</li>
              </ul>
         </div>
 
@@ -175,12 +176,23 @@ export const ConnectionsView: React.FC<ConnectionsViewProps> = ({ connections, s
                 }
             }
 
-            const required_scope = 'public_profile,pages_show_list,pages_manage_posts,pages_read_engagement,instagram_basic,instagram_content_publish,read_insights,instagram_manage_comments';
+            const required_scope = 'public_profile,email,pages_show_list,pages_manage_posts,pages_read_engagement,instagram_basic,instagram_content_publish,read_insights,instagram_manage_comments,instagram_manage_insights';
             console.log(`Requesting Facebook permissions with scope: ${required_scope}`);
+            
+            // On smaller screens, use a full-page redirect which is more reliable on mobile browsers.
+            // The md breakpoint in Tailwind is 768px.
+            const isMobileView = window.innerWidth < 768;
+
+            if (isMobileView) {
+                // For the redirect flow, set a flag so we can provide better feedback after the redirect.
+                sessionStorage.setItem('isConnectingFacebook', 'true');
+            }
 
             window.FB.login(loginCallback, {
                 scope: required_scope,
                 enable_profile_selector: true,
+                // Use 'page' for redirect-based auth on mobile, 'popup' for desktop.
+                display: isMobileView ? 'page' : 'popup',
             });
 
         } else {

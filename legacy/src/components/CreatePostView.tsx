@@ -762,13 +762,38 @@ export const CreatePostView: React.FC<CreatePostViewProps> = ({ connections, con
                                {asset.previewUrl ? (
                                     <div className="relative w-full aspect-video cursor-pointer" onClick={() => handleAddMediaClick(asset.id)}>
                                         {asset.mediaType === 'VIDEO' ? (
-                                            <video 
-                                                src={asset.previewUrl} 
-                                                controls={!asset.videoUrl} // Show controls only for local blob preview
-                                                className="rounded-lg w-full h-full object-cover bg-dark-bg" 
-                                            />
+                                            asset.previewUrl.startsWith('blob:') ? (
+                                                <video 
+                                                    src={asset.previewUrl} 
+                                                    controls
+                                                    className="rounded-lg w-full h-full object-cover bg-dark-bg" 
+                                                />
+                                            ) : (
+                                                <div className="relative w-full h-full">
+                                                    <img src={asset.previewUrl} alt="Video thumbnail" className="rounded-lg w-full h-full object-cover bg-dark-bg" 
+                                                        onError={(e) => {
+                                                            const target = e.target as HTMLImageElement;
+                                                            target.onerror = null; 
+                                                            target.src = 'https://placehold.co/400x225/1f2937/9ca3af?text=Media+Not+Found';
+                                                        }}
+                                                    />
+                                                    <div className="absolute inset-0 flex items-center justify-center bg-black/30 pointer-events-none">
+                                                        <button className="h-12 w-12 text-white/80 backdrop-blur-sm bg-black/40 rounded-full flex items-center justify-center" aria-label="Video thumbnail">
+                                                          <svg xmlns="http://www.w3.org/2000/svg" className="h-8 w-8" viewBox="0 0 20 20" fill="currentColor">
+                                                              <path fillRule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8v4a1 1 0 001.555.832l3-2a1 1 0 000-1.664l-3-2z" clipRule="evenodd" />
+                                                          </svg>
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            )
                                         ) : (
-                                            <img src={asset.previewUrl} alt="Preview" className="rounded-lg w-full h-full object-cover bg-dark-bg" />
+                                            <img src={asset.previewUrl} alt="Preview" className="rounded-lg w-full h-full object-cover bg-dark-bg" 
+                                                onError={(e) => {
+                                                    const target = e.target as HTMLImageElement;
+                                                    target.onerror = null; 
+                                                    target.src = 'https://placehold.co/400x225/1f2937/9ca3af?text=Media+Not+Found';
+                                                }}
+                                            />
                                         )}
                                     </div>
                                 ) : (
