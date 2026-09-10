@@ -1,0 +1,145 @@
+
+export enum Platform {
+  Facebook = 'Facebook',
+  Instagram = 'Instagram',
+  YouTube = 'YouTube',
+}
+
+export enum Audience {
+  Global = 'Global',
+  India = 'India',
+  USA = 'USA',
+  TamilCommunity = 'Tamil Community',
+  Europe = 'Europe',
+}
+
+export enum View {
+  DASHBOARD = 'DASHBOARD',
+  CREATE_POST = 'CREATE_POST',
+  SEO_CONNECTOR = 'SEO_CONNECTOR',
+  CONNECTIONS = 'CONNECTIONS',
+  PRIVACY_POLICY = 'PRIVACY_POLICY',
+}
+
+
+export interface Post {
+  id: string;
+  platforms: Platform[];
+  platformPostIds?: { [key in Platform]?: string };
+  audience: Audience;
+  imageUrl?: string; // Thumbnail for videos, image for images
+  videoUrl?: string; // Actual video URL from Cloudinary etc.
+  mediaType: 'IMAGE' | 'VIDEO';
+  prompt: string;
+  generatedContent: {
+      facebook: string;
+      instagram: string;
+      youtubeTitle: string;
+      youtubeDescription: string;
+      hashtags: string[];
+  };
+  postedAt: string;
+  engagement: {
+    total: {
+      likes: number;
+      comments: number;
+      shares: number;
+    };
+    facebook?: {
+      likes: number;
+      comments: number;
+      shares: number;
+    };
+    instagram?: {
+      likes: number;
+      comments: number;
+      shares: 0; // Instagram API for media doesn't provide shares.
+    };
+  };
+  status?: 'active' | 'deleted-on-platform';
+}
+
+export interface SeoSuggestions {
+    keywords: string[];
+    metaTitle: string;
+    metaDescription: string;
+    blogIdeas: { title: string; description: string }[];
+}
+
+export interface ConnectionStatus {
+    [Platform.Facebook]: boolean;
+    [Platform.Instagram]: boolean;
+    [Platform.YouTube]: boolean;
+}
+
+export interface FacebookConnectionDetails {
+    pageId: string;
+    pageAccessToken: string;
+    pageName: string;
+}
+
+export interface InstagramConnectionDetails {
+    igUserId: string | null;
+    username: string | null;
+}
+
+export interface ConnectionDetails {
+    facebook?: FacebookConnectionDetails;
+    instagram?: InstagramConnectionDetails;
+}
+
+export interface GeneratedAssetContent {
+    name: string;
+    description: string;
+    hashtags: string[];
+}
+
+export interface GeneratedPostIdea {
+    postText: string;
+    imagePrompt: string;
+    hashtags: string[];
+}
+
+export interface MediaAsset {
+  id: string;
+  file?: File;
+  previewUrl?: string; // Thumbnail for videos, image for images
+  videoUrl?: string; // Cloudinary URL for videos
+  name:string;
+  prompt: string;
+  description: string;
+  hashtags: string[];
+  platforms: Platform[];
+  status: 'idle' | 'generating' | 'publishing' | 'error' | 'published' | 'compressing' | 'uploading' | 'thumbnailing';
+  errorMessage?: string;
+  mediaType: 'IMAGE' | 'VIDEO';
+  uploadProgress?: number;
+}
+
+export interface FacebookUser {
+    id: string;
+    name: string;
+    picture?: {
+        data: {
+            url: string;
+        }
+    };
+}
+
+export interface Comment {
+    id: string;
+    message: string;
+    from: FacebookUser;
+    created_time: string;
+}
+
+export interface SmartReplySuggestion {
+    sentiment: 'positive' | 'neutral' | 'negative' | 'question';
+    suggestedReply: string;
+}
+
+export interface PostInsightResponse {
+  engagement: Post['engagement'];
+  activePlatforms: Platform[];
+  status: 'active' | 'deleted';
+}

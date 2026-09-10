@@ -1,0 +1,35 @@
+# Dependencies
+node_modules
+.pnp
+.pnp.js
+
+# Builds
+dist
+build
+dist-ssr
+*.tsbuildinfo
+
+# Secrets
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Logs
+logs
+*.log
+npm-debug.log*
+
+# Editor / OS
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.swp
+
+# Mobile (Capacitor)
+android
+ios
+
+# Test / coverage
+coverage
