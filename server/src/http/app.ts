@@ -1,5 +1,5 @@
 import cors from 'cors';
-import express, { type Express } from 'express';
+import express, { type Express, type Request, type Response } from 'express';
 import helmet from 'helmet';
 import { pinoHttp } from 'pino-http';
 import { authRouter } from '../modules/auth/routes.js';
@@ -44,9 +44,13 @@ export function createApp(): Express {
   // with a signed request — so a small JSON limit is all the API needs.
   app.use(express.json({ limit: '1mb' }));
 
-  app.get('/health', (_req, res) => {
+  // Registered at both paths: locally the API is hit directly at /health,
+  // while on Vercel only /api/* is routed to the function.
+  const health = (_req: Request, res: Response) => {
     res.json({ status: 'ok', uptime: process.uptime() });
-  });
+  };
+  app.get('/health', health);
+  app.get('/api/health', health);
 
   app.use('/api/auth', authRouter);
   app.use('/api/connections', connectionsRouter);
