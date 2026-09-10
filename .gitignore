@@ -33,3 +33,6 @@ ios
 
 # Test / coverage
 coverage
+
+# Deployment env files (never commit)
+.env.production
