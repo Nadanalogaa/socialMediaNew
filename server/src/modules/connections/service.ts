@@ -43,6 +43,9 @@ export async function beginMetaConnection(
   }
 
   const longLivedToken = await meta.exchangeForLongLivedToken(shortLivedUserToken);
+  // Recorded on every connection so a Meta data-deletion request naming this
+  // user can find and remove everything they authorised.
+  const owner = await meta.getTokenOwner(longLivedToken);
   const pages = await meta.listManagedPages(longLivedToken);
 
   if (pages.length === 0) {
@@ -69,7 +72,7 @@ export async function beginMetaConnection(
   await redis.setex(
     pendingKey(handle),
     PENDING_TTL_SECONDS,
-    JSON.stringify({ organizationId, pages }),
+    JSON.stringify({ organizationId, pages, facebookUserId: owner.id }),
   );
 
   return { handle, pages: enriched };
@@ -91,7 +94,11 @@ export async function completeMetaConnection(
     throw badRequest('This connection attempt expired. Please connect Facebook again.');
   }
 
-  const pending = JSON.parse(raw) as { organizationId: string; pages: meta.ManagedPage[] };
+  const pending = JSON.parse(raw) as {
+    organizationId: string;
+    pages: meta.ManagedPage[];
+    facebookUserId: string;
+  };
   if (pending.organizationId !== organizationId) {
     throw badRequest('This connection attempt belongs to a different organization.');
   }
@@ -114,7 +121,7 @@ export async function completeMetaConnection(
       displayName: page.name,
       avatarUrl: page.pictureUrl,
       accessToken: page.accessToken,
-      metadata: { category: page.category },
+      metadata: { category: page.category, authorizedByFacebookUserId: pending.facebookUserId },
     });
 
     const instagram = igAccounts[index];
@@ -127,7 +134,11 @@ export async function completeMetaConnection(
         avatarUrl: instagram.profilePictureUrl,
         // IG publishing authenticates with the parent page's token.
         accessToken: page.accessToken,
-        metadata: { pageId: page.id, username: instagram.username },
+        metadata: {
+          pageId: page.id,
+          username: instagram.username,
+          authorizedByFacebookUserId: pending.facebookUserId,
+        },
       });
     }
   }

@@ -574,6 +574,33 @@ export const usageEvents = pgTable(
   (t) => [index('usage_events_org_kind_idx').on(t.organizationId, t.kind, t.createdAt)],
 );
 
+/**
+ * Data deletion requests from Meta.
+ *
+ * Meta requires a callback that accepts a deletion request and returns a status
+ * URL plus a confirmation code the user can quote. Requests are recorded so
+ * that URL has something to report, and so the deletion is auditable.
+ */
+export const dataDeletionRequests = pgTable(
+  'data_deletion_requests',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    /** Quoted back to the user; the status page looks up by this. */
+    confirmationCode: text('confirmation_code').notNull(),
+    provider: text('provider').notNull().default('meta'),
+    /** The provider's user id the request concerns. */
+    externalUserId: text('external_user_id').notNull(),
+    status: text('status').notNull().default('pending'),
+    connectionsDeleted: integer('connections_deleted').notNull().default(0),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    createdAt: timestamps.createdAt,
+  },
+  (t) => [
+    uniqueIndex('data_deletion_confirmation_idx').on(t.confirmationCode),
+    index('data_deletion_external_user_idx').on(t.externalUserId),
+  ],
+);
+
 export const auditLogs = pgTable(
   'audit_logs',
   {

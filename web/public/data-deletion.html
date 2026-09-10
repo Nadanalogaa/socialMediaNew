@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Data Deletion Status — SocialBoost</title>
+<link rel="stylesheet" href="/_legal.css">
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo">SB</div>
+    <div>
+      <h1>Data deletion status</h1>
+      <p class="meta">Check a request you made through Facebook</p>
+    </div>
+  </header>
+
+  <div class="card">
+    <p>
+      When you remove SocialBoost from your Facebook account, we delete the connections you
+      authorised and the access tokens we held. Enter the confirmation code you were given to see
+      the status of that request.
+    </p>
+
+    <form id="form" style="display:flex;gap:.5rem;margin:1.25rem 0;">
+      <input id="code" name="code" placeholder="Confirmation code" required
+        style="flex:1;padding:.6rem .75rem;border:1px solid var(--line);border-radius:.5rem;
+               background:transparent;color:inherit;font:inherit;">
+      <button type="submit"
+        style="padding:.6rem 1.1rem;border:0;border-radius:.5rem;background:var(--brand);
+               color:#fff;font:inherit;font-weight:500;cursor:pointer;">Check</button>
+    </form>
+
+    <div id="result" role="status"></div>
+
+    <h2>Delete everything instead</h2>
+    <p>
+      To close your account and remove all of your data, email
+      <a href="mailto:[SUPPORT EMAIL]">[SUPPORT EMAIL]</a> from your registered address. We complete
+      these within 30 days.
+    </p>
+  </div>
+
+  <footer><a href="/privacy.html">Privacy Policy</a> · <a href="/terms.html">Terms</a></footer>
+</div>
+
+<script>
+  const form = document.getElementById('form');
+  const input = document.getElementById('code');
+  const result = document.getElementById('result');
+
+  // Meta links here with the code already in the query string.
+  const preset = new URLSearchParams(location.search).get('code');
+  if (preset) { input.value = preset; check(preset); }
+
+  form.addEventListener('submit', (e) => { e.preventDefault(); check(input.value.trim()); });
+
+  async function check(code) {
+    if (!code) return;
+    result.innerHTML = '<p>Checking…</p>';
+    try {
+      const response = await fetch('/api/webhooks/meta/data-deletion/' + encodeURIComponent(code));
+      const data = await response.json();
+      if (!response.ok || data.status === 'not_found') {
+        result.innerHTML = '<p>We could not find a request with that code. Check it and try again.</p>';
+        return;
+      }
+      const done = new Date(data.completedAt || data.requestedAt).toLocaleString();
+      result.innerHTML =
+        '<p><strong>Status:</strong> ' + data.status + '<br>' +
+        '<strong>Completed:</strong> ' + done + '<br>' +
+        '<strong>Connections removed:</strong> ' + data.connectionsDeleted + '</p>';
+    } catch {
+      result.innerHTML = '<p>Something went wrong. Please try again shortly.</p>';
+    }
+  }
+</script>
+</body>
+</html>

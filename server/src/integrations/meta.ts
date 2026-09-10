@@ -108,6 +108,14 @@ export async function exchangeForLongLivedToken(shortLivedToken: string): Promis
   return data.access_token;
 }
 
+/** The Facebook user behind an access token. Recorded so a data-deletion
+ *  request naming that user can find everything they authorised. */
+export async function getTokenOwner(userAccessToken: string): Promise<{ id: string; name: string }> {
+  return graphRequest<{ id: string; name: string }>('/me', {
+    params: { access_token: userAccessToken, fields: 'id,name' },
+  });
+}
+
 export interface ManagedPage {
   id: string;
   name: string;

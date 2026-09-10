@@ -4,6 +4,8 @@ import tailwindcss from '@tailwindcss/vite';
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  /** The workspace keeps one .env at the repo root, not per package. */
+  envDir: '..',
   server: {
     port: 5173,
     /** Proxies API calls to the Express server so the browser sees one origin. */

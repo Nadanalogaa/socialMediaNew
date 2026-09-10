@@ -6,6 +6,7 @@ import { authRouter } from '../modules/auth/routes.js';
 import { connectionsRouter } from '../modules/connections/routes.js';
 import { mediaRouter } from '../modules/media/routes.js';
 import { postsRouter } from '../modules/posts/routes.js';
+import { webhooksRouter } from '../modules/webhooks/routes.js';
 import { env } from '../lib/env.js';
 import { logger } from '../lib/logger.js';
 import { errorHandler, notFoundHandler } from './middleware.js';
@@ -30,6 +31,9 @@ export function createApp(): Express {
   app.use('/api/connections', connectionsRouter);
   app.use('/api/media', mediaRouter);
   app.use('/api/posts', postsRouter);
+  // Unauthenticated by necessity: Meta calls these directly and proves
+  // itself with a signed request rather than a bearer token.
+  app.use('/api/webhooks', webhooksRouter);
 
   app.use(notFoundHandler);
   app.use(errorHandler);

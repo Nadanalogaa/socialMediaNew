@@ -113,6 +113,65 @@ async function tryRefresh(refreshToken: string): Promise<Session | null> {
   }
 }
 
+// --- Resource types -------------------------------------------------------
+
+export interface Connection {
+  id: string;
+  provider: string;
+  externalId: string;
+  displayName: string;
+  avatarUrl: string | null;
+  status: string;
+  lastError: string | null;
+  createdAt: string;
+}
+
+export interface AvailablePage {
+  id: string;
+  name: string;
+  category?: string;
+  pictureUrl?: string;
+  instagram: { id: string; username: string } | null;
+}
+
+export interface MediaAsset {
+  id: string;
+  kind: 'image' | 'video';
+  url: string;
+  thumbnailUrl: string | null;
+  width: number | null;
+  height: number | null;
+}
+
+export interface PostTarget {
+  id: string;
+  provider: string;
+  status: string;
+  externalPostId: string | null;
+  permalink: string | null;
+  error: string | null;
+  publishedAt: string | null;
+}
+
+export interface Post {
+  id: string;
+  caption: string;
+  hashtags: string[];
+  status: string;
+  scheduledAt: string | null;
+  publishedAt: string | null;
+  createdAt: string;
+  targets: PostTarget[];
+}
+
+export interface UploadSignature {
+  cloudName: string;
+  apiKey: string;
+  timestamp: number;
+  signature: string;
+  folder: string;
+}
+
 export const api = {
   register: (input: {
     email: string;
@@ -126,4 +185,108 @@ export const api = {
 
   logout: (refreshToken: string) =>
     request<void>('/auth/logout', { method: 'POST', body: JSON.stringify({ refreshToken }) }),
+
+  // --- Connections ---
+  listConnections: () => request<{ connections: Connection[] }>('/connections'),
+
+  beginMetaConnection: (userAccessToken: string) =>
+    request<{ handle: string; pages: AvailablePage[] }>('/connections/meta/begin', {
+      method: 'POST',
+      body: JSON.stringify({ userAccessToken }),
+    }),
+
+  completeMetaConnection: (handle: string, pageIds: string[]) =>
+    request<{ connected: number }>('/connections/meta/complete', {
+      method: 'POST',
+      body: JSON.stringify({ handle, pageIds }),
+    }),
+
+  disconnect: (id: string) => request<void>(`/connections/${id}`, { method: 'DELETE' }),
+
+  // --- Media ---
+  uploadSignature: () =>
+    request<UploadSignature>('/media/upload-signature', { method: 'POST' }),
+
+  listMedia: () => request<{ media: MediaAsset[] }>('/media'),
+
+  registerMedia: (input: {
+    kind: 'image' | 'video';
+    url: string;
+    thumbnailUrl?: string;
+    width?: number;
+    height?: number;
+    bytes?: number;
+    providerRef?: string;
+  }) => request<MediaAsset>('/media', { method: 'POST', body: JSON.stringify(input) }),
+
+  // --- Posts ---
+  listPosts: () => request<{ posts: Post[] }>('/posts'),
+
+  createPost: (input: {
+    caption: string;
+    hashtags: string[];
+    mediaAssetIds: string[];
+    targets: { connectionId: string; caption?: string }[];
+    scheduledAt?: string;
+  }) => request<Post>('/posts', { method: 'POST', body: JSON.stringify(input) }),
+
+  deletePost: (id: string) => request<void>(`/posts/${id}`, { method: 'DELETE' }),
 };
+
+/**
+ * Uploads a file straight to Cloudinary using a server-issued signature.
+ * The bytes never pass through our API, so large videos do not tie up a
+ * request handler.
+ */
+export async function uploadToCloudinary(
+  file: File,
+  signature: UploadSignature,
+  onProgress?: (percent: number) => void,
+): Promise<{ url: string; publicId: string; width?: number; height?: number }> {
+  const isVideo = file.type.startsWith('video/');
+  const endpoint = `https://api.cloudinary.com/v1_1/${signature.cloudName}/${
+    isVideo ? 'video' : 'image'
+  }/upload`;
+
+  const form = new FormData();
+  form.append('file', file);
+  form.append('api_key', signature.apiKey);
+  form.append('timestamp', String(signature.timestamp));
+  form.append('signature', signature.signature);
+  form.append('folder', signature.folder);
+
+  // XHR rather than fetch: fetch still cannot report upload progress.
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', endpoint);
+
+    xhr.upload.addEventListener('progress', (event) => {
+      if (event.lengthComputable && onProgress) {
+        onProgress(Math.round((event.loaded / event.total) * 100));
+      }
+    });
+
+    xhr.addEventListener('load', () => {
+      if (xhr.status < 200 || xhr.status >= 300) {
+        let message = `Upload failed (${xhr.status})`;
+        try {
+          message = JSON.parse(xhr.responseText)?.error?.message ?? message;
+        } catch {
+          /* keep the status message */
+        }
+        reject(new Error(message));
+        return;
+      }
+      const body = JSON.parse(xhr.responseText);
+      resolve({
+        url: body.secure_url,
+        publicId: body.public_id,
+        width: body.width,
+        height: body.height,
+      });
+    });
+
+    xhr.addEventListener('error', () => reject(new Error('Upload failed. Check your connection.')));
+    xhr.send(form);
+  });
+}
