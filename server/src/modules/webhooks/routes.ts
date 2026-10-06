@@ -7,6 +7,15 @@ import * as metaWebhooks from './meta-service.js';
 
 export const webhooksRouter: Router = Router();
 
+/**
+ * Compatibility router for the callback paths the previous app used.
+ *
+ * Meta's app settings still point at `/auth/facebook/deauthorize`, and those
+ * fields can only be changed in Meta's dashboard. Serving the old path keeps
+ * the configured callback working rather than returning 404 to Meta.
+ */
+export const legacyWebhooksRouter: Router = Router();
+
 /** Meta posts these as form-encoded, not JSON. */
 webhooksRouter.use(urlencoded({ extended: false }));
 
@@ -65,5 +74,21 @@ webhooksRouter.get(
       completedAt: request.completedAt,
       connectionsDeleted: request.connectionsDeleted,
     });
+  }),
+);
+
+
+legacyWebhooksRouter.use(urlencoded({ extended: false }));
+
+legacyWebhooksRouter.post(
+  '/facebook/deauthorize',
+  asyncHandler(async (req, res) => {
+    const payload = parseSignedRequest(String(req.body.signed_request ?? ''));
+    if (!payload) {
+      logger.warn('Rejected legacy Meta deauthorize callback with an invalid signature');
+      return res.status(200).json({ received: true });
+    }
+    await metaWebhooks.handleDeauthorize(payload.user_id);
+    res.status(200).json({ received: true });
   }),
 );
