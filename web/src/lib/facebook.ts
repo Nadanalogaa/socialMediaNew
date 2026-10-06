@@ -26,21 +26,39 @@ export interface FacebookLoginResponse {
 }
 
 /**
- * Permissions needed to list pages, publish, and read engagement.
+ * Permissions requested at login.
  *
- * These require Advanced Access from Meta App Review before anyone outside
- * the app's dev/test users can grant them.
+ * Meta rejects the whole login if any requested scope is not configured on the
+ * app, so Instagram is requested separately: its permissions come from an
+ * Instagram use case that has to be added in the app dashboard, and asking for
+ * them before that exists blocks Facebook sign-in entirely.
+ *
+ * All of these still need Advanced Access from App Review before anyone
+ * outside the app's own admins, developers and testers can grant them.
  */
-export const REQUIRED_SCOPES = [
+const PAGE_SCOPES = [
   'public_profile',
   'pages_show_list',
   'pages_manage_posts',
   'pages_read_engagement',
+  'read_insights',
+];
+
+const INSTAGRAM_SCOPES = [
   'instagram_basic',
   'instagram_content_publish',
   'instagram_manage_comments',
-  'read_insights',
+];
+
+/** Set VITE_META_INSTAGRAM_ENABLED=true once the Instagram use case exists. */
+const instagramEnabled = import.meta.env.VITE_META_INSTAGRAM_ENABLED === 'true';
+
+export const REQUIRED_SCOPES = [
+  ...PAGE_SCOPES,
+  ...(instagramEnabled ? INSTAGRAM_SCOPES : []),
 ].join(',');
+
+export const isInstagramEnabled = instagramEnabled;
 
 let loadPromise: Promise<void> | null = null;
 

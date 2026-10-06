@@ -5,7 +5,7 @@ import {
   type AvailablePage,
   type Connection,
 } from '../lib/api';
-import { facebookLogin, loadFacebookSdk } from '../lib/facebook';
+import { facebookLogin, isInstagramEnabled, loadFacebookSdk } from '../lib/facebook';
 import { Alert, Badge, Button, Card, EmptyState, Spinner, providerLabel } from '../components/ui';
 
 /**
@@ -181,6 +181,14 @@ export function ConnectionsScreen() {
         </ul>
       </details>
 
+      {!isInstagramEnabled && (
+        <Alert tone="info">
+          Instagram is not enabled on this app yet, so only Facebook Pages can be connected.
+          Add an Instagram use case in the Meta app dashboard, then set{' '}
+          <code>VITE_META_INSTAGRAM_ENABLED=true</code> to request those permissions.
+        </Alert>
+      )}
+
       {!appId && (
         <Alert tone="warning">
           Facebook connection needs <code>VITE_META_APP_ID</code> in <code>.env</code>. Until your
@@ -219,7 +227,7 @@ export function ConnectionsScreen() {
                     </span>
                   </span>
                 </label>
-                {!page.instagram && (
+                {!page.instagram && isInstagramEnabled && (
                   <div className="pl-10">
                     <InstagramHelp />
                   </div>
