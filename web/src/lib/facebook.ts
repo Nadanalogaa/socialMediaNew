@@ -88,22 +88,59 @@ export function loadFacebookSdk(appId: string): Promise<void> {
   return loadPromise;
 }
 
-/** Opens the Facebook consent dialog and resolves with a short-lived token. */
+/**
+ * Opens the Facebook consent dialog and resolves with a short-lived token.
+ *
+ * Failures are reported specifically rather than as one catch-all message:
+ * a declined permission, a dismissed dialog and an unauthorised app all look
+ * identical to the user otherwise, and they need different fixes.
+ */
 export function facebookLogin(): Promise<string> {
   return new Promise((resolve, reject) => {
     if (!window.FB) {
-      reject(new Error('Facebook SDK is not ready yet.'));
+      reject(new Error('Facebook SDK is not ready yet. Reload the page and try again.'));
       return;
     }
+
     window.FB.login(
       (response) => {
-        if (response.status === 'connected' && response.authResponse) {
-          resolve(response.authResponse.accessToken);
-        } else {
-          reject(new Error('Facebook sign-in was cancelled or not fully authorised.'));
+        console.log('Facebook login response:', response);
+
+        if (response.status !== 'connected' || !response.authResponse) {
+          reject(new Error(describeLoginFailure(response)));
+          return;
         }
+
+        // Meta returns `connected` even when the user unticked permissions on
+        // the consent screen, so the granted list has to be checked explicitly.
+        const granted = new Set((response.authResponse.grantedScopes ?? '').split(','));
+        const declined = REQUIRED_SCOPES.split(',').filter((scope) => !granted.has(scope));
+
+        if (declined.length > 0) {
+          reject(
+            new Error(
+              `Facebook sign-in succeeded but these permissions were not granted: ${declined.join(
+                ', ',
+              )}. Press Connect again and leave every option switched on.`,
+            ),
+          );
+          return;
+        }
+
+        resolve(response.authResponse.accessToken);
       },
       { scope: REQUIRED_SCOPES, return_scopes: true },
     );
   });
+}
+
+function describeLoginFailure(response: FacebookLoginResponse): string {
+  switch (response.status) {
+    case 'not_authorized':
+      return 'You are signed in to Facebook but did not authorise this app. Press Connect again and choose Continue.';
+    case 'unknown':
+      return 'The Facebook window closed before sign-in finished. Check that your browser is not blocking pop-ups, then try again.';
+    default:
+      return `Facebook sign-in did not complete (status: ${response.status}).`;
+  }
 }
