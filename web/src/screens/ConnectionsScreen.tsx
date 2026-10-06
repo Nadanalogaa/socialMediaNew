@@ -5,7 +5,12 @@ import {
   type AvailablePage,
   type Connection,
 } from '../lib/api';
-import { facebookLogin, isInstagramEnabled, loadFacebookSdk } from '../lib/facebook';
+import {
+  facebookLogin,
+  isInstagramEnabled,
+  loadFacebookSdk,
+  usesBusinessLogin,
+} from '../lib/facebook';
 import { Alert, Badge, Button, Card, EmptyState, Spinner, providerLabel } from '../components/ui';
 
 /**
@@ -181,7 +186,7 @@ export function ConnectionsScreen() {
         </ul>
       </details>
 
-      {!isInstagramEnabled && (
+      {!isInstagramEnabled && !usesBusinessLogin && (
         <Alert tone="info">
           Instagram is not enabled on this app yet, so only Facebook Pages can be connected.
           Add an Instagram use case in the Meta app dashboard, then set{' '}

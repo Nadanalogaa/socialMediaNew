@@ -11,7 +11,7 @@ declare global {
       init: (options: Record<string, unknown>) => void;
       login: (
         callback: (response: FacebookLoginResponse) => void,
-        options: { scope: string; return_scopes?: boolean },
+        options: Record<string, unknown>,
       ) => void;
       logout: (callback: () => void) => void;
       getLoginStatus: (callback: (response: FacebookLoginResponse) => void) => void;
@@ -24,6 +24,15 @@ export interface FacebookLoginResponse {
   status: 'connected' | 'not_authorized' | 'unknown';
   authResponse?: { accessToken: string; userID: string; grantedScopes?: string };
 }
+
+/**
+ * Business apps use Facebook Login for Business, which grants permissions from
+ * a named *configuration* rather than from a scope list. Passing `scope` to
+ * such an app is rejected outright with "this app isn't available", so the
+ * configuration id is used when one is set.
+ */
+const configId = import.meta.env.VITE_META_CONFIG_ID;
+export const usesBusinessLogin = Boolean(configId);
 
 /**
  * Permissions requested at login.
@@ -102,6 +111,11 @@ export function facebookLogin(): Promise<string> {
       return;
     }
 
+    // Business login takes a configuration; classic login takes scopes.
+    const loginOptions = configId
+      ? { config_id: configId, response_type: 'token', override_default_response_type: true }
+      : { scope: REQUIRED_SCOPES, return_scopes: true };
+
     window.FB.login(
       (response) => {
         console.log('Facebook login response:', response);
@@ -113,8 +127,14 @@ export function facebookLogin(): Promise<string> {
 
         // Meta returns `connected` even when the user unticked permissions on
         // the consent screen, so the granted list has to be checked explicitly.
-        const granted = new Set((response.authResponse.grantedScopes ?? '').split(','));
-        const declined = REQUIRED_SCOPES.split(',').filter((scope) => !granted.has(scope));
+        // Business login reports granted scopes only sometimes, so an empty
+        // list there is not treated as a refusal.
+        const grantedScopes = response.authResponse.grantedScopes;
+        const granted = new Set((grantedScopes ?? '').split(','));
+        const declined =
+          configId && !grantedScopes
+            ? []
+            : REQUIRED_SCOPES.split(',').filter((scope) => !granted.has(scope));
 
         if (declined.length > 0) {
           reject(
@@ -129,7 +149,7 @@ export function facebookLogin(): Promise<string> {
 
         resolve(response.authResponse.accessToken);
       },
-      { scope: REQUIRED_SCOPES, return_scopes: true },
+      loginOptions,
     );
   });
 }
