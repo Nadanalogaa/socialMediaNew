@@ -1,0 +1,36 @@
+# Worker deployment.
+#
+# Brings up the worker alongside Portainer, so the container can be watched and
+# restarted from a browser rather than over SSH.
+#
+# Copy .env.production to the server as .env before running:
+#   docker compose up -d --build
+
+services:
+  worker:
+    build: .
+    container_name: socialboost-worker
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      NODE_ENV: production
+    logging:
+      # Without a cap, logs will eventually fill the disk on a small VPS.
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  portainer:
+    image: portainer/portainer-ce:latest
+    container_name: portainer
+    restart: unless-stopped
+    ports:
+      - "9443:9443"
+    volumes:
+      # Lets Portainer manage the containers running beside it.
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer_data:/data
+
+volumes:
+  portainer_data:
