@@ -106,7 +106,7 @@ export function LibraryScreen({
           hint="Make a reel or a poster and press Save, and it will appear here."
         />
       ) : (
-        <ul className="grid gap-3 sm:grid-cols-3 lg:grid-cols-5">
+        <ul className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
           {designs.map((design) => (
             <li key={design.id}>
               <Card className="flex h-full flex-col p-2">

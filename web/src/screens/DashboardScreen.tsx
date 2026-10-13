@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { setActiveOrganization, type MediaAsset, type Organization, type Session } from '../lib/api';
 import { OrganizationSwitcher } from '../components/OrganizationSwitcher';
+import { BottomNav } from '../components/BottomNav';
 import { ComposeScreen } from './ComposeScreen';
 import { ConnectionsScreen } from './ConnectionsScreen';
 import { CreativesScreen } from './CreativesScreen';
@@ -47,6 +48,9 @@ const TABS: { key: TabKey; label: string; icon: string; ready: boolean }[] = [
   { key: 'ads', label: 'Ads', icon: '◎', ready: false },
 ];
 
+/** Shown in the mobile bar; the rest live behind "More". */
+const PRIMARY_MOBILE_TABS: TabKey[] = ['compose', 'reels', 'posts', 'library'];
+
 const COMING_SOON: Record<string, string> = {
   whatsapp: 'Opt-in contact lists, approved message templates and throttled campaigns.',
   ads: 'Meta and Google campaigns. Unlocks once the ads API applications are approved.',
@@ -79,13 +83,17 @@ export function DashboardScreen({ session, onSignOut, onSessionChange }: Props) 
           </div>
           <button
             onClick={onSignOut}
-            className="shrink-0 rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 transition hover:bg-slate-100"
+            className="hidden shrink-0 rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 transition hover:bg-slate-100 lg:block"
           >
             Sign out
           </button>
+          <span className="text-sm font-medium text-slate-500 lg:hidden">
+            {TABS.find((item) => item.key === tab)?.label}
+          </span>
         </div>
 
-        <nav className="mx-auto w-full max-w-[1700px] overflow-x-auto px-5">
+        {/* Desktop tabs. On a phone the bottom bar replaces these. */}
+        <nav className="mx-auto hidden w-full max-w-[1700px] overflow-x-auto px-5 lg:block">
           <ul className="flex gap-1 pb-2">
             {TABS.map((item) => (
               <li key={item.key}>
@@ -112,7 +120,7 @@ export function DashboardScreen({ session, onSignOut, onSessionChange }: Props) 
         </nav>
       </header>
 
-      <main className="mx-auto w-full max-w-[1700px] flex-1 px-5 py-6">
+      <main className="mx-auto w-full max-w-[1700px] flex-1 px-4 py-5 pb-24 sm:px-5 lg:pb-6">
         {tab === 'compose' && (
           <ComposeScreen
             key={session.organization.id}
@@ -164,6 +172,25 @@ export function DashboardScreen({ session, onSignOut, onSessionChange }: Props) 
           </Card>
         )}
       </main>
+
+      <BottomNav
+        primary={TABS.filter((item) => PRIMARY_MOBILE_TABS.includes(item.key)).map((item) => ({
+          key: item.key,
+          label: item.label,
+          icon: item.icon,
+        }))}
+        overflow={TABS.filter((item) => !PRIMARY_MOBILE_TABS.includes(item.key)).map((item) => ({
+          key: item.key,
+          label: item.label,
+          icon: item.icon,
+        }))}
+        active={tab}
+        onSelect={(key) => {
+          setTab(key as TabKey);
+          if (key !== 'library') setOpenDesignId(undefined);
+        }}
+        onSignOut={onSignOut}
+      />
     </div>
   );
 }

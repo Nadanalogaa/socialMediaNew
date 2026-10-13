@@ -112,7 +112,7 @@ function TemplatePicker({ onPick }: { onPick: (template: TemplateDefinition) => 
           <h3 className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-400">
             {category}
           </h3>
-          <ul className="grid gap-3 sm:grid-cols-2">
+          <ul className="grid grid-cols-2 gap-3">
             {templates.map((template) => (
               <li key={template.slug}>
                 <button
@@ -345,7 +345,7 @@ function TemplateEditor({
       {error && <Alert>{error}</Alert>}
       {notice && <Alert tone="success">{notice}</Alert>}
 
-      <div className="grid gap-5 lg:grid-cols-[1fr_320px]">
+      <div className="flex flex-col-reverse gap-5 lg:grid lg:grid-cols-[1fr_320px]">
         <div className="space-y-4">
           {aiAvailable && (
           <Card>

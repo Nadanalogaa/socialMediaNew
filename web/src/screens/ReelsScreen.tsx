@@ -30,6 +30,7 @@ import { startPreviewLoop } from '../lib/audio';
 import { LayerProperties } from '../components/LayerProperties';
 import { SoundPanel } from '../components/SoundPanel';
 import { Alert, Button, Card, Spinner } from '../components/ui';
+import { useIsMobile } from '../lib/useMediaQuery';
 
 export function ReelsScreen({
   onPublish,
@@ -123,7 +124,7 @@ function ReelPicker({ onPick }: { onPick: (project: ReelProject) => void }) {
         </p>
       </div>
 
-      <ul className="grid gap-3 sm:grid-cols-4">
+      <ul className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {BUILT_IN_VIDEO_TEMPLATES.map((template) => (
           <li key={template.slug}>
             <button
@@ -180,6 +181,9 @@ function ReelEditor({
   const [previewOpen, setPreviewOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [designId, setDesignId] = useState<string | null>(initialDesignId ?? null);
+  /** Which panel is showing on a phone, where the columns cannot sit side by side. */
+  const [panel, setPanel] = useState<'scenes' | 'layers' | 'style' | 'media'>('scenes');
+  const isMobile = useIsMobile();
   const [shortDescription, setShortDescription] = useState('');
   const [tagText, setTagText] = useState('');
   const audioInput = useRef<HTMLInputElement>(null);
@@ -361,6 +365,8 @@ function ReelEditor({
       return;
     }
     setSelectedLayerId(hit.id);
+    // On a phone the properties live behind a tab, so follow the selection.
+    if (isMobile) setPanel('style');
     dragState.current = {
       layerId: hit.id,
       startX: point.x,
@@ -528,9 +534,42 @@ function ReelEditor({
       {error && <Alert>{error}</Alert>}
       {notice && <Alert tone="success">{notice}</Alert>}
 
-      <div className="grid items-start gap-4 lg:grid-cols-[220px_minmax(0,1fr)_340px]">
+      {isMobile && (
+        <div className="sticky top-[4.25rem] z-20 -mx-4 bg-slate-50 px-4 pb-2 pt-1">
+          <div className="flex gap-1 overflow-x-auto">
+            {(
+              [
+                ['scenes', 'Scenes'],
+                ['layers', 'Layers'],
+                ['style', 'Style'],
+                ['media', 'Photos & sound'],
+              ] as const
+            ).map(([key, label]) => (
+              <button
+                key={key}
+                onClick={() => setPanel(key)}
+                className={`whitespace-nowrap rounded-lg px-3 py-1.5 text-sm transition ${
+                  panel === key
+                    ? 'bg-brand-600 font-medium text-white'
+                    : 'bg-white text-slate-600 ring-1 ring-slate-200'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div
+        className={
+          isMobile
+            ? 'flex flex-col gap-4'
+            : 'grid items-start gap-4 lg:grid-cols-[220px_minmax(0,1fr)_340px]'
+        }
+      >
         {/* Scenes */}
-        <div className="space-y-3">
+        <div className={`space-y-3 ${isMobile && panel !== 'scenes' ? 'hidden' : ''} ${isMobile ? 'order-2' : ''}`}>
           <Card className="p-3">
             <div className="mb-2 flex items-center justify-between">
               <h3 className="text-sm font-medium text-slate-900">Scenes</h3>
@@ -627,8 +666,12 @@ function ReelEditor({
         </div>
 
         {/* Preview — the centrepiece, sized to the viewport */}
-        <div className="flex flex-col items-center gap-3">
-          <div className="flex w-full flex-col items-center rounded-xl border border-slate-200 bg-slate-900 p-4">
+        <div className={`flex flex-col items-center gap-3 ${isMobile ? 'order-1' : ''}`}>
+          <div
+            className={`flex w-full flex-col items-center rounded-xl border border-slate-200 bg-slate-900 p-3 lg:p-4 ${
+              isMobile ? 'sticky top-32 z-10' : ''
+            }`}
+          >
             <canvas
               ref={canvasRef}
               width={canvasW}
@@ -637,7 +680,7 @@ function ReelEditor({
               onPointerMove={handlePointerMove}
               onPointerUp={() => (dragState.current = null)}
               style={{ aspectRatio: '9 / 16' }}
-              className="h-[min(68vh,760px)] w-auto max-w-full cursor-move touch-none rounded-lg bg-black shadow-2xl"
+              className="h-[min(42vh,420px)] w-auto max-w-full cursor-move touch-none rounded-lg bg-black shadow-2xl lg:h-[min(68vh,760px)]"
               aria-label="Reel preview"
             />
 
@@ -709,8 +752,8 @@ function ReelEditor({
         </div>
 
         {/* Layers, photos and the selected layer's properties */}
-        <div className="space-y-3">
-          <Card className="p-3">
+        <div className={`space-y-3 ${isMobile ? 'order-3' : ''}`}>
+          <Card className={`p-3 ${isMobile && panel !== 'layers' ? 'hidden' : ''}`}>
             <h3 className="mb-2 text-sm font-medium text-slate-900">Layers</h3>
             <ul className="max-h-48 space-y-1 overflow-y-auto">
               {[...scene.layers].reverse().map((layer) => {
@@ -784,7 +827,7 @@ function ReelEditor({
             </div>
           </Card>
 
-          <Card className="p-3">
+          <Card className={`p-3 ${isMobile && panel !== 'media' ? 'hidden' : ''}`}>
             <h3 className="mb-2 text-sm font-medium text-slate-900">Sound</h3>
             <SoundPanel
               audio={project.audio}
@@ -794,7 +837,7 @@ function ReelEditor({
             />
           </Card>
 
-          <Card className="p-3">
+          <Card className={`p-3 ${isMobile && panel !== 'media' ? 'hidden' : ''}`}>
             <div className="mb-2 flex items-center justify-between">
               <h3 className="text-sm font-medium text-slate-900">Photos</h3>
               <button
@@ -849,7 +892,7 @@ function ReelEditor({
             )}
           </Card>
 
-        <Card className="p-3">
+        <Card className={`p-3 ${isMobile && panel !== 'style' ? 'hidden' : ''}`}>
           <h3 className="mb-2 text-sm font-medium text-slate-900">
             {selectedLayer ? selectedLayer.name : 'Nothing selected'}
           </h3>

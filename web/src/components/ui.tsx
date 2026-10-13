@@ -31,7 +31,9 @@ export function Button({
       type={type}
       onClick={onClick}
       disabled={disabled}
-      className={`rounded-lg px-4 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-60 ${styles} ${className}`}
+      /* min-h-11 keeps every button at least 44px tall, the smallest reliable
+         touch target, without affecting the desktop look. */
+      className={`min-h-11 rounded-lg px-4 py-2 text-sm font-medium transition disabled:cursor-not-allowed disabled:opacity-60 lg:min-h-0 ${styles} ${className}`}
     >
       {children}
     </button>
