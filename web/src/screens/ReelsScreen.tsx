@@ -407,12 +407,10 @@ function ReelEditor({
     const alreadySelected = hit.id === selectedLayerId;
     if (!alreadySelected) setRepositioning(false);
     setSelectedLayerId(hit.id);
-    if (isMobile) {
-      // Properties live behind a tab here, so the selection has to take the
-      // user to them.
-      setPanel('style');
-      setSheetHeight('half');
-    }
+    // The panel follows the selection, but the sheet's height deliberately
+    // does not: the preview is sized against it, so growing it here would
+    // resize the canvas under the finger that is about to drag.
+    if (isMobile) setPanel('style');
 
     // The first touch only selects. Moving something requires selecting it
     // first, which is what stops a stray tap shifting the design.
@@ -877,7 +875,14 @@ function ReelEditor({
               onPointerUp={(event) => {
                 pointers.current.delete(event.pointerId);
                 if (pointers.current.size < 2) pinch.current = null;
+
+                // A tap that moved nothing opens the controls; a drag leaves
+                // the sheet where it was.
+                const wasTap = dragState.current ? !dragState.current.moved : true;
                 dragState.current = null;
+                if (isMobile && wasTap && selectedLayerId && sheetHeight === 'peek') {
+                  setSheetHeight('half');
+                }
               }}
               onPointerCancel={(event) => {
                 pointers.current.delete(event.pointerId);
@@ -887,7 +892,7 @@ function ReelEditor({
               /* The canvas shrinks as the panel grows, so the two never
                  overlap and the preview is always wholly visible. */
               style={{ aspectRatio: '9 / 16' }}
-              className={`w-auto max-w-full touch-none rounded-lg bg-black shadow-xl lg:h-[min(68vh,760px)] lg:max-h-none lg:cursor-move ${
+              className={`w-auto max-w-full touch-none rounded-lg bg-black shadow-xl transition-[height] duration-200 lg:h-[min(68vh,760px)] lg:max-h-none lg:cursor-move ${
                 isMobile
                   ? sheetHeight === 'full'
                     ? 'h-[18dvh]'
