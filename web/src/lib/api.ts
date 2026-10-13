@@ -8,6 +8,9 @@
 
 const SESSION_KEY = 'socialboost.session';
 
+/** Endpoints that legitimately run without a session. */
+const PUBLIC_PATHS = ['/auth/login', '/auth/register', '/auth/refresh'];
+
 export interface Session {
   accessToken: string;
   refreshToken: string;
@@ -38,6 +41,25 @@ export function clearSession(): void {
   } catch {
     /* ignore */
   }
+}
+
+/**
+ * Notifies the app when a session ends on its own — an expired refresh token,
+ * or a request that arrived unauthenticated. Without this the UI keeps showing
+ * a signed-in dashboard whose every action fails with "Authentication
+ * required", which looks like a broken feature rather than a finished session.
+ */
+type SessionListener = () => void;
+const sessionListeners = new Set<SessionListener>();
+
+export function onSessionExpired(listener: SessionListener): () => void {
+  sessionListeners.add(listener);
+  return () => sessionListeners.delete(listener);
+}
+
+function announceSessionExpired(): void {
+  clearSession();
+  for (const listener of sessionListeners) listener();
 }
 
 export class ApiError extends Error {
@@ -82,12 +104,19 @@ async function rawRequest(path: string, init: RequestInit, session: Session | nu
  */
 export async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   let session = loadSession();
+
+  // The stored session is gone but the UI still thinks it is signed in.
+  if (!session && !PUBLIC_PATHS.some((p) => path.startsWith(p))) {
+    announceSessionExpired();
+    throw new ApiError(401, 'unauthorized', 'Your session has ended. Please sign in again.');
+  }
+
   let response = await rawRequest(path, init, session);
 
   if (response.status === 401 && session) {
     const refreshed = await tryRefresh(session.refreshToken);
     if (!refreshed) {
-      clearSession();
+      announceSessionExpired();
       throw new ApiError(401, 'unauthorized', 'Your session expired. Please sign in again.');
     }
     saveSession(refreshed);

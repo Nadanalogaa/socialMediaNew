@@ -1,10 +1,14 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { AuthScreen } from './screens/AuthScreen';
 import { DashboardScreen } from './screens/DashboardScreen';
-import { api, clearSession, loadSession, type Session } from './lib/api';
+import { api, clearSession, loadSession, onSessionExpired, type Session } from './lib/api';
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(() => loadSession());
+
+  // Return to the sign-in screen when a session ends, rather than leaving a
+  // dashboard on screen whose every action would fail.
+  useEffect(() => onSessionExpired(() => setSession(null)), []);
 
   async function handleSignOut() {
     const current = session;
