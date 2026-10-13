@@ -418,6 +418,55 @@ export function drawProjectFrame(
   ctx.restore();
 }
 
+/**
+ * Draws a marquee around the selected layer.
+ *
+ * Editor only — never part of a recording. Without it there is no way to tell
+ * what a drag is about to move, which is the main reason touches feel
+ * accidental.
+ */
+export function drawSelectionOutline(
+  ctx: CanvasRenderingContext2D,
+  layer: { box: { x: number; y: number; w: number; h: number } },
+  width: number,
+  height: number,
+): void {
+  const x = (layer.box.x / 100) * width;
+  const y = (layer.box.y / 100) * height;
+  const w = (layer.box.w / 100) * width;
+  const h = (layer.box.h / 100) * height;
+
+  ctx.save();
+  // Scaled to the canvas, which is 1080 wide, so it reads at any display size.
+  const unit = width / 1080;
+
+  ctx.strokeStyle = 'rgba(255,255,255,0.95)';
+  ctx.lineWidth = 3 * unit;
+  ctx.setLineDash([10 * unit, 8 * unit]);
+  ctx.strokeRect(x, y, w, h);
+
+  // A dark companion line keeps it visible over a light photo.
+  ctx.strokeStyle = 'rgba(15,23,42,0.6)';
+  ctx.lineWidth = 1.5 * unit;
+  ctx.setLineDash([]);
+  ctx.strokeRect(x, y, w, h);
+
+  // Corner marks, so the box reads as a handle rather than a border.
+  const corner = 18 * unit;
+  ctx.fillStyle = '#ffffff';
+  for (const [cx, cy] of [
+    [x, y],
+    [x + w, y],
+    [x, y + h],
+    [x + w, y + h],
+  ] as const) {
+    ctx.beginPath();
+    ctx.arc(cx, cy, corner / 2, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
 export interface RecordedProject {
   blob: Blob;
   mimeType: string;

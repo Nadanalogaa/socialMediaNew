@@ -22,6 +22,7 @@ import {
 import { api, uploadAudio, uploadToCloudinary, type MediaAsset } from '../lib/api';
 import {
   drawProjectFrame,
+  drawSelectionOutline,
   preloadProjectImages,
   recordProject,
   type ImageCache,
@@ -29,6 +30,7 @@ import {
 import { startPreviewLoop } from '../lib/audio';
 import { LayerProperties } from '../components/LayerProperties';
 import { SoundPanel } from '../components/SoundPanel';
+import { MobileSheet, type SheetHeight } from '../components/MobileSheet';
 import { Alert, Button, Card, Spinner } from '../components/ui';
 import { useIsMobile } from '../lib/useMediaQuery';
 
@@ -183,6 +185,7 @@ function ReelEditor({
   const [designId, setDesignId] = useState<string | null>(initialDesignId ?? null);
   /** Which panel is showing on a phone, where the columns cannot sit side by side. */
   const [panel, setPanel] = useState<'scenes' | 'layers' | 'style' | 'media'>('scenes');
+  const [sheetHeight, setSheetHeight] = useState<SheetHeight>('peek');
   const isMobile = useIsMobile();
   const [shortDescription, setShortDescription] = useState('');
   const [tagText, setTagText] = useState('');
@@ -190,7 +193,14 @@ function ReelEditor({
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
-  const dragState = useRef<{ layerId: string; startX: number; startY: number; boxX: number; boxY: number } | null>(null);
+  const dragState = useRef<{
+    layerId: string;
+    startX: number;
+    startY: number;
+    boxX: number;
+    boxY: number;
+    moved: boolean;
+  } | null>(null);
 
   const scene = project.scenes[Math.min(sceneIndex, project.scenes.length - 1)]!;
   const photos = useMemo(() => projectPhotos(project), [project]);
@@ -257,12 +267,14 @@ function ReelEditor({
           scene,
           sceneElapsed: Math.min(scene.durationSeconds, 1.2),
         });
+        const selected = scene.layers.find((layer) => layer.id === selectedLayerId);
+        if (selected) drawSelectionOutline(ctx, selected, canvasW, canvasH);
       }
       frameId = requestAnimationFrame(loop);
     };
     loop();
     return () => cancelAnimationFrame(frameId);
-  }, [project, scene, playing, images, canvasW, canvasH]);
+  }, [project, scene, playing, images, canvasW, canvasH, selectedLayerId]);
 
   const updateScene = useCallback(
     (patch: Partial<ProjectScene>) => {
@@ -364,15 +376,27 @@ function ReelEditor({
       setSelectedLayerId(null);
       return;
     }
+
+    const alreadySelected = hit.id === selectedLayerId;
     setSelectedLayerId(hit.id);
-    // On a phone the properties live behind a tab, so follow the selection.
-    if (isMobile) setPanel('style');
+    if (isMobile) {
+      // Properties live behind a tab here, so the selection has to take the
+      // user to them.
+      setPanel('style');
+      setSheetHeight('half');
+    }
+
+    // The first touch only selects. Moving something requires selecting it
+    // first, which is what stops a stray tap shifting the design.
+    if (!alreadySelected) return;
+
     dragState.current = {
       layerId: hit.id,
       startX: point.x,
       startY: point.y,
       boxX: hit.box.x,
       boxY: hit.box.y,
+      moved: false,
     };
     event.currentTarget.setPointerCapture(event.pointerId);
   }
@@ -384,12 +408,20 @@ function ReelEditor({
     const layer = scene.layers.find((l) => l.id === drag.layerId);
     if (!layer) return;
 
+    const dx = point.x - drag.startX;
+    const dy = point.y - drag.startY;
+
+    // A finger is never perfectly still; ignore movement below a threshold so
+    // a tap on a selected layer does not nudge it.
+    if (!drag.moved && Math.hypot(dx, dy) < 1.5) return;
+    drag.moved = true;
+
     updateLayer(drag.layerId, {
       box: {
         ...layer.box,
         // Clamped so a layer cannot be dragged entirely off the canvas.
-        x: Math.max(-layer.box.w + 5, Math.min(95, drag.boxX + (point.x - drag.startX))),
-        y: Math.max(-layer.box.h + 5, Math.min(95, drag.boxY + (point.y - drag.startY))),
+        x: Math.max(-layer.box.w + 5, Math.min(95, drag.boxX + dx)),
+        y: Math.max(-layer.box.h + 5, Math.min(95, drag.boxY + dy)),
       },
     });
   }
@@ -534,42 +566,15 @@ function ReelEditor({
       {error && <Alert>{error}</Alert>}
       {notice && <Alert tone="success">{notice}</Alert>}
 
-      {isMobile && (
-        <div className="sticky top-[4.25rem] z-20 -mx-4 bg-slate-50 px-4 pb-2 pt-1">
-          <div className="flex gap-1 overflow-x-auto">
-            {(
-              [
-                ['scenes', 'Scenes'],
-                ['layers', 'Layers'],
-                ['style', 'Style'],
-                ['media', 'Photos & sound'],
-              ] as const
-            ).map(([key, label]) => (
-              <button
-                key={key}
-                onClick={() => setPanel(key)}
-                className={`whitespace-nowrap rounded-lg px-3 py-1.5 text-sm transition ${
-                  panel === key
-                    ? 'bg-brand-600 font-medium text-white'
-                    : 'bg-white text-slate-600 ring-1 ring-slate-200'
-                }`}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-        </div>
-      )}
-
       <div
         className={
           isMobile
-            ? 'flex flex-col gap-4'
+            ? 'flex flex-col gap-4 pb-28'
             : 'grid items-start gap-4 lg:grid-cols-[220px_minmax(0,1fr)_340px]'
         }
       >
         {/* Scenes */}
-        <div className={`space-y-3 ${isMobile && panel !== 'scenes' ? 'hidden' : ''} ${isMobile ? 'order-2' : ''}`}>
+        <div className={`space-y-3 ${isMobile ? 'hidden' : ''}`}>
           <Card className="p-3">
             <div className="mb-2 flex items-center justify-between">
               <h3 className="text-sm font-medium text-slate-900">Scenes</h3>
@@ -666,7 +671,7 @@ function ReelEditor({
         </div>
 
         {/* Preview — the centrepiece, sized to the viewport */}
-        <div className={`flex flex-col items-center gap-3 ${isMobile ? 'order-1' : ''}`}>
+        <div className="flex flex-col items-center gap-3">
           <div
             className={`flex w-full flex-col items-center rounded-xl border border-slate-200 bg-slate-900 p-3 lg:p-4 ${
               isMobile ? 'sticky top-32 z-10' : ''
@@ -680,7 +685,7 @@ function ReelEditor({
               onPointerMove={handlePointerMove}
               onPointerUp={() => (dragState.current = null)}
               style={{ aspectRatio: '9 / 16' }}
-              className="h-[min(42vh,420px)] w-auto max-w-full cursor-move touch-none rounded-lg bg-black shadow-2xl lg:h-[min(68vh,760px)]"
+              className="h-[min(44vh,440px)] w-auto max-w-full touch-none rounded-lg bg-black shadow-2xl lg:h-[min(68vh,760px)] lg:cursor-move"
               aria-label="Reel preview"
             />
 
@@ -707,7 +712,9 @@ function ReelEditor({
               </div>
             ) : (
               <p className="mt-2 text-center text-xs text-slate-400">
-                Click a layer to select it · drag to move it
+                {isMobile
+                  ? 'Tap to select · drag the selected item to move it'
+                  : 'Click a layer to select it · drag to move it'}
               </p>
             )}
           </div>
@@ -752,8 +759,8 @@ function ReelEditor({
         </div>
 
         {/* Layers, photos and the selected layer's properties */}
-        <div className={`space-y-3 ${isMobile ? 'order-3' : ''}`}>
-          <Card className={`p-3 ${isMobile && panel !== 'layers' ? 'hidden' : ''}`}>
+        <div className={`space-y-3 ${isMobile ? 'hidden' : ''}`}>
+          <Card className="p-3">
             <h3 className="mb-2 text-sm font-medium text-slate-900">Layers</h3>
             <ul className="max-h-48 space-y-1 overflow-y-auto">
               {[...scene.layers].reverse().map((layer) => {
@@ -827,7 +834,7 @@ function ReelEditor({
             </div>
           </Card>
 
-          <Card className={`p-3 ${isMobile && panel !== 'media' ? 'hidden' : ''}`}>
+          <Card className="p-3">
             <h3 className="mb-2 text-sm font-medium text-slate-900">Sound</h3>
             <SoundPanel
               audio={project.audio}
@@ -837,7 +844,7 @@ function ReelEditor({
             />
           </Card>
 
-          <Card className={`p-3 ${isMobile && panel !== 'media' ? 'hidden' : ''}`}>
+          <Card className="p-3">
             <div className="mb-2 flex items-center justify-between">
               <h3 className="text-sm font-medium text-slate-900">Photos</h3>
               <button
@@ -892,7 +899,7 @@ function ReelEditor({
             )}
           </Card>
 
-        <Card className={`p-3 ${isMobile && panel !== 'style' ? 'hidden' : ''}`}>
+        <Card className="p-3">
           <h3 className="mb-2 text-sm font-medium text-slate-900">
             {selectedLayer ? selectedLayer.name : 'Nothing selected'}
           </h3>
@@ -961,6 +968,249 @@ function ReelEditor({
             </div>
           </div>
         </div>
+      )}
+
+
+      {isMobile && (
+        <MobileSheet
+          height={sheetHeight}
+          onHeightChange={setSheetHeight}
+          activeTab={panel}
+          onTabChange={(key) => setPanel(key as typeof panel)}
+          tabs={[
+            { key: 'style', label: selectedLayer ? selectedLayer.name.slice(0, 14) : 'Style' },
+            { key: 'layers', label: 'Layers' },
+            { key: 'scenes', label: 'Scenes' },
+            { key: 'media', label: 'Photos & sound' },
+          ]}
+        >
+          {panel === 'style' &&
+            (selectedLayer ? (
+              <LayerProperties
+                layer={selectedLayer}
+                onChange={(patch) => updateLayer(selectedLayer.id, patch)}
+                onPickImage={() => openFilePicker('layer')}
+              />
+            ) : (
+              <p className="py-4 text-center text-sm text-slate-500">
+                Tap something on the preview to edit it.
+              </p>
+            ))}
+
+          {panel === 'layers' && (
+            <ul className="space-y-1">
+              {[...scene.layers].reverse().map((layer) => {
+                const index = scene.layers.indexOf(layer);
+                return (
+                  <li key={layer.id} className="flex items-center gap-1">
+                    <button
+                      onClick={() => {
+                        setSelectedLayerId(layer.id);
+                        setPanel('style');
+                      }}
+                      className={`flex-1 truncate rounded-lg px-2 py-2.5 text-left text-sm transition ${
+                        layer.id === selectedLayerId
+                          ? 'bg-brand-50 font-medium text-brand-700'
+                          : 'text-slate-700'
+                      }`}
+                    >
+                      {layer.type === 'text' ? '¶' : layer.type === 'image' ? '▣' : '■'}{' '}
+                      {layer.name}
+                    </button>
+                    <button
+                      onClick={() => updateScene({ layers: reorder(scene.layers, index, index + 1) })}
+                      className="px-2 py-2 text-slate-400"
+                      aria-label="Move up"
+                    >
+                      ↑
+                    </button>
+                    <button
+                      onClick={() => updateLayer(layer.id, { hidden: !layer.hidden })}
+                      className="px-2 py-2 text-slate-400"
+                      aria-label={layer.hidden ? 'Show' : 'Hide'}
+                    >
+                      {layer.hidden ? '○' : '●'}
+                    </button>
+                    <button
+                      onClick={() => removeLayer(layer.id)}
+                      className="px-2 py-2 text-slate-400"
+                      aria-label="Delete"
+                    >
+                      ×
+                    </button>
+                  </li>
+                );
+              })}
+              <li className="grid grid-cols-2 gap-1 pt-2">
+                <Button variant="secondary" onClick={() => addLayer(createTextLayer())}>
+                  + Text
+                </Button>
+                <Button variant="secondary" onClick={() => openFilePicker('layer')}>
+                  + Photo
+                </Button>
+                <Button variant="secondary" onClick={() => openFilePicker('logo')}>
+                  + Logo
+                </Button>
+                <Button variant="secondary" onClick={() => addLayer(createShapeLayer('#4f46e5'))}>
+                  + Colour
+                </Button>
+              </li>
+            </ul>
+          )}
+
+          {panel === 'scenes' && (
+            <div className="space-y-3">
+              <ul className="flex gap-2 overflow-x-auto pb-1">
+                {project.scenes.map((item, index) => (
+                  <li key={item.id}>
+                    <button
+                      onClick={() => {
+                        setSceneIndex(index);
+                        setSelectedLayerId(null);
+                      }}
+                      className={`whitespace-nowrap rounded-lg px-3 py-2 text-sm transition ${
+                        index === sceneIndex
+                          ? 'bg-brand-50 font-medium text-brand-700'
+                          : 'bg-slate-100 text-slate-700'
+                      }`}
+                    >
+                      {item.name} · {item.durationSeconds}s
+                    </button>
+                  </li>
+                ))}
+                <li>
+                  <button
+                    onClick={addScene}
+                    className="whitespace-nowrap rounded-lg border border-dashed border-slate-300 px-3 py-2 text-sm text-slate-600"
+                  >
+                    + Scene
+                  </button>
+                </li>
+              </ul>
+
+              <label className="block">
+                <span className="mb-1 block text-xs font-medium text-slate-600">
+                  Length {scene.durationSeconds.toFixed(1)}s
+                </span>
+                <input
+                  type="range"
+                  min="1"
+                  max="10"
+                  step="0.5"
+                  value={scene.durationSeconds}
+                  onChange={(e) => updateScene({ durationSeconds: Number(e.target.value) })}
+                  className="w-full"
+                />
+              </label>
+
+              <label className="block">
+                <span className="mb-1 block text-xs font-medium text-slate-600">Entrance</span>
+                <select
+                  value={scene.transitionIn}
+                  onChange={(e) => updateScene({ transitionIn: e.target.value as SceneTransition })}
+                  className="w-full rounded-lg border border-slate-300 px-2 py-2 text-sm"
+                >
+                  {SCENE_TRANSITIONS.map((t) => (
+                    <option key={t.value} value={t.value}>
+                      {t.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <div className="grid grid-cols-2 gap-2">
+                <Button
+                  variant="secondary"
+                  onClick={() => {
+                    const copy = duplicateScene(scene);
+                    setProject({
+                      ...project,
+                      scenes: [
+                        ...project.scenes.slice(0, sceneIndex + 1),
+                        copy,
+                        ...project.scenes.slice(sceneIndex + 1),
+                      ],
+                    });
+                  }}
+                >
+                  Duplicate
+                </Button>
+                <Button
+                  variant="danger"
+                  disabled={project.scenes.length <= 1}
+                  onClick={() => {
+                    setProject({
+                      ...project,
+                      scenes: project.scenes.filter((item) => item.id !== scene.id),
+                    });
+                    setSceneIndex(Math.max(0, sceneIndex - 1));
+                  }}
+                >
+                  Delete
+                </Button>
+              </div>
+            </div>
+          )}
+
+          {panel === 'media' && (
+            <div className="space-y-4">
+              <div>
+                <h4 className="mb-2 text-sm font-medium text-slate-900">Photos</h4>
+                {photos.length === 0 ? (
+                  <Button variant="secondary" onClick={() => openFilePicker('library')}>
+                    Upload a photo
+                  </Button>
+                ) : (
+                  <>
+                    <ul className="grid grid-cols-4 gap-2">
+                      {photos.map((url) => (
+                        <li key={url}>
+                          <button
+                            onClick={() => setActivePhoto(url)}
+                            className={`block w-full overflow-hidden rounded-lg border-2 ${
+                              activePhoto === url ? 'border-brand-500' : 'border-transparent'
+                            }`}
+                          >
+                            <img src={url} alt="" className="aspect-square w-full object-cover" />
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                    <div className="mt-2 grid gap-1">
+                      <Button
+                        variant="secondary"
+                        disabled={!activePhoto}
+                        onClick={() => activePhoto && usePhotoHere(activePhoto)}
+                      >
+                        Use on this scene
+                      </Button>
+                      <Button
+                        variant="secondary"
+                        disabled={!activePhoto}
+                        onClick={() => activePhoto && applyEverywhere(activePhoto)}
+                      >
+                        Use on every scene
+                      </Button>
+                      <Button variant="secondary" onClick={() => openFilePicker('library')}>
+                        Upload another
+                      </Button>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              <div className="border-t border-slate-100 pt-3">
+                <h4 className="mb-2 text-sm font-medium text-slate-900">Sound</h4>
+                <SoundPanel
+                  audio={project.audio}
+                  reelDuration={duration}
+                  onChange={(audio) => setProject({ ...project, audio })}
+                  onPick={() => audioInput.current?.click()}
+                />
+              </div>
+            </div>
+          )}
+        </MobileSheet>
       )}
 
       <input
