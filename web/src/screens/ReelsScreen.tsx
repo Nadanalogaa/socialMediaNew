@@ -4,6 +4,7 @@ import {
   BUILT_IN_VIDEO_TEMPLATES,
   SCENE_TRANSITIONS,
   applyImageToAllScenes,
+  projectPhotos,
   createImageLayer,
   createShapeLayer,
   createTextLayer,
@@ -129,12 +130,15 @@ function ReelEditor({
   const [notice, setNotice] = useState<string | null>(null);
   const [images, setImages] = useState<ImageCache>(new Map());
   const [result, setResult] = useState<string | null>(null);
+  /** The photo highlighted in the library, which the Use buttons act on. */
+  const [activePhoto, setActivePhoto] = useState<string | null>(null);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const dragState = useRef<{ layerId: string; startX: number; startY: number; boxX: number; boxY: number } | null>(null);
 
   const scene = project.scenes[Math.min(sceneIndex, project.scenes.length - 1)]!;
+  const photos = useMemo(() => projectPhotos(project), [project]);
   const selectedLayer = scene.layers.find((layer) => layer.id === selectedLayerId) ?? null;
   const { w: canvasW, h: canvasH } = ASPECT_RATIOS[project.ratio];
 
@@ -194,6 +198,33 @@ function ReelEditor({
     },
     [scene.layers, updateScene],
   );
+
+  function openFilePicker(intent: 'layer' | 'logo' | 'library') {
+    fileInput.current?.setAttribute('data-apply', intent);
+    fileInput.current?.click();
+  }
+
+  /**
+   * Puts an existing photo on the current scene.
+   *
+   * Prefers a selected image layer, then the scene's background photo, and
+   * only adds a new layer when the scene has no photo at all.
+   */
+  function usePhotoHere(url: string) {
+    const target =
+      (selectedLayer?.type === 'image' ? selectedLayer : null) ??
+      scene.layers.find((layer) => layer.type === 'image' && layer.box.w >= 80);
+
+    if (target) updateLayer(target.id, { content: url });
+    else addLayer(createImageLayer(url));
+    setActivePhoto(url);
+  }
+
+  function applyEverywhere(url: string) {
+    setProject(applyImageToAllScenes(project, url));
+    setActivePhoto(url);
+    setNotice('Photo applied to every scene.');
+  }
 
   function addLayer(layer: ProjectLayer) {
     updateScene({ layers: [...scene.layers, layer] });
@@ -275,19 +306,28 @@ function ReelEditor({
     });
   }
 
-  async function uploadPhoto(file: File, apply: 'layer' | 'all') {
+  async function uploadPhoto(file: File, intent: 'layer' | 'logo' | 'library') {
     setError(null);
     try {
       const signature = await api.uploadSignature();
       const uploaded = await uploadToCloudinary(file, signature);
-      if (apply === 'all') {
-        setProject(applyImageToAllScenes(project, uploaded.url));
-        setNotice('Photo applied to every scene.');
-      } else if (selectedLayer?.type === 'image') {
-        updateLayer(selectedLayer.id, { content: uploaded.url });
-      } else {
-        addLayer(createImageLayer(uploaded.url));
+
+      if (intent === 'logo') {
+        addLayer(createImageLayer(uploaded.url, true));
+        return;
       }
+
+      setActivePhoto(uploaded.url);
+
+      if (intent === 'layer') {
+        usePhotoHere(uploaded.url);
+        return;
+      }
+
+      // Uploaded to the library: land it on this scene so it is visible,
+      // leaving "every scene" as a deliberate second step.
+      usePhotoHere(uploaded.url);
+      setNotice('Photo added. Use "Use on every scene" to apply it to all of them.');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not upload that photo.');
     }
@@ -488,7 +528,7 @@ function ReelEditor({
           )}
         </div>
 
-        {/* Layers and the selected layer's properties */}
+        {/* Layers, photos and the selected layer's properties */}
         <div className="space-y-3">
           <Card className="p-3">
             <h3 className="mb-2 text-sm font-medium text-slate-900">Layers</h3>
@@ -544,19 +584,13 @@ function ReelEditor({
                 + Text
               </button>
               <button
-                onClick={() => {
-                  fileInput.current?.setAttribute('data-apply', 'layer');
-                  fileInput.current?.click();
-                }}
+                onClick={() => openFilePicker('layer')}
                 className="rounded-lg border border-slate-300 px-2 py-1 text-xs hover:bg-slate-50"
               >
                 + Photo
               </button>
               <button
-                onClick={() => {
-                  fileInput.current?.setAttribute('data-apply', 'logo');
-                  fileInput.current?.click();
-                }}
+                onClick={() => openFilePicker('logo')}
                 className="rounded-lg border border-slate-300 px-2 py-1 text-xs hover:bg-slate-50"
               >
                 + Logo
@@ -567,17 +601,64 @@ function ReelEditor({
               >
                 + Colour
               </button>
-              <button
-                onClick={() => {
-                  fileInput.current?.setAttribute('data-apply', 'all');
-                  fileInput.current?.click();
-                }}
-                className="col-span-2 rounded-lg border border-slate-300 px-2 py-1 text-xs hover:bg-slate-50"
-              >
-                Same photo on every scene
-              </button>
             </div>
           </Card>
+
+          <Card className="p-3">
+            <div className="mb-2 flex items-center justify-between">
+              <h3 className="text-sm font-medium text-slate-900">Photos</h3>
+              <button
+                onClick={() => openFilePicker('library')}
+                className="text-xs text-brand-600 hover:underline"
+              >
+                + Upload
+              </button>
+            </div>
+
+            {photos.length === 0 ? (
+              <p className="text-xs text-slate-500">
+                Upload a photo once and reuse it on any scene without uploading again.
+              </p>
+            ) : (
+              <>
+                <ul className="grid grid-cols-4 gap-1.5">
+                  {photos.map((url) => (
+                    <li key={url}>
+                      <button
+                        onClick={() => setActivePhoto(url)}
+                        onDoubleClick={() => usePhotoHere(url)}
+                        title="Click to select, double-click to use on this scene"
+                        className={`block w-full overflow-hidden rounded-lg border-2 transition ${
+                          activePhoto === url
+                            ? 'border-brand-500'
+                            : 'border-transparent hover:border-slate-300'
+                        }`}
+                      >
+                        <img src={url} alt="" className="aspect-square w-full object-cover" />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+                <div className="mt-2 space-y-1">
+                  <button
+                    onClick={() => activePhoto && usePhotoHere(activePhoto)}
+                    disabled={!activePhoto}
+                    className="w-full rounded-lg border border-slate-300 px-2 py-1 text-xs hover:bg-slate-50 disabled:opacity-40"
+                  >
+                    Use on this scene
+                  </button>
+                  <button
+                    onClick={() => activePhoto && applyEverywhere(activePhoto)}
+                    disabled={!activePhoto}
+                    className="w-full rounded-lg border border-slate-300 px-2 py-1 text-xs hover:bg-slate-50 disabled:opacity-40"
+                  >
+                    Use on every scene
+                  </button>
+                </div>
+              </>
+            )}
+          </Card>
+
         <Card className="p-3">
           <h3 className="mb-2 text-sm font-medium text-slate-900">
             {selectedLayer ? selectedLayer.name : 'Nothing selected'}
@@ -587,10 +668,7 @@ function ReelEditor({
             <LayerProperties
               layer={selectedLayer}
               onChange={(patch) => updateLayer(selectedLayer.id, patch)}
-              onPickImage={() => {
-                fileInput.current?.setAttribute('data-apply', 'layer');
-                fileInput.current?.click();
-              }}
+              onPickImage={() => openFilePicker('layer')}
             />
             </div>
           ) : (
@@ -609,17 +687,12 @@ function ReelEditor({
         accept="image/*"
         hidden
         onChange={(e) => {
-          const apply = fileInput.current?.getAttribute('data-apply');
+          const intent = (fileInput.current?.getAttribute('data-apply') ?? 'layer') as
+            | 'layer'
+            | 'logo'
+            | 'library';
           const file = e.target.files?.[0];
-          if (!file) return;
-          if (apply === 'all') void uploadPhoto(file, 'all');
-          else if (apply === 'logo') {
-            void (async () => {
-              const signature = await api.uploadSignature();
-              const uploaded = await uploadToCloudinary(file, signature);
-              addLayer(createImageLayer(uploaded.url, true));
-            })();
-          } else void uploadPhoto(file, 'layer');
+          if (file) void uploadPhoto(file, intent);
           e.target.value = '';
         }}
       />

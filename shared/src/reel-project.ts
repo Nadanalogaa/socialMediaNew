@@ -167,22 +167,40 @@ export function reorder<T>(items: T[], from: number, to: number): T[] {
   return next;
 }
 
-/** A photo reused across every scene, which is a common quick edit. */
+/**
+ * Reuses one photo across every scene.
+ *
+ * A scene's *background* photo is the full-bleed one, so a logo or any other
+ * small image layer is left alone — replacing those would be surprising.
+ */
 export function applyImageToAllScenes(project: ReelProject, url: string): ReelProject {
   return {
     ...project,
     scenes: project.scenes.map((scene) => {
-      const existing = scene.layers.find((layer) => layer.type === 'image');
-      if (existing) {
+      const background = scene.layers.find(
+        (layer) => layer.type === 'image' && layer.box.w >= 80 && layer.box.h >= 80,
+      );
+      if (background) {
         return {
           ...scene,
           layers: scene.layers.map((layer) =>
-            layer.id === existing.id ? { ...layer, content: url } : layer,
+            layer.id === background.id ? { ...layer, content: url } : layer,
           ),
         };
       }
-      // No photo in this scene yet, so put one behind everything else.
+      // No background photo in this scene yet, so put one behind everything.
       return { ...scene, layers: [createImageLayer(url), ...scene.layers] };
     }),
   };
+}
+
+/** Every distinct photo already used in the project, for the picker. */
+export function projectPhotos(project: ReelProject): string[] {
+  const seen = new Set<string>();
+  for (const scene of project.scenes) {
+    for (const layer of scene.layers) {
+      if (layer.type === 'image' && layer.content) seen.add(layer.content);
+    }
+  }
+  return [...seen];
 }

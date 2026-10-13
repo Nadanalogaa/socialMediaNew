@@ -192,12 +192,24 @@ export function LayerProperties({
       {layer.type === 'image' && (
         <>
           <Field label="Photo">
+            {layer.content && (
+              <img
+                src={layer.content}
+                alt=""
+                className="mb-1.5 h-20 w-full rounded-lg object-cover"
+              />
+            )}
             <button
               onClick={onPickImage}
               className="w-full rounded-lg border border-slate-300 px-3 py-1.5 text-sm hover:bg-slate-50"
             >
-              {layer.content ? 'Replace photo' : 'Choose photo'}
+              {layer.content ? 'Replace this photo' : 'Upload a photo'}
             </button>
+            {!layer.content && (
+              <span className="mt-1 block text-xs text-slate-500">
+                Or pick one from Photos below.
+              </span>
+            )}
           </Field>
           <Field label="Fill">
             <select
