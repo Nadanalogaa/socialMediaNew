@@ -105,6 +105,53 @@ export async function prepareAudioForRecording(
   };
 }
 
+/**
+ * Plays the selection on a loop matching the reel's length.
+ *
+ * Used while previewing, so the visuals can be judged against the music before
+ * a recording is spent. Returns a stop function; the caller owns the lifetime.
+ */
+export async function startPreviewLoop(
+  selection: AudioSelection,
+  reelDuration: number,
+): Promise<() => void> {
+  const buffer = await loadAudioBuffer(selection.url);
+  const context = getContext();
+  await context.resume();
+
+  const clip = selectionDuration(selection, buffer.duration);
+  if (clip <= 0.05) return () => undefined;
+
+  const gain = context.createGain();
+  gain.gain.value = selection.volume;
+  gain.connect(context.destination);
+
+  const sources: AudioBufferSourceNode[] = [];
+  const start = context.currentTime + 0.05;
+
+  // Schedules a couple of minutes ahead, which outlasts any preview session
+  // without keeping a timer running.
+  const PREVIEW_SECONDS = 120;
+  for (let offset = 0; offset < PREVIEW_SECONDS; offset += Math.max(clip, 0.1)) {
+    const source = context.createBufferSource();
+    source.buffer = buffer;
+    source.connect(gain);
+    source.start(start + offset, selection.startSeconds, clip);
+    sources.push(source);
+  }
+
+  return () => {
+    for (const source of sources) {
+      try {
+        source.stop();
+      } catch {
+        /* Already finished. */
+      }
+    }
+    gain.disconnect();
+  };
+}
+
 let previewSource: AudioBufferSourceNode | null = null;
 
 /** Plays the selected part once, so the choice can be heard before recording. */

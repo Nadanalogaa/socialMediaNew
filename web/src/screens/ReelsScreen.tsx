@@ -26,6 +26,7 @@ import {
   recordProject,
   type ImageCache,
 } from '../lib/renderProject';
+import { startPreviewLoop } from '../lib/audio';
 import { LayerProperties } from '../components/LayerProperties';
 import { SoundPanel } from '../components/SoundPanel';
 import { Alert, Button, Card, Spinner } from '../components/ui';
@@ -200,6 +201,37 @@ function ReelEditor({
       cancelled = true;
     };
   }, [project]);
+
+  /**
+   * Sound follows Play all.
+   *
+   * Keyed on the audio settings so changing the trim or volume restarts it,
+   * rather than carrying on with the previous selection.
+   */
+  useEffect(() => {
+    if (!playing || !project.audio?.url) return;
+
+    let stop: (() => void) | null = null;
+    let cancelled = false;
+
+    void startPreviewLoop(project.audio, projectDuration(project))
+      .then((stopFn) => {
+        if (cancelled) stopFn();
+        else stop = stopFn;
+      })
+      .catch(() => undefined);
+
+    return () => {
+      cancelled = true;
+      stop?.();
+    };
+  }, [
+    playing,
+    project.audio?.url,
+    project.audio?.startSeconds,
+    project.audio?.endSeconds,
+    project.audio?.volume,
+  ]);
 
   // Paused shows the selected scene; playing runs the whole reel.
   useEffect(() => {
