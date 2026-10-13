@@ -9,6 +9,7 @@ import {
   type TemplateField,
 } from '@socialboost/shared';
 import { ApiError, api, getFeatures, uploadToCloudinary, type MediaAsset } from '../lib/api';
+import { Spinner as LoadingDots } from '../components/ui';
 import { renderToBlob, renderToDataUrl } from '../lib/renderTemplate';
 import { Alert, Button, Card, Spinner } from '../components/ui';
 
@@ -19,11 +20,73 @@ import { Alert, Button, Card, Spinner } from '../components/ui';
  * lightest thing to build and the easiest thing to use: a shop owner filling
  * in six words gets a usable ad, where a blank canvas would get them nowhere.
  */
-export function CreativesScreen() {
+export function CreativesScreen({ openDesignId }: { openDesignId?: string }) {
   const [template, setTemplate] = useState<TemplateDefinition | null>(null);
+  const [saved, setSaved] = useState<{
+    id: string;
+    values: Record<string, string>;
+    ratio: AspectRatioKey;
+    name: string;
+  } | null>(null);
+  const [loading, setLoading] = useState(Boolean(openDesignId));
+  const [loadError, setLoadError] = useState<string | null>(null);
 
-  if (!template) return <TemplatePicker onPick={setTemplate} />;
-  return <TemplateEditor template={template} onBack={() => setTemplate(null)} />;
+  // Reopening a saved poster restores its template, values and size.
+  useEffect(() => {
+    if (!openDesignId) return;
+    setLoading(true);
+    api
+      .getDesign(openDesignId)
+      .then((design) => {
+        const document = design.document as {
+          templateSlug?: string;
+          values?: Record<string, string>;
+          ratio?: AspectRatioKey;
+        };
+        const found = BUILT_IN_TEMPLATES.find((t) => t.slug === document.templateSlug);
+        if (!found) throw new Error('template missing');
+        setTemplate(found);
+        setSaved({
+          id: design.id,
+          values: document.values ?? {},
+          ratio: document.ratio ?? found.ratios[0] ?? 'square',
+          name: design.name,
+        });
+      })
+      .catch(() => setLoadError('Could not open that design.'))
+      .finally(() => setLoading(false));
+  }, [openDesignId]);
+
+  if (loading) {
+    return (
+      <div className="flex items-center gap-2 text-sm text-slate-500">
+        <LoadingDots /> Opening…
+      </div>
+    );
+  }
+  if (loadError) return <Alert>{loadError}</Alert>;
+
+  if (!template) {
+    return (
+      <TemplatePicker
+        onPick={(picked) => {
+          setSaved(null);
+          setTemplate(picked);
+        }}
+      />
+    );
+  }
+  return (
+    <TemplateEditor
+      key={saved?.id ?? template.slug}
+      template={template}
+      saved={saved}
+      onBack={() => {
+        setTemplate(null);
+        setSaved(null);
+      }}
+    />
+  );
 }
 
 function TemplatePicker({ onPick }: { onPick: (template: TemplateDefinition) => void }) {
@@ -100,17 +163,28 @@ function TemplateThumbnail({ template }: { template: TemplateDefinition }) {
 
 function TemplateEditor({
   template,
+  saved,
   onBack,
 }: {
   template: TemplateDefinition;
+  saved?: { id: string; values: Record<string, string>; ratio: AspectRatioKey; name: string } | null;
   onBack: () => void;
 }) {
-  const [values, setValues] = useState<Record<string, string>>(() =>
-    Object.fromEntries(
-      template.fields.filter((f) => f.defaultValue).map((f) => [f.key, f.defaultValue!]),
-    ),
+  const [values, setValues] = useState<Record<string, string>>(
+    () =>
+      saved?.values ??
+      Object.fromEntries(
+        template.fields.filter((f) => f.defaultValue).map((f) => [f.key, f.defaultValue!]),
+      ),
   );
-  const [ratio, setRatio] = useState<AspectRatioKey>(template.ratios[0] ?? 'square');
+  const [ratio, setRatio] = useState<AspectRatioKey>(
+    saved?.ratio ?? template.ratios[0] ?? 'square',
+  );
+  const [designId, setDesignId] = useState<string | null>(saved?.id ?? null);
+  const [name, setName] = useState(saved?.name ?? template.name);
+  const [shortDescription, setShortDescription] = useState('');
+  const [tagText, setTagText] = useState('');
+  const [saving, setSaving] = useState(false);
   const [preview, setPreview] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [brief, setBrief] = useState('');
@@ -173,6 +247,33 @@ function TemplateEditor({
   }
 
   /** Saves the rendered image to the media library so a post can use it. */
+  /** Saves the editable design, so it can be reopened and changed later. */
+  async function handleSaveDesign(renderedAssetId?: string) {
+    setSaving(true);
+    setError(null);
+    try {
+      const result = await api.saveDesign({
+        id: designId ?? undefined,
+        name: name || template.name,
+        kind: 'image',
+        ratio,
+        document: { templateSlug: template.slug, values, ratio },
+        shortDescription: shortDescription || undefined,
+        tags: tagText
+          .split(/[,\s]+/)
+          .map((tag) => tag.trim())
+          .filter(Boolean),
+        renderedAssetId,
+      });
+      setDesignId(result.id);
+      setNotice('Saved. Find it again under My designs.');
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not save this design.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
   async function handleSaveToLibrary() {
     setBusy(true);
     setError(null);
@@ -191,6 +292,8 @@ function TemplateEditor({
         providerRef: uploaded.publicId,
       });
       setNotice(`Saved. Pick it in Compose to publish. (${asset.width}×${asset.height})`);
+      // Keeps the My designs thumbnail in step with the latest render.
+      void handleSaveDesign(asset.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not save the image.');
     } finally {
@@ -214,7 +317,29 @@ function TemplateEditor({
         <Button variant="secondary" onClick={onBack}>
           ← Templates
         </Button>
-        <h2 className="text-lg font-semibold text-slate-900">{template.name}</h2>
+        <input
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          className="rounded-lg border border-transparent px-2 py-1 text-lg font-semibold text-slate-900 hover:border-slate-300 focus:border-brand-500 focus:outline-none"
+        />
+        <Button variant="secondary" onClick={() => void handleSaveDesign()} disabled={saving}>
+          {saving ? 'Saving…' : designId ? 'Save' : 'Save to my designs'}
+        </Button>
+      </div>
+
+      <div className="grid gap-2 sm:grid-cols-2">
+        <input
+          value={shortDescription}
+          onChange={(e) => setShortDescription(e.target.value)}
+          placeholder="Short description — shown on the library card"
+          className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm outline-none focus:border-brand-500"
+        />
+        <input
+          value={tagText}
+          onChange={(e) => setTagText(e.target.value)}
+          placeholder="Tags, separated by spaces — diwali offer chennai"
+          className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm outline-none focus:border-brand-500"
+        />
       </div>
 
       {error && <Alert>{error}</Alert>}

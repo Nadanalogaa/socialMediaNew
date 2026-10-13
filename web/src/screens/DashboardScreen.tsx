@@ -90,7 +90,11 @@ export function DashboardScreen({ session, onSignOut, onSessionChange }: Props) 
             {TABS.map((item) => (
               <li key={item.key}>
                 <button
-                  onClick={() => setTab(item.key)}
+                  onClick={() => {
+                    setTab(item.key);
+                    // A tab click is a fresh start, not a reopen.
+                    if (item.key !== 'library') setOpenDesignId(undefined);
+                  }}
                   aria-current={tab === item.key ? 'page' : undefined}
                   className={`flex items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm transition ${
                     tab === item.key
@@ -121,7 +125,12 @@ export function DashboardScreen({ session, onSignOut, onSessionChange }: Props) 
         )}
         {tab === 'posts' && <PostsScreen key={`${session.organization.id}:${postsKey}`} />}
         {tab === 'channels' && <ConnectionsScreen key={session.organization.id} />}
-        {tab === 'creatives' && <CreativesScreen key={session.organization.id} />}
+        {tab === 'creatives' && (
+          <CreativesScreen
+            key={`${session.organization.id}:${openDesignId ?? 'new'}`}
+            openDesignId={openDesignId}
+          />
+        )}
         {tab === 'reels' && (
           <ReelsScreen
             key={`${session.organization.id}:${openDesignId ?? 'new'}`}
