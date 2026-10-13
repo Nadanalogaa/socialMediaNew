@@ -17,12 +17,19 @@ const IG_CAPTION_LIMIT = 2200;
  * businesses actually want. Per-channel caption overrides exist in the API and
  * can surface here later without changing the model.
  */
-export function ComposeScreen({ onPublished }: { onPublished: () => void }) {
+export function ComposeScreen({
+  onPublished,
+  initialAsset,
+}: {
+  onPublished: () => void;
+  /** Pre-loaded when arriving from the reel editor's Publish button. */
+  initialAsset?: MediaAsset | null;
+}) {
   const [connections, setConnections] = useState<Connection[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [caption, setCaption] = useState('');
   const [hashtagText, setHashtagText] = useState('');
-  const [asset, setAsset] = useState<MediaAsset | null>(null);
+  const [asset, setAsset] = useState<MediaAsset | null>(initialAsset ?? null);
   const [uploadPercent, setUploadPercent] = useState<number | null>(null);
   const [scheduledAt, setScheduledAt] = useState('');
   const [busy, setBusy] = useState(false);
@@ -125,11 +132,21 @@ export function ComposeScreen({ onPublished }: { onPublished: () => void }) {
         <h3 className="mb-2 text-sm font-medium text-slate-900">Photo or video</h3>
         {asset ? (
           <div className="flex items-start gap-3">
-            <img
-              src={asset.thumbnailUrl ?? asset.url}
-              alt=""
-              className="h-24 w-24 rounded-lg object-cover"
-            />
+            {asset.kind === 'video' ? (
+              <video
+                src={asset.url}
+                muted
+                playsInline
+                controls
+                className="h-28 w-[63px] rounded-lg bg-black object-cover"
+              />
+            ) : (
+              <img
+                src={asset.thumbnailUrl ?? asset.url}
+                alt=""
+                className="h-24 w-24 rounded-lg object-cover"
+              />
+            )}
             <div className="flex-1">
               <p className="text-sm text-slate-700">
                 {asset.kind === 'video' ? 'Video' : 'Image'} ready

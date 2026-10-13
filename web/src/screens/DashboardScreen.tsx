@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { setActiveOrganization, type Organization, type Session } from '../lib/api';
+import { setActiveOrganization, type MediaAsset, type Organization, type Session } from '../lib/api';
 import { OrganizationSwitcher } from '../components/OrganizationSwitcher';
 import { ComposeScreen } from './ComposeScreen';
 import { ConnectionsScreen } from './ConnectionsScreen';
@@ -53,6 +53,8 @@ export function DashboardScreen({ session, onSignOut, onSessionChange }: Props) 
   const [tab, setTab] = useState<TabKey>('compose');
   // Bumping this forces the posts list to refetch after a publish.
   const [postsKey, setPostsKey] = useState(0);
+  /** Carried from the reel editor so Publish opens Compose ready to go. */
+  const [pendingAsset, setPendingAsset] = useState<MediaAsset | null>(null);
 
   function handleSwitch(organization: Organization) {
     onSessionChange(setActiveOrganization(session, organization));
@@ -104,14 +106,26 @@ export function DashboardScreen({ session, onSignOut, onSessionChange }: Props) 
       <main className="mx-auto w-full max-w-[1700px] flex-1 px-5 py-6">
         {tab === 'compose' && (
           <ComposeScreen
-            key={session.organization.id}
-            onPublished={() => setPostsKey((k) => k + 1)}
+            key={`${session.organization.id}:${pendingAsset?.id ?? 'new'}`}
+            initialAsset={pendingAsset}
+            onPublished={() => {
+              setPostsKey((k) => k + 1);
+              setPendingAsset(null);
+            }}
           />
         )}
         {tab === 'posts' && <PostsScreen key={`${session.organization.id}:${postsKey}`} />}
         {tab === 'channels' && <ConnectionsScreen key={session.organization.id} />}
         {tab === 'creatives' && <CreativesScreen key={session.organization.id} />}
-        {tab === 'reels' && <ReelsScreen key={session.organization.id} />}
+        {tab === 'reels' && (
+          <ReelsScreen
+            key={session.organization.id}
+            onPublish={(asset) => {
+              setPendingAsset(asset);
+              setTab('compose');
+            }}
+          />
+        )}
         {tab === 'analytics' && <AnalyticsScreen key={session.organization.id} />}
         {(tab === 'whatsapp' || tab === 'ads') && (
           <Card>

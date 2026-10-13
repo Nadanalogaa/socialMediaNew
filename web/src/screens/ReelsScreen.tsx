@@ -19,7 +19,7 @@ import {
   type SceneTransition,
   type VideoTemplateDefinition,
 } from '@socialboost/shared';
-import { api, uploadToCloudinary } from '../lib/api';
+import { api, uploadToCloudinary, type MediaAsset } from '../lib/api';
 import {
   drawProjectFrame,
   preloadProjectImages,
@@ -29,7 +29,7 @@ import {
 import { LayerProperties } from '../components/LayerProperties';
 import { Alert, Button, Card, Spinner } from '../components/ui';
 
-export function ReelsScreen() {
+export function ReelsScreen({ onPublish }: { onPublish?: (asset: MediaAsset) => void }) {
   const [project, setProject] = useState<ReelProject | null>(null);
 
   const canRecord =
@@ -45,7 +45,14 @@ export function ReelsScreen() {
   }
 
   if (!project) return <ReelPicker onPick={setProject} />;
-  return <ReelEditor project={project} setProject={setProject} onBack={() => setProject(null)} />;
+  return (
+    <ReelEditor
+      project={project}
+      setProject={setProject}
+      onBack={() => setProject(null)}
+      onPublish={onPublish}
+    />
+  );
 }
 
 function ReelPicker({ onPick }: { onPick: (project: ReelProject) => void }) {
@@ -116,10 +123,12 @@ function ReelEditor({
   project,
   setProject,
   onBack,
+  onPublish,
 }: {
   project: ReelProject;
   setProject: (project: ReelProject) => void;
   onBack: () => void;
+  onPublish?: (asset: MediaAsset) => void;
 }) {
   const [sceneIndex, setSceneIndex] = useState(0);
   const [selectedLayerId, setSelectedLayerId] = useState<string | null>(null);
@@ -129,7 +138,7 @@ function ReelEditor({
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [images, setImages] = useState<ImageCache>(new Map());
-  const [result, setResult] = useState<string | null>(null);
+  const [result, setResult] = useState<MediaAsset | null>(null);
   /** The photo highlighted in the library, which the Use buttons act on. */
   const [activePhoto, setActivePhoto] = useState<string | null>(null);
 
@@ -351,8 +360,8 @@ function ReelEditor({
         durationSeconds: Math.round(video.durationSeconds),
         providerRef: uploaded.publicId,
       });
-      setResult(asset.url);
-      setNotice('Reel saved to your library. Pick it in Compose to publish.');
+      setResult(asset);
+      setNotice(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not create the reel.');
     } finally {
@@ -521,10 +530,39 @@ function ReelEditor({
           </div>
 
           {result && (
-            <Card className="w-full p-2">
-              <p className="mb-1 text-xs font-medium text-slate-700">Your reel</p>
-              <video src={result} controls playsInline className="w-full rounded-lg" />
-            </Card>
+            <div className="flex w-full items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3">
+              {/* Small enough to stay out of the way; the preview above is the
+                  thing worth looking at. */}
+              <video
+                src={result.url}
+                muted
+                playsInline
+                onMouseEnter={(e) => void e.currentTarget.play()}
+                onMouseLeave={(e) => {
+                  e.currentTarget.pause();
+                  e.currentTarget.currentTime = 0;
+                }}
+                className="h-20 w-[45px] shrink-0 rounded-md bg-black object-cover"
+              />
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium text-emerald-900">Reel ready</p>
+                <p className="text-xs text-emerald-800">
+                  {duration.toFixed(1)}s · saved to your library
+                </p>
+              </div>
+              <div className="flex shrink-0 gap-2">
+                <a
+                  href={result.url}
+                  download={`${project.name || 'reel'}.mp4`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-700 transition hover:bg-slate-50"
+                >
+                  Export
+                </a>
+                <Button onClick={() => onPublish?.(result)}>Publish</Button>
+              </div>
+            </div>
           )}
         </div>
 

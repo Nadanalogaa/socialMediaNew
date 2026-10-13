@@ -60,16 +60,25 @@ export function createUploadSignature(organizationId: string): UploadSignature {
 }
 
 /**
- * Adds a delivery transformation that keeps videos within the limits every
- * platform accepts: 1080p, automatic codec, automatic quality.
+ * Adds a delivery transformation producing an MP4 the platforms accept.
+ *
+ * The bounds are square (1920×1920) rather than landscape on purpose: with
+ * `c_limit` a landscape box would shrink a 1080×1920 reel to fit *inside* it,
+ * leaving roughly 607×1080 — so vertical video was being downscaled to under a
+ * third of its pixels. A square bound caps the longest side either way and
+ * leaves a 1080-wide reel untouched.
  *
  * Returns the URL unchanged if it is not a Cloudinary video or already carries
  * a transformation, so calling this twice is safe.
  */
 export function withVideoTransformation(url: string): string {
   if (!url.includes('res.cloudinary.com') || !url.includes('/video/upload')) return url;
-  if (/\/upload\/[^/]*(c_|w_|h_|q_|vc_)[^/]*\//.test(url)) return url;
-  return url.replace('/upload/', '/upload/w_1920,h_1080,c_limit,vc_auto,q_auto:good/');
+  if (/\/upload\/[^/]*(c_|w_|h_|q_|vc_|f_)[^/]*\//.test(url)) return url;
+
+  // f_mp4 forces H.264 in an MP4 container, which is what Instagram Reels and
+  // Facebook require — a browser recording is often WebM.
+  const transformation = 'c_limit,w_1920,h_1920,vc_h264,q_auto:best,f_mp4';
+  return url.replace('/upload/', `/upload/${transformation}/`);
 }
 
 /** Derives a still frame from a Cloudinary video, used as a thumbnail. */

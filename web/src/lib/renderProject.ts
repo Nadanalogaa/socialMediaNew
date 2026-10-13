@@ -16,6 +16,8 @@ import {
   type ReelProject,
 } from '@socialboost/shared';
 
+const FPS = 30;
+
 const FONT_STACK =
   '"Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif';
 
@@ -450,11 +452,13 @@ export async function recordProject(
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('Could not create a drawing surface.');
 
-  const stream = canvas.captureStream(30);
+  const stream = canvas.captureStream(FPS);
   const mimeType = pickMimeType();
+  // Reels are full-screen on a phone, so compression artefacts are obvious.
+  // 16 Mbps at 1080×1920 leaves headroom for the platform's own re-encode.
   const recorder = new MediaRecorder(stream, {
     ...(mimeType ? { mimeType } : {}),
-    videoBitsPerSecond: 8_000_000,
+    videoBitsPerSecond: 16_000_000,
   });
 
   const chunks: BlobPart[] = [];
