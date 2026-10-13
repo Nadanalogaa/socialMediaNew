@@ -3,6 +3,7 @@ import { setActiveOrganization, type Organization, type Session } from '../lib/a
 import { OrganizationSwitcher } from '../components/OrganizationSwitcher';
 import { ComposeScreen } from './ComposeScreen';
 import { ConnectionsScreen } from './ConnectionsScreen';
+import { CreativesScreen } from './CreativesScreen';
 import { PostsScreen } from './PostsScreen';
 import { Badge, Card } from '../components/ui';
 
@@ -26,13 +27,12 @@ const TABS: { key: TabKey; label: string; icon: string; ready: boolean }[] = [
   { key: 'compose', label: 'Compose', icon: '✎', ready: true },
   { key: 'posts', label: 'Posts', icon: '☰', ready: true },
   { key: 'channels', label: 'Channels', icon: '⚯', ready: true },
-  { key: 'creatives', label: 'Creatives', icon: '▣', ready: false },
+  { key: 'creatives', label: 'Creatives', icon: '▣', ready: true },
   { key: 'whatsapp', label: 'WhatsApp', icon: '✆', ready: false },
   { key: 'ads', label: 'Ads', icon: '◎', ready: false },
 ];
 
 const COMING_SOON: Record<string, string> = {
-  creatives: 'Fill in a template and get a finished image or video ad in every size you need.',
   whatsapp: 'Opt-in contact lists, approved message templates and throttled campaigns.',
   ads: 'Meta and Google campaigns. Unlocks once the ads API applications are approved.',
 };
@@ -98,7 +98,8 @@ export function DashboardScreen({ session, onSignOut, onSessionChange }: Props) 
         )}
         {tab === 'posts' && <PostsScreen key={`${session.organization.id}:${postsKey}`} />}
         {tab === 'channels' && <ConnectionsScreen key={session.organization.id} />}
-        {(tab === 'creatives' || tab === 'whatsapp' || tab === 'ads') && (
+        {tab === 'creatives' && <CreativesScreen key={session.organization.id} />}
+        {(tab === 'whatsapp' || tab === 'ads') && (
           <Card>
             <div className="flex items-center gap-2">
               <h2 className="font-semibold text-slate-900">

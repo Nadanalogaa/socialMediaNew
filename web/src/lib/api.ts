@@ -271,6 +271,19 @@ export const api = {
     providerRef?: string;
   }) => request<MediaAsset>('/media', { method: 'POST', body: JSON.stringify(input) }),
 
+  // --- Creatives ---
+  autofillTemplate: (templateSlug: string, brief: string) =>
+    request<{ values: Record<string, string> }>('/creatives/autofill', {
+      method: 'POST',
+      body: JSON.stringify({ templateSlug, brief }),
+    }),
+
+  generateCaption: (brief: string, providers: string[]) =>
+    request<{ caption: string; hashtags: string[] }>('/creatives/caption', {
+      method: 'POST',
+      body: JSON.stringify({ brief, providers }),
+    }),
+
   // --- Posts ---
   listPosts: () => request<{ posts: Post[] }>('/posts'),
 
