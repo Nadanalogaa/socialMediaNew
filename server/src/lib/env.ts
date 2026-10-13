@@ -39,6 +39,10 @@ const envSchema = z.object({
   /** Echoed back to Meta when verifying a webhook subscription. */
   META_WEBHOOK_VERIFY_TOKEN: z.string().optional(),
 
+  /** One Google Cloud project serves every tenant, as with the Meta app. */
+  GOOGLE_CLIENT_ID: z.string().optional(),
+  GOOGLE_CLIENT_SECRET: z.string().optional(),
+
   CLOUDINARY_CLOUD_NAME: z.string().optional(),
   CLOUDINARY_API_KEY: z.string().optional(),
   CLOUDINARY_API_SECRET: z.string().optional(),
@@ -69,5 +73,6 @@ export const features = {
   cloudinary: Boolean(
     env.CLOUDINARY_CLOUD_NAME && env.CLOUDINARY_API_KEY && env.CLOUDINARY_API_SECRET,
   ),
+  google: Boolean(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET),
   billing: Boolean(env.RAZORPAY_KEY_ID && env.RAZORPAY_KEY_SECRET),
 } as const;

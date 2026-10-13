@@ -11,6 +11,8 @@ export const PROVIDERS = [
   'whatsapp_business',
   'meta_ads',
   'google_ads',
+  /** A Google Business Profile location: the listing on Search and Maps. */
+  'google_business',
 ] as const;
 export type Provider = (typeof PROVIDERS)[number];
 
@@ -19,6 +21,7 @@ export const ORGANIC_PROVIDERS = [
   'facebook_page',
   'instagram_business',
   'youtube_channel',
+  'google_business',
 ] as const;
 export type OrganicProvider = (typeof ORGANIC_PROVIDERS)[number];
 

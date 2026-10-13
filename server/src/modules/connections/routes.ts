@@ -10,6 +10,7 @@ import {
 } from '../../http/middleware.js';
 import { badRequest } from '../../lib/errors.js';
 import * as connectionsService from './service.js';
+import * as googleConnect from './google.js';
 
 const completeSchema = z.object({
   handle: z.string().uuid(),
@@ -53,6 +54,17 @@ connectionsRouter.post(
       req.body.pageIds,
     );
     res.status(201).json(result);
+  }),
+);
+
+/** Step 1: hand the browser a Google consent URL carrying a one-time state. */
+connectionsRouter.post(
+  '/google/start',
+  requireRole('owner', 'admin'),
+  asyncHandler(async (req, res) => {
+    res.json(
+      await googleConnect.startGoogleConnection(req.tenant!.organizationId, req.auth!.userId),
+    );
   }),
 );
 
