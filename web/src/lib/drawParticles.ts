@@ -68,6 +68,44 @@ function drawGlow(ctx: CanvasRenderingContext2D, size: number, color: string): v
   ctx.fill();
 }
 
+/** A streak, for rain and for sparks that are travelling fast. */
+function drawStreak(
+  ctx: CanvasRenderingContext2D,
+  size: number,
+  length: number,
+  color: string,
+): void {
+  const gradient = ctx.createLinearGradient(0, -length * size, 0, length * size);
+  gradient.addColorStop(0, 'rgba(255,255,255,0)');
+  gradient.addColorStop(0.5, color);
+  gradient.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.strokeStyle = gradient;
+  ctx.lineWidth = Math.max(size, 1);
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(0, -length * size);
+  ctx.lineTo(0, length * size);
+  ctx.stroke();
+}
+
+/** A soft puff: several offset blobs read as volume where one circle does not. */
+function drawSmoke(ctx: CanvasRenderingContext2D, size: number, color: string): void {
+  for (const [dx, dy, scale] of [
+    [0, 0, 1],
+    [-size * 0.45, size * 0.2, 0.75],
+    [size * 0.4, size * 0.15, 0.8],
+    [size * 0.1, -size * 0.4, 0.65],
+  ] as const) {
+    const gradient = ctx.createRadialGradient(dx, dy, 0, dx, dy, size * scale);
+    gradient.addColorStop(0, color);
+    gradient.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = gradient;
+    ctx.beginPath();
+    ctx.arc(dx, dy, size * scale, 0, Math.PI * 2);
+    ctx.fill();
+  }
+}
+
 function drawOne(
   ctx: CanvasRenderingContext2D,
   effect: ParticleEffect,
@@ -78,6 +116,12 @@ function drawOne(
   ctx.translate(particle.x, particle.y);
   ctx.rotate((particle.rotation * Math.PI) / 180);
   ctx.fillStyle = particle.color;
+
+  // Distance softens what is far away, which sells the depth more than size
+  // alone does.
+  if (particle.depth !== undefined && particle.depth > 0.35) {
+    ctx.filter = `blur(${((particle.depth - 0.35) * 4).toFixed(1)}px)`;
+  }
 
   switch (effect) {
     case 'confetti':
@@ -97,7 +141,24 @@ function drawOne(
       break;
     case 'embers':
     case 'bokeh':
+    case 'dust':
       drawGlow(ctx, particle.size, particle.color);
+      break;
+    case 'blast':
+      ctx.fillRect(-particle.size / 2, -particle.size / 4, particle.size, particle.size / 2);
+      break;
+    case 'fireworks':
+    case 'starfield':
+      drawStreak(ctx, particle.size, particle.streak ?? 1, particle.color);
+      break;
+    case 'rain':
+      drawStreak(ctx, particle.size, particle.streak ?? 8, particle.color);
+      break;
+    case 'smoke':
+      drawSmoke(ctx, particle.size, particle.color);
+      break;
+    case 'swirl':
+      drawStar(ctx, particle.size);
       break;
     case 'snow':
     default:
@@ -107,6 +168,7 @@ function drawOne(
       break;
   }
 
+  ctx.filter = 'none';
   ctx.restore();
 }
 
@@ -128,11 +190,25 @@ export function drawParticles(
   ctx.translate(box.x, box.y);
 
   // Embers and soft lights look right as light rather than paint.
-  if (settings.effect === 'embers' || settings.effect === 'bokeh' || settings.effect === 'sparkles') {
+  if (
+    settings.effect === 'embers' ||
+    settings.effect === 'bokeh' ||
+    settings.effect === 'sparkles' ||
+    settings.effect === 'fireworks' ||
+    settings.effect === 'starfield' ||
+    settings.effect === 'dust' ||
+    settings.effect === 'swirl'
+  ) {
     ctx.globalCompositeOperation = 'lighter';
   }
 
-  for (const particle of particlesAt(settings, elapsed, box.w, box.h)) {
+  const particles = particlesAt(settings, elapsed, box.w, box.h);
+  // Painting far to near is what makes the depth hold up where particles cross.
+  if (particles.some((particle) => particle.depth !== undefined)) {
+    particles.sort((a, b) => (b.depth ?? 0) - (a.depth ?? 0));
+  }
+
+  for (const particle of particles) {
     drawOne(ctx, settings.effect, particle);
   }
 
