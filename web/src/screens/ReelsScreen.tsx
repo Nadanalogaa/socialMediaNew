@@ -27,6 +27,7 @@ import {
   type ImageCache,
 } from '../lib/renderProject';
 import { LayerProperties } from '../components/LayerProperties';
+import { SoundPanel } from '../components/SoundPanel';
 import { Alert, Button, Card, Spinner } from '../components/ui';
 
 export function ReelsScreen({
@@ -423,7 +424,7 @@ function ReelEditor({
           fadeOut: true,
         },
       });
-      setNotice('Sound added. It is mixed in when you create the reel.');
+      setNotice('Sound added. Trim it, press "Hear it" to check, then create the reel.');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not add that sound.');
     }
@@ -752,81 +753,13 @@ function ReelEditor({
           </Card>
 
           <Card className="p-3">
-            <div className="mb-2 flex items-center justify-between">
-              <h3 className="text-sm font-medium text-slate-900">Sound</h3>
-              <button
-                onClick={() => audioInput.current?.click()}
-                className="text-xs text-brand-600 hover:underline"
-              >
-                {project.audio ? 'Replace' : '+ Add'}
-              </button>
-            </div>
-            {project.audio ? (
-              <div className="space-y-2">
-                <p className="truncate text-xs text-slate-700">{project.audio.name}</p>
-                <label className="block">
-                  <span className="mb-1 block text-xs text-slate-500">
-                    Volume {Math.round(project.audio.volume * 100)}%
-                  </span>
-                  <input
-                    type="range"
-                    min="0"
-                    max="1"
-                    step="0.05"
-                    value={project.audio.volume}
-                    onChange={(e) =>
-                      setProject({
-                        ...project,
-                        audio: { ...project.audio!, volume: Number(e.target.value) },
-                      })
-                    }
-                    className="w-full"
-                  />
-                </label>
-                <label className="block">
-                  <span className="mb-1 block text-xs text-slate-500">
-                    Start at {project.audio.startSeconds.toFixed(0)}s
-                  </span>
-                  <input
-                    type="range"
-                    min="0"
-                    max="60"
-                    value={project.audio.startSeconds}
-                    onChange={(e) =>
-                      setProject({
-                        ...project,
-                        audio: { ...project.audio!, startSeconds: Number(e.target.value) },
-                      })
-                    }
-                    className="w-full"
-                  />
-                </label>
-                <label className="flex items-center gap-2 text-xs text-slate-700">
-                  <input
-                    type="checkbox"
-                    checked={project.audio.fadeOut}
-                    onChange={(e) =>
-                      setProject({
-                        ...project,
-                        audio: { ...project.audio!, fadeOut: e.target.checked },
-                      })
-                    }
-                  />
-                  Fade out at the end
-                </label>
-                <button
-                  onClick={() => setProject({ ...project, audio: undefined })}
-                  className="text-xs text-red-600 hover:underline"
-                >
-                  Remove sound
-                </button>
-              </div>
-            ) : (
-              <p className="text-xs text-slate-500">
-                Add your own music or a voiceover. Use audio you have the rights to — the
-                platforms mute or remove posts using someone else's music.
-              </p>
-            )}
+            <h3 className="mb-2 text-sm font-medium text-slate-900">Sound</h3>
+            <SoundPanel
+              audio={project.audio}
+              reelDuration={duration}
+              onChange={(audio) => setProject({ ...project, audio })}
+              onPick={() => audioInput.current?.click()}
+            />
           </Card>
 
           <Card className="p-3">

@@ -48,6 +48,10 @@ export interface ProjectAudio {
   volume: number;
   /** Seconds into the track to begin, for skipping a long intro. */
   startSeconds: number;
+  /** Seconds into the track to stop. Omitted means play to the end. */
+  endSeconds?: number;
+  /** Total length of the uploaded file, so the editor can draw a range. */
+  durationSeconds?: number;
   /** Fades the last second out, so a reel does not end mid-note. */
   fadeOut: boolean;
 }
