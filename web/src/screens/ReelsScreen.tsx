@@ -754,7 +754,7 @@ function ReelEditor({
           isMobile
             ? {
                 paddingBottom:
-                  sheetHeight === 'peek' ? '4.5rem' : sheetHeight === 'half' ? '47dvh' : '75dvh',
+                  sheetHeight === 'peek' ? '7.5rem' : sheetHeight === 'half' ? '49dvh' : '75dvh',
               }
             : undefined
         }
@@ -897,8 +897,8 @@ function ReelEditor({
                   ? sheetHeight === 'full'
                     ? 'h-[18dvh]'
                     : sheetHeight === 'half'
-                      ? 'h-[36dvh]'
-                      : 'h-[62dvh]'
+                      ? 'h-[34dvh]'
+                      : 'h-[56dvh]'
                   : ''
               }`}
               aria-label="Reel preview"
@@ -1216,10 +1216,45 @@ function ReelEditor({
           tabs={[
             { key: 'style', label: selectedLayer ? selectedLayer.name.slice(0, 14) : 'Style' },
             { key: 'layers', label: 'Layers' },
-            { key: 'scenes', label: 'Scenes' },
+            { key: 'scenes', label: 'Scene settings' },
             { key: 'media', label: 'Photos & sound' },
             { key: 'details', label: 'Details' },
           ]}
+          context={
+            /* Which scene is being edited stays on screen, because everything
+               below applies to it. */
+            <div className="flex items-center gap-1 overflow-x-auto pt-1">
+              <span className="shrink-0 pr-1 text-xs font-medium uppercase tracking-wide text-slate-400">
+                Scene
+              </span>
+              {project.scenes.map((item, index) => (
+                <button
+                  key={item.id}
+                  onClick={() => {
+                    setSceneIndex(index);
+                    setSelectedLayerId(null);
+                  }}
+                  className={`min-h-9 shrink-0 rounded-lg px-3 text-sm transition ${
+                    index === sceneIndex
+                      ? 'bg-brand-600 font-medium text-white'
+                      : 'bg-slate-100 text-slate-600'
+                  }`}
+                >
+                  {index + 1}
+                </button>
+              ))}
+              <button
+                onClick={addScene}
+                aria-label="Add a scene"
+                className="min-h-9 shrink-0 rounded-lg border border-dashed border-slate-300 px-3 text-sm text-slate-500"
+              >
+                +
+              </button>
+              <span className="shrink-0 pl-1 text-xs text-slate-400">
+                {scene.durationSeconds.toFixed(1)}s
+              </span>
+            </div>
+          }
         >
           {panel === 'style' &&
             (selectedLayer ? (
@@ -1316,33 +1351,9 @@ function ReelEditor({
 
           {panel === 'scenes' && (
             <div className="space-y-3">
-              <ul className="flex gap-2 overflow-x-auto pb-1">
-                {project.scenes.map((item, index) => (
-                  <li key={item.id}>
-                    <button
-                      onClick={() => {
-                        setSceneIndex(index);
-                        setSelectedLayerId(null);
-                      }}
-                      className={`whitespace-nowrap rounded-lg px-3 py-2 text-sm transition ${
-                        index === sceneIndex
-                          ? 'bg-brand-50 font-medium text-brand-700'
-                          : 'bg-slate-100 text-slate-700'
-                      }`}
-                    >
-                      {item.name} · {item.durationSeconds}s
-                    </button>
-                  </li>
-                ))}
-                <li>
-                  <button
-                    onClick={addScene}
-                    className="whitespace-nowrap rounded-lg border border-dashed border-slate-300 px-3 py-2 text-sm text-slate-600"
-                  >
-                    + Scene
-                  </button>
-                </li>
-              </ul>
+              <p className="text-xs text-slate-500">
+                Settings for scene {sceneIndex + 1}. Switch scenes using the row above.
+              </p>
 
               <label className="block">
                 <span className="mb-1 block text-xs font-medium text-slate-600">

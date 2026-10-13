@@ -21,8 +21,9 @@ export type SheetHeight = 'peek' | 'half' | 'full';
  * deliberate drag.
  */
 const HEIGHTS: Record<SheetHeight, string> = {
-  peek: '3.5rem',
-  half: '44dvh',
+  /** Enough for the scene row and the tabs, so context is never hidden. */
+  peek: '6.5rem',
+  half: '46dvh',
   full: '72dvh',
 };
 
@@ -32,6 +33,7 @@ export function MobileSheet({
   tabs,
   activeTab,
   onTabChange,
+  context,
   children,
 }: {
   height: SheetHeight;
@@ -39,6 +41,8 @@ export function MobileSheet({
   tabs: { key: string; label: string }[];
   activeTab: string;
   onTabChange: (key: string) => void;
+  /** Always visible above the tabs: what the controls below apply to. */
+  context?: ReactNode;
   children: ReactNode;
 }) {
   const [dragOffset, setDragOffset] = useState(0);
@@ -89,7 +93,9 @@ export function MobileSheet({
         <span className="h-1 w-10 rounded-full bg-slate-300" />
       </div>
 
-      <div className="flex gap-1 overflow-x-auto px-3 pb-2">
+      {context && <div className="border-b border-slate-100 px-3 pb-2">{context}</div>}
+
+      <div className="flex gap-1 overflow-x-auto px-3 py-2">
         {tabs.map((tab) => (
           <button
             key={tab.key}
