@@ -115,11 +115,12 @@ export function DashboardScreen({ session, onSignOut, onSessionChange }: Props) 
       <main className="mx-auto w-full max-w-[1700px] flex-1 px-5 py-6">
         {tab === 'compose' && (
           <ComposeScreen
-            key={`${session.organization.id}:${pendingAsset?.id ?? 'new'}`}
+            key={session.organization.id}
             initialAsset={pendingAsset}
-            onPublished={() => {
-              setPostsKey((k) => k + 1);
+            onPublished={() => setPostsKey((k) => k + 1)}
+            onViewPosts={() => {
               setPendingAsset(null);
+              setTab('posts');
             }}
           />
         )}

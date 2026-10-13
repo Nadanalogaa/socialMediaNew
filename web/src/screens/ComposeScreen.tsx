@@ -20,22 +20,36 @@ const IG_CAPTION_LIMIT = 2200;
 export function ComposeScreen({
   onPublished,
   initialAsset,
+  onViewPosts,
 }: {
   onPublished: () => void;
   /** Pre-loaded when arriving from the reel editor's Publish button. */
   initialAsset?: MediaAsset | null;
+  onViewPosts?: () => void;
 }) {
   const [connections, setConnections] = useState<Connection[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [caption, setCaption] = useState('');
   const [hashtagText, setHashtagText] = useState('');
   const [asset, setAsset] = useState<MediaAsset | null>(initialAsset ?? null);
+  /** What happened to the last submission, shown until the user moves on. */
+  const [outcome, setOutcome] = useState<{
+    kind: 'draft' | 'scheduled' | 'publishing';
+    channels: number;
+  } | null>(null);
   const [uploadPercent, setUploadPercent] = useState<number | null>(null);
   const [scheduledAt, setScheduledAt] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (initialAsset) {
+      setAsset(initialAsset);
+      setOutcome(null);
+    }
+  }, [initialAsset]);
 
   useEffect(() => {
     api
@@ -100,13 +114,10 @@ export function ComposeScreen({
         asDraft,
       });
 
-      setNotice(
-        asDraft
-          ? 'Saved as a draft. Publish it from the Posts tab when you are ready.'
-          : post.status === 'scheduled'
-            ? 'Scheduled. It will publish automatically at the time you set.'
-            : 'Publishing now — watch its progress in Posts.',
-      );
+      setOutcome({
+        kind: asDraft ? 'draft' : post.status === 'scheduled' ? 'scheduled' : 'publishing',
+        channels: selected.size,
+      });
       setCaption('');
       setHashtagText('');
       setAsset(null);
@@ -130,6 +141,35 @@ export function ComposeScreen({
 
       {error && <Alert>{error}</Alert>}
       {notice && <Alert tone="success">{notice}</Alert>}
+
+      {outcome && (
+        <Card className="border-emerald-200 bg-emerald-50">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-medium text-emerald-900">
+                {outcome.kind === 'draft'
+                  ? 'Saved as a draft'
+                  : outcome.kind === 'scheduled'
+                    ? 'Scheduled'
+                    : `Publishing to ${outcome.channels} channel${outcome.channels === 1 ? '' : 's'}`}
+              </p>
+              <p className="mt-0.5 text-sm text-emerald-800">
+                {outcome.kind === 'draft'
+                  ? 'Nothing has been sent. Publish it from Posts when you are ready.'
+                  : outcome.kind === 'scheduled'
+                    ? 'It will go out automatically at the time you set.'
+                    : 'Instagram can take a minute or two to process video. Follow it in Posts.'}
+              </p>
+            </div>
+            <div className="flex gap-2">
+              {onViewPosts && <Button onClick={onViewPosts}>See it in Posts</Button>}
+              <Button variant="secondary" onClick={() => setOutcome(null)}>
+                Make another
+              </Button>
+            </div>
+          </div>
+        </Card>
+      )}
 
       <Card>
         <h3 className="mb-2 text-sm font-medium text-slate-900">Photo or video</h3>
@@ -300,7 +340,16 @@ export function ComposeScreen({
           onClick={() => void handleSubmit(false)}
           disabled={busy || !asset || selected.size === 0}
         >
-          {busy ? 'Working…' : scheduledAt ? 'Schedule post' : 'Publish now'}
+          {busy ? (
+            <span className="flex items-center gap-2">
+              <Spinner className="h-4 w-4" />
+              Sending to {selected.size} channel{selected.size === 1 ? '' : 's'}…
+            </span>
+          ) : scheduledAt ? (
+            'Schedule post'
+          ) : (
+            'Publish now'
+          )}
         </Button>
       </div>
       <p className="text-right text-xs text-slate-500">
