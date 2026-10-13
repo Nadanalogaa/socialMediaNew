@@ -19,5 +19,11 @@ export default function App() {
   }
 
   if (!session) return <AuthScreen onAuthenticated={setSession} />;
-  return <DashboardScreen session={session} onSignOut={handleSignOut} />;
+  return (
+    <DashboardScreen
+      session={session}
+      onSignOut={handleSignOut}
+      onSessionChange={setSession}
+    />
+  );
 }

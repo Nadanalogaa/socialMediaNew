@@ -1,5 +1,6 @@
 import { useState } from 'react';
-import type { Session } from '../lib/api';
+import { setActiveOrganization, type Organization, type Session } from '../lib/api';
+import { OrganizationSwitcher } from '../components/OrganizationSwitcher';
 import { ComposeScreen } from './ComposeScreen';
 import { ConnectionsScreen } from './ConnectionsScreen';
 import { PostsScreen } from './PostsScreen';
@@ -16,6 +17,7 @@ import { Badge, Card } from '../components/ui';
 interface Props {
   session: Session;
   onSignOut: () => void;
+  onSessionChange: (session: Session) => void;
 }
 
 type TabKey = 'compose' | 'posts' | 'channels' | 'creatives' | 'whatsapp' | 'ads';
@@ -35,25 +37,26 @@ const COMING_SOON: Record<string, string> = {
   ads: 'Meta and Google campaigns. Unlocks once the ads API applications are approved.',
 };
 
-export function DashboardScreen({ session, onSignOut }: Props) {
+export function DashboardScreen({ session, onSignOut, onSessionChange }: Props) {
   const [tab, setTab] = useState<TabKey>('compose');
   // Bumping this forces the posts list to refetch after a publish.
   const [postsKey, setPostsKey] = useState(0);
+
+  function handleSwitch(organization: Organization) {
+    onSessionChange(setActiveOrganization(session, organization));
+    // Every screen is scoped to the workspace, so send them back to a neutral one.
+    setTab('channels');
+  }
 
   return (
     <div className="flex min-h-full flex-col bg-slate-50">
       <header className="sticky top-0 z-10 border-b border-slate-200 bg-white">
         <div className="mx-auto flex w-full max-w-3xl items-center justify-between px-5 py-3">
-          <div className="flex min-w-0 items-center gap-3">
+          <div className="flex min-w-0 items-center gap-2">
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-600 text-sm font-bold text-white">
               SB
             </div>
-            <div className="min-w-0">
-              <p className="truncate text-sm font-semibold text-slate-900">
-                {session.organization.name}
-              </p>
-              <p className="truncate text-xs text-slate-500">{session.user.name}</p>
-            </div>
+            <OrganizationSwitcher session={session} onSwitch={handleSwitch} />
           </div>
           <button
             onClick={onSignOut}
@@ -87,9 +90,14 @@ export function DashboardScreen({ session, onSignOut }: Props) {
       </header>
 
       <main className="mx-auto w-full max-w-3xl flex-1 px-5 py-6">
-        {tab === 'compose' && <ComposeScreen onPublished={() => setPostsKey((k) => k + 1)} />}
-        {tab === 'posts' && <PostsScreen key={postsKey} />}
-        {tab === 'channels' && <ConnectionsScreen />}
+        {tab === 'compose' && (
+          <ComposeScreen
+            key={session.organization.id}
+            onPublished={() => setPostsKey((k) => k + 1)}
+          />
+        )}
+        {tab === 'posts' && <PostsScreen key={`${session.organization.id}:${postsKey}`} />}
+        {tab === 'channels' && <ConnectionsScreen key={session.organization.id} />}
         {(tab === 'creatives' || tab === 'whatsapp' || tab === 'ads') && (
           <Card>
             <div className="flex items-center gap-2">

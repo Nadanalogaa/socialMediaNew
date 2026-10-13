@@ -5,6 +5,7 @@ import { pinoHttp } from 'pino-http';
 import { authRouter } from '../modules/auth/routes.js';
 import { connectionsRouter } from '../modules/connections/routes.js';
 import { mediaRouter } from '../modules/media/routes.js';
+import { organizationsRouter } from '../modules/organizations/routes.js';
 import { postsRouter } from '../modules/posts/routes.js';
 import { legacyWebhooksRouter, webhooksRouter } from '../modules/webhooks/routes.js';
 import { env, isProduction } from '../lib/env.js';
@@ -54,6 +55,7 @@ export function createApp(): Express {
 
   app.use('/api/auth', authRouter);
   app.use('/api/connections', connectionsRouter);
+  app.use('/api/organizations', organizationsRouter);
   app.use('/api/media', mediaRouter);
   app.use('/api/posts', postsRouter);
   // Unauthenticated by necessity: Meta calls these directly and proves

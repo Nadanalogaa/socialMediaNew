@@ -11,11 +11,28 @@ const SESSION_KEY = 'socialboost.session';
 /** Endpoints that legitimately run without a session. */
 const PUBLIC_PATHS = ['/auth/login', '/auth/register', '/auth/refresh'];
 
+export interface Organization {
+  id: string;
+  name: string;
+  slug: string;
+  role: string;
+}
+
 export interface Session {
   accessToken: string;
   refreshToken: string;
   user: { id: string; email: string; name: string };
-  organization: { id: string; name: string; slug: string; role: string };
+  /** The workspace currently in view; every request is scoped to it. */
+  organization: Organization;
+  /** Every workspace this user can switch between. */
+  organizations?: Organization[];
+}
+
+/** Switches the active workspace, so subsequent requests are scoped to it. */
+export function setActiveOrganization(session: Session, organization: Organization): Session {
+  const next: Session = { ...session, organization };
+  saveSession(next);
+  return next;
 }
 
 export function loadSession(): Session | null {
@@ -214,6 +231,12 @@ export const api = {
 
   logout: (refreshToken: string) =>
     request<void>('/auth/logout', { method: 'POST', body: JSON.stringify({ refreshToken }) }),
+
+  // --- Workspaces ---
+  listOrganizations: () => request<{ organizations: Organization[] }>('/organizations'),
+
+  createOrganization: (name: string) =>
+    request<Organization>('/organizations', { method: 'POST', body: JSON.stringify({ name }) }),
 
   // --- Connections ---
   listConnections: () => request<{ connections: Connection[] }>('/connections'),

@@ -20,6 +20,7 @@ import {
 import { generateOpaqueToken, hashPassword, verifyPassword } from '../../lib/crypto.js';
 import { conflict, unauthorized } from '../../lib/errors.js';
 import { signAccessToken } from '../../lib/jwt.js';
+import { listForUser } from '../organizations/service.js';
 
 const REFRESH_TOKEN_TTL_DAYS = 30;
 
@@ -27,7 +28,10 @@ export interface AuthResult {
   accessToken: string;
   refreshToken: string;
   user: { id: string; email: string; name: string };
+  /** The workspace to open on sign-in. */
   organization: { id: string; name: string; slug: string; role: string };
+  /** Every workspace the user can switch between. */
+  organizations: { id: string; name: string; slug: string; role: string }[];
 }
 
 const hashRefreshToken = (token: string) => createHash('sha256').update(token).digest('hex');
@@ -179,6 +183,7 @@ async function issueSession(
   organization: { id: string; name: string; slug: string; role: string },
   userAgent?: string,
 ): Promise<AuthResult> {
+  const allOrganizations = await listForUser(user.id);
   const accessToken = await signAccessToken({ userId: user.id, email: user.email });
   const refreshToken = generateOpaqueToken();
 
@@ -197,5 +202,6 @@ async function issueSession(
     refreshToken,
     user: { id: user.id, email: user.email, name: user.name },
     organization,
+    organizations: allOrganizations.length > 0 ? allOrganizations : [organization as never],
   };
 }
