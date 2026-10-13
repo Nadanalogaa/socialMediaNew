@@ -76,12 +76,29 @@ export function ConnectionsScreen() {
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [sdkReady, setSdkReady] = useState(false);
 
   const appId = import.meta.env.VITE_META_APP_ID as string | undefined;
 
   useEffect(() => {
     void refresh();
   }, []);
+
+  /**
+   * Load the SDK up front rather than on click.
+   *
+   * Browsers only allow a pop-up to open from a user gesture, and awaiting the
+   * script download inside the click handler ends that gesture — so the
+   * Facebook window is blocked before it appears.
+   */
+  useEffect(() => {
+    if (!appId) return;
+    loadFacebookSdk(appId)
+      .then(() => setSdkReady(true))
+      .catch((err) =>
+        setError(err instanceof Error ? err.message : 'Could not load the Facebook SDK.'),
+      );
+  }, [appId]);
 
   async function refresh() {
     try {
@@ -93,16 +110,25 @@ export function ConnectionsScreen() {
     }
   }
 
-  async function handleConnect() {
+  function handleConnect() {
     setError(null);
     if (!appId) {
       setError('VITE_META_APP_ID is not set. Add it to .env and restart the dev server.');
       return;
     }
+    if (!sdkReady) {
+      setError('Facebook is still loading. Give it a moment and try again.');
+      return;
+    }
 
     setBusy(true);
+    // Called without awaiting anything first, so the pop-up still counts as
+    // opened by the click. The rest of the work happens in the promise chain.
+    void completeConnect();
+  }
+
+  async function completeConnect() {
     try {
-      await loadFacebookSdk(appId);
       const userToken = await facebookLogin();
       const result = await api.beginMetaConnection(userToken);
       setHandle(result.handle);
@@ -160,8 +186,8 @@ export function ConnectionsScreen() {
             Link the Facebook Pages and Instagram accounts you post to.
           </p>
         </div>
-        <Button onClick={handleConnect} disabled={busy}>
-          {busy ? 'Working…' : 'Connect Facebook'}
+        <Button onClick={handleConnect} disabled={busy || (Boolean(appId) && !sdkReady)}>
+          {busy ? 'Working…' : !sdkReady && appId ? 'Loading…' : 'Connect Facebook'}
         </Button>
       </div>
 
