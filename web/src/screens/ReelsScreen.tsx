@@ -185,7 +185,9 @@ function ReelEditor({
   const [saving, setSaving] = useState(false);
   const [designId, setDesignId] = useState<string | null>(initialDesignId ?? null);
   /** Which panel is showing on a phone, where the columns cannot sit side by side. */
-  const [panel, setPanel] = useState<'scenes' | 'layers' | 'style' | 'media'>('scenes');
+  const [panel, setPanel] = useState<'scenes' | 'layers' | 'style' | 'media' | 'details'>(
+    'scenes',
+  );
   const [sheetHeight, setSheetHeight] = useState<SheetHeight>('peek');
   /** While true, dragging pans the photo inside its frame instead of moving it. */
   const [repositioning, setRepositioning] = useState(false);
@@ -668,44 +670,62 @@ function ReelEditor({
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-wrap items-center gap-3">
-        <Button variant="secondary" onClick={onBack}>
-          ← Templates
-        </Button>
+      {/* One compact row on a phone: the chrome was taking the whole screen
+          and leaving nothing for the preview. Description and tags move into
+          the sheet's Details tab. */}
+      <div className="flex items-center gap-2">
+        <button
+          onClick={onBack}
+          aria-label="Back to templates"
+          title="Templates"
+          className="min-h-11 shrink-0 rounded-lg border border-slate-300 px-3 text-slate-700 hover:bg-slate-100 lg:min-h-0 lg:py-1.5"
+        >
+          ←
+        </button>
+
         <input
           value={project.name}
-          onChange={(e) => setProject({ ...project, name: e.target.value })}
-          className="rounded-lg border border-transparent px-2 py-1 text-lg font-semibold text-slate-900 hover:border-slate-300 focus:border-brand-500 focus:outline-none"
+          onChange={(e) => setProject({ ...project, name: e.target.value }, 'name')}
+          className="min-w-0 flex-1 rounded-lg border border-transparent px-2 py-1 text-base font-semibold text-slate-900 hover:border-slate-300 focus:border-brand-500 focus:outline-none lg:text-lg"
         />
-        <span className="text-sm text-slate-500">{duration.toFixed(1)}s</span>
 
-        <div className="flex gap-1">
-          <button
-            onClick={history.undo}
-            disabled={!history.canUndo}
-            title="Undo (⌘Z)"
-            aria-label="Undo"
-            className="min-h-11 rounded-lg border border-slate-300 px-3 text-sm text-slate-700 transition hover:bg-slate-100 disabled:opacity-40 lg:min-h-0 lg:py-1.5"
-          >
-            ↶
-          </button>
-          <button
-            onClick={history.redo}
-            disabled={!history.canRedo}
-            title="Redo (⇧⌘Z)"
-            aria-label="Redo"
-            className="min-h-11 rounded-lg border border-slate-300 px-3 text-sm text-slate-700 transition hover:bg-slate-100 disabled:opacity-40 lg:min-h-0 lg:py-1.5"
-          >
-            ↷
-          </button>
-        </div>
+        <span className="hidden shrink-0 text-sm text-slate-500 sm:inline">
+          {duration.toFixed(1)}s
+        </span>
 
-        <Button variant="secondary" onClick={() => void handleSave()} disabled={saving}>
-          {saving ? 'Saving…' : designId ? 'Save' : 'Save to my designs'}
-        </Button>
+        <button
+          onClick={history.undo}
+          disabled={!history.canUndo}
+          title="Undo (⌘Z)"
+          aria-label="Undo"
+          className="min-h-11 shrink-0 rounded-lg border border-slate-300 px-3 text-slate-700 hover:bg-slate-100 disabled:opacity-40 lg:min-h-0 lg:py-1.5"
+        >
+          ↶
+        </button>
+        <button
+          onClick={history.redo}
+          disabled={!history.canRedo}
+          title="Redo (⇧⌘Z)"
+          aria-label="Redo"
+          className="min-h-11 shrink-0 rounded-lg border border-slate-300 px-3 text-slate-700 hover:bg-slate-100 disabled:opacity-40 lg:min-h-0 lg:py-1.5"
+        >
+          ↷
+        </button>
+
+        <button
+          onClick={() => void handleSave()}
+          disabled={saving}
+          title="Save to my designs"
+          aria-label="Save to my designs"
+          className="min-h-11 shrink-0 rounded-lg bg-brand-600 px-3 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60 lg:min-h-0 lg:py-1.5"
+        >
+          <span className="lg:hidden">{saving ? '…' : '✓'}</span>
+          <span className="hidden lg:inline">{saving ? 'Saving…' : 'Save'}</span>
+        </button>
       </div>
 
-      <div className="grid gap-2 sm:grid-cols-2">
+      {/* On a wide screen there is room for these inline. */}
+      <div className="hidden gap-2 sm:grid-cols-2 lg:grid">
         <input
           value={shortDescription}
           onChange={(e) => setShortDescription(e.target.value)}
@@ -854,13 +874,16 @@ function ReelEditor({
                 dragState.current = null;
               }}
               style={{ aspectRatio: '9 / 16' }}
-              className="h-[min(44vh,440px)] w-auto max-w-full touch-none rounded-lg bg-black shadow-2xl lg:h-[min(68vh,760px)] lg:cursor-move"
+              /* Sized against the space the header, toolbar, sheet and bottom
+                 bar actually leave, so the preview is never pushed off screen. */
+              className="h-[calc(100dvh-20rem)] max-h-[460px] min-h-[220px] w-auto max-w-full touch-none rounded-lg bg-black shadow-2xl lg:h-[min(68vh,760px)] lg:max-h-none lg:cursor-move"
               aria-label="Reel preview"
             />
 
             <div className="mt-3 flex w-full items-center justify-center gap-2">
               <Button variant="secondary" onClick={() => setPlaying((v) => !v)}>
-                {playing ? '⏸ Pause' : '▶ Play all'}
+                {playing ? '⏸' : '▶'}
+                <span className="ml-1 hidden sm:inline">{playing ? 'Pause' : 'Play all'}</span>
               </Button>
               <Button onClick={() => void handleCreate()} disabled={recording}>
                 {recording ? 'Recording…' : '● Create reel'}
@@ -1159,6 +1182,7 @@ function ReelEditor({
             { key: 'layers', label: 'Layers' },
             { key: 'scenes', label: 'Scenes' },
             { key: 'media', label: 'Photos & sound' },
+            { key: 'details', label: 'Details' },
           ]}
         >
           {panel === 'style' &&
@@ -1332,6 +1356,40 @@ function ReelEditor({
                   Delete
                 </Button>
               </div>
+            </div>
+          )}
+
+          {panel === 'details' && (
+            <div className="space-y-3">
+              <label className="block">
+                <span className="mb-1 block text-xs font-medium text-slate-600">Name</span>
+                <input
+                  value={project.name}
+                  onChange={(e) => setProject({ ...project, name: e.target.value }, 'name')}
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-500"
+                />
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-xs font-medium text-slate-600">
+                  Short description
+                </span>
+                <input
+                  value={shortDescription}
+                  onChange={(e) => setShortDescription(e.target.value)}
+                  placeholder="Shown on the library card"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-500"
+                />
+              </label>
+              <label className="block">
+                <span className="mb-1 block text-xs font-medium text-slate-600">Tags</span>
+                <input
+                  value={tagText}
+                  onChange={(e) => setTagText(e.target.value)}
+                  placeholder="diwali offer chennai"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-500"
+                />
+              </label>
+              <p className="text-xs text-slate-500">Length {duration.toFixed(1)}s</p>
             </div>
           )}
 

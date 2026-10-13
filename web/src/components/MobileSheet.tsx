@@ -13,10 +13,15 @@ import { useRef, useState, type ReactNode } from 'react';
 
 export type SheetHeight = 'peek' | 'half' | 'full';
 
+/**
+ * `half` deliberately leaves the preview visible — the whole reason the sheet
+ * overlays rather than stacks. `full` is for long forms and is reached by a
+ * deliberate drag.
+ */
 const HEIGHTS: Record<SheetHeight, string> = {
-  peek: '3.25rem',
-  half: '46vh',
-  full: '82vh',
+  peek: '3.5rem',
+  half: '42dvh',
+  full: '78dvh',
 };
 
 export function MobileSheet({
