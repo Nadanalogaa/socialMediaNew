@@ -10,6 +10,7 @@ import type { Role } from '@socialboost/shared';
 import { db } from '../db/client.js';
 import { memberships, organizations } from '../db/schema.js';
 import { AppError, forbidden, unauthorized } from '../lib/errors.js';
+import { GraphApiError } from '../integrations/meta.js';
 import { verifyAccessToken } from '../lib/jwt.js';
 import { logger } from '../lib/logger.js';
 
@@ -128,6 +129,22 @@ export function errorHandler(err: unknown, req: Request, res: Response, _next: N
     return res
       .status(err.statusCode)
       .json({ error: { code: err.code, message: err.message, details: err.details } });
+  }
+
+  // A provider rejecting a request is not a bug in this service, and the
+  // caller can usually act on what the provider said.
+  if (err instanceof GraphApiError) {
+    logger.warn({ err, path: req.path, code: err.code }, 'Graph API error');
+    const status = err.isAuthError ? 401 : err.isRateLimit ? 429 : 400;
+    return res.status(status).json({
+      error: {
+        code: err.isAuthError ? 'facebook_auth_failed' : 'facebook_error',
+        message: err.isAuthError
+          ? `Facebook rejected the sign-in: ${err.message}. Please connect again.`
+          : `Facebook returned an error: ${err.message}`,
+        details: { graphCode: err.code, graphSubcode: err.subcode },
+      },
+    });
   }
 
   // Unrecognised errors are bugs: log the detail, tell the client nothing.
