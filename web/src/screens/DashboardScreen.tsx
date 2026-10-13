@@ -6,6 +6,7 @@ import { ConnectionsScreen } from './ConnectionsScreen';
 import { CreativesScreen } from './CreativesScreen';
 import { ReelsScreen } from './ReelsScreen';
 import { AnalyticsScreen } from './AnalyticsScreen';
+import { LibraryScreen } from './LibraryScreen';
 import { PostsScreen } from './PostsScreen';
 import { Badge, Card } from '../components/ui';
 
@@ -30,6 +31,7 @@ type TabKey =
   | 'channels'
   | 'creatives'
   | 'reels'
+  | 'library'
   | 'whatsapp'
   | 'ads';
 
@@ -40,6 +42,7 @@ const TABS: { key: TabKey; label: string; icon: string; ready: boolean }[] = [
   { key: 'channels', label: 'Channels', icon: '⚯', ready: true },
   { key: 'creatives', label: 'Posters', icon: '▣', ready: true },
   { key: 'reels', label: 'Reels', icon: '▶', ready: true },
+  { key: 'library', label: 'My designs', icon: '❑', ready: true },
   { key: 'whatsapp', label: 'WhatsApp', icon: '✆', ready: false },
   { key: 'ads', label: 'Ads', icon: '◎', ready: false },
 ];
@@ -55,6 +58,8 @@ export function DashboardScreen({ session, onSignOut, onSessionChange }: Props) 
   const [postsKey, setPostsKey] = useState(0);
   /** Carried from the reel editor so Publish opens Compose ready to go. */
   const [pendingAsset, setPendingAsset] = useState<MediaAsset | null>(null);
+  /** Set when opening a saved design from the library. */
+  const [openDesignId, setOpenDesignId] = useState<string | undefined>();
 
   function handleSwitch(organization: Organization) {
     onSessionChange(setActiveOrganization(session, organization));
@@ -119,10 +124,20 @@ export function DashboardScreen({ session, onSignOut, onSessionChange }: Props) 
         {tab === 'creatives' && <CreativesScreen key={session.organization.id} />}
         {tab === 'reels' && (
           <ReelsScreen
-            key={session.organization.id}
+            key={`${session.organization.id}:${openDesignId ?? 'new'}`}
+            openDesignId={openDesignId}
             onPublish={(asset) => {
               setPendingAsset(asset);
               setTab('compose');
+            }}
+          />
+        )}
+        {tab === 'library' && (
+          <LibraryScreen
+            key={session.organization.id}
+            onOpen={(design) => {
+              setOpenDesignId(design.id);
+              setTab(design.kind === 'video' ? 'reels' : 'creatives');
             }}
           />
         )}

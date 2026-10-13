@@ -19,7 +19,7 @@ import {
   type SceneTransition,
   type VideoTemplateDefinition,
 } from '@socialboost/shared';
-import { api, uploadToCloudinary, type MediaAsset } from '../lib/api';
+import { api, uploadAudio, uploadToCloudinary, type MediaAsset } from '../lib/api';
 import {
   drawProjectFrame,
   preloadProjectImages,
@@ -29,8 +29,28 @@ import {
 import { LayerProperties } from '../components/LayerProperties';
 import { Alert, Button, Card, Spinner } from '../components/ui';
 
-export function ReelsScreen({ onPublish }: { onPublish?: (asset: MediaAsset) => void }) {
+export function ReelsScreen({
+  onPublish,
+  openDesignId,
+}: {
+  onPublish?: (asset: MediaAsset) => void;
+  /** Set when arriving from My designs, to reopen a saved reel. */
+  openDesignId?: string;
+}) {
   const [project, setProject] = useState<ReelProject | null>(null);
+  const [designId, setDesignId] = useState<string | undefined>(openDesignId);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!openDesignId) return;
+    api
+      .getDesign(openDesignId)
+      .then((design) => {
+        setProject(design.document as unknown as ReelProject);
+        setDesignId(design.id);
+      })
+      .catch(() => setLoadError('Could not open that design.'));
+  }, [openDesignId]);
 
   const canRecord =
     typeof MediaRecorder !== 'undefined' &&
@@ -44,13 +64,25 @@ export function ReelsScreen({ onPublish }: { onPublish?: (asset: MediaAsset) => 
     );
   }
 
-  if (!project) return <ReelPicker onPick={setProject} />;
+  if (loadError) return <Alert>{loadError}</Alert>;
+  if (!project) {
+    return (
+      <ReelPicker
+        onPick={(next) => {
+          setDesignId(undefined);
+          setProject(next);
+        }}
+      />
+    );
+  }
   return (
     <ReelEditor
+      key={designId ?? 'new'}
       project={project}
       setProject={setProject}
       onBack={() => setProject(null)}
       onPublish={onPublish}
+      initialDesignId={designId}
     />
   );
 }
@@ -124,11 +156,13 @@ function ReelEditor({
   setProject,
   onBack,
   onPublish,
+  initialDesignId,
 }: {
   project: ReelProject;
   setProject: (project: ReelProject) => void;
   onBack: () => void;
   onPublish?: (asset: MediaAsset) => void;
+  initialDesignId?: string;
 }) {
   const [sceneIndex, setSceneIndex] = useState(0);
   const [selectedLayerId, setSelectedLayerId] = useState<string | null>(null);
@@ -142,6 +176,11 @@ function ReelEditor({
   /** The photo highlighted in the library, which the Use buttons act on. */
   const [activePhoto, setActivePhoto] = useState<string | null>(null);
   const [previewOpen, setPreviewOpen] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [designId, setDesignId] = useState<string | null>(initialDesignId ?? null);
+  const [shortDescription, setShortDescription] = useState('');
+  const [tagText, setTagText] = useState('');
+  const audioInput = useRef<HTMLInputElement>(null);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -343,6 +382,53 @@ function ReelEditor({
     }
   }
 
+  async function handleSave(renderedAssetId?: string) {
+    setSaving(true);
+    setError(null);
+    try {
+      const saved = await api.saveDesign({
+        id: designId ?? undefined,
+        name: project.name || 'Untitled reel',
+        kind: 'video',
+        ratio: project.ratio,
+        document: project as unknown as Record<string, unknown>,
+        shortDescription: shortDescription || undefined,
+        tags: tagText
+          .split(/[,\s]+/)
+          .map((tag) => tag.trim())
+          .filter(Boolean),
+        renderedAssetId,
+      });
+      setDesignId(saved.id);
+      setNotice('Saved. Find it again under My designs.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not save this reel.');
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleAudio(file: File) {
+    setError(null);
+    try {
+      const signature = await api.uploadSignature();
+      const uploaded = await uploadAudio(file, signature);
+      setProject({
+        ...project,
+        audio: {
+          url: uploaded.url,
+          name: file.name,
+          volume: 0.8,
+          startSeconds: 0,
+          fadeOut: true,
+        },
+      });
+      setNotice('Sound added. It is mixed in when you create the reel.');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not add that sound.');
+    }
+  }
+
   async function handleCreate() {
     setRecording(true);
     setPlaying(false);
@@ -363,6 +449,8 @@ function ReelEditor({
       });
       setResult(asset);
       setNotice(null);
+      // Keeps the library thumbnail in step with the latest render.
+      void handleSave(asset.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not create the reel.');
     } finally {
@@ -384,6 +472,24 @@ function ReelEditor({
           className="rounded-lg border border-transparent px-2 py-1 text-lg font-semibold text-slate-900 hover:border-slate-300 focus:border-brand-500 focus:outline-none"
         />
         <span className="text-sm text-slate-500">{duration.toFixed(1)}s</span>
+        <Button variant="secondary" onClick={() => void handleSave()} disabled={saving}>
+          {saving ? 'Saving…' : designId ? 'Save' : 'Save to my designs'}
+        </Button>
+      </div>
+
+      <div className="grid gap-2 sm:grid-cols-2">
+        <input
+          value={shortDescription}
+          onChange={(e) => setShortDescription(e.target.value)}
+          placeholder="Short description — shown on the library card"
+          className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm outline-none focus:border-brand-500"
+        />
+        <input
+          value={tagText}
+          onChange={(e) => setTagText(e.target.value)}
+          placeholder="Tags, separated by spaces — diwali offer chennai"
+          className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm outline-none focus:border-brand-500"
+        />
       </div>
 
       {error && <Alert>{error}</Alert>}
@@ -647,6 +753,84 @@ function ReelEditor({
 
           <Card className="p-3">
             <div className="mb-2 flex items-center justify-between">
+              <h3 className="text-sm font-medium text-slate-900">Sound</h3>
+              <button
+                onClick={() => audioInput.current?.click()}
+                className="text-xs text-brand-600 hover:underline"
+              >
+                {project.audio ? 'Replace' : '+ Add'}
+              </button>
+            </div>
+            {project.audio ? (
+              <div className="space-y-2">
+                <p className="truncate text-xs text-slate-700">{project.audio.name}</p>
+                <label className="block">
+                  <span className="mb-1 block text-xs text-slate-500">
+                    Volume {Math.round(project.audio.volume * 100)}%
+                  </span>
+                  <input
+                    type="range"
+                    min="0"
+                    max="1"
+                    step="0.05"
+                    value={project.audio.volume}
+                    onChange={(e) =>
+                      setProject({
+                        ...project,
+                        audio: { ...project.audio!, volume: Number(e.target.value) },
+                      })
+                    }
+                    className="w-full"
+                  />
+                </label>
+                <label className="block">
+                  <span className="mb-1 block text-xs text-slate-500">
+                    Start at {project.audio.startSeconds.toFixed(0)}s
+                  </span>
+                  <input
+                    type="range"
+                    min="0"
+                    max="60"
+                    value={project.audio.startSeconds}
+                    onChange={(e) =>
+                      setProject({
+                        ...project,
+                        audio: { ...project.audio!, startSeconds: Number(e.target.value) },
+                      })
+                    }
+                    className="w-full"
+                  />
+                </label>
+                <label className="flex items-center gap-2 text-xs text-slate-700">
+                  <input
+                    type="checkbox"
+                    checked={project.audio.fadeOut}
+                    onChange={(e) =>
+                      setProject({
+                        ...project,
+                        audio: { ...project.audio!, fadeOut: e.target.checked },
+                      })
+                    }
+                  />
+                  Fade out at the end
+                </label>
+                <button
+                  onClick={() => setProject({ ...project, audio: undefined })}
+                  className="text-xs text-red-600 hover:underline"
+                >
+                  Remove sound
+                </button>
+              </div>
+            ) : (
+              <p className="text-xs text-slate-500">
+                Add your own music or a voiceover. Use audio you have the rights to — the
+                platforms mute or remove posts using someone else's music.
+              </p>
+            )}
+          </Card>
+
+          <Card className="p-3">
+            <div className="mb-2 flex items-center justify-between">
               <h3 className="text-sm font-medium text-slate-900">Photos</h3>
               <button
                 onClick={() => openFilePicker('library')}
@@ -770,6 +954,18 @@ function ReelEditor({
           </div>
         </div>
       )}
+
+      <input
+        ref={audioInput}
+        type="file"
+        accept="audio/*"
+        hidden
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) void handleAudio(file);
+          e.target.value = '';
+        }}
+      />
 
       <input
         ref={fileInput}

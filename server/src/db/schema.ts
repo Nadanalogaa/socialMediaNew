@@ -246,6 +246,18 @@ export const creatives = pgTable(
     ratio: text('ratio').$type<AspectRatioKey>().notNull(),
     /** The user's field values, replayable against the template to re-render. */
     values: jsonb('values').$type<Record<string, string>>().notNull().default({}),
+    /**
+     * The editable document — scenes, layers, styles and audio for a reel, or
+     * the filled template for a poster. Stored whole so a design can be
+     * reopened exactly as it was left, independent of the template it began
+     * from.
+     */
+    document: jsonb('document').$type<Record<string, unknown>>(),
+    /** One line for the library card; the full text is for the post caption. */
+    shortDescription: text('short_description'),
+    description: text('description'),
+    /** Free-form labels, so a library can be filtered by campaign or client. */
+    tags: jsonb('tags').$type<string[]>().notNull().default([]),
     status: text('status').notNull().default('draft'),
     renderedAssetId: uuid('rendered_asset_id').references(() => mediaAssets.id, {
       onDelete: 'set null',

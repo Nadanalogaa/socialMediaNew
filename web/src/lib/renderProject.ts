@@ -424,16 +424,69 @@ export interface RecordedProject {
 }
 
 function pickMimeType(): string {
+  // Audio codecs are named explicitly: some browsers record a silent track
+  // when only the video codec is given.
   for (const type of [
-    'video/mp4;codecs=avc1',
+    'video/mp4;codecs=avc1,mp4a.40.2',
     'video/mp4',
-    'video/webm;codecs=vp9',
-    'video/webm;codecs=vp8',
+    'video/webm;codecs=vp9,opus',
+    'video/webm;codecs=vp8,opus',
     'video/webm',
   ]) {
     if (MediaRecorder.isTypeSupported(type)) return type;
   }
   return '';
+}
+
+/**
+ * Builds an audio track for the recording.
+ *
+ * Routed through an AudioContext rather than captured from the element, so the
+ * volume and fade are applied to what is recorded, and the user does not have
+ * to listen to it playing while it records.
+ */
+async function buildAudioTrack(
+  audio: NonNullable<ReelProject['audio']>,
+  durationSeconds: number,
+): Promise<{ tracks: MediaStreamTrack[]; start: () => void; stop: () => void }> {
+  const element = new Audio();
+  element.crossOrigin = 'anonymous';
+  element.src = audio.url;
+  element.currentTime = audio.startSeconds;
+  element.loop = true;
+
+  await new Promise<void>((resolve, reject) => {
+    element.oncanplaythrough = () => resolve();
+    element.onerror = () => reject(new Error('Could not load that audio file.'));
+    // Some browsers never fire canplaythrough for a cached file.
+    setTimeout(resolve, 4000);
+  });
+
+  const context = new AudioContext();
+  const source = context.createMediaElementSource(element);
+  const gain = context.createGain();
+  const destination = context.createMediaStreamDestination();
+
+  gain.gain.value = audio.volume;
+  source.connect(gain);
+  gain.connect(destination);
+
+  return {
+    tracks: destination.stream.getAudioTracks(),
+    start: () => {
+      void context.resume();
+      void element.play();
+      if (audio.fadeOut) {
+        const now = context.currentTime;
+        gain.gain.setValueAtTime(audio.volume, now + Math.max(durationSeconds - 1, 0));
+        gain.gain.linearRampToValueAtTime(0.0001, now + durationSeconds);
+      }
+    },
+    stop: () => {
+      element.pause();
+      void context.close();
+    },
+  };
 }
 
 export async function recordProject(
@@ -452,7 +505,22 @@ export async function recordProject(
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('Could not create a drawing surface.');
 
-  const stream = canvas.captureStream(FPS);
+  const videoStream = canvas.captureStream(FPS);
+
+  // Audio is optional; a failure to load it must not lose the whole reel.
+  let audio: Awaited<ReturnType<typeof buildAudioTrack>> | null = null;
+  if (project.audio?.url) {
+    try {
+      audio = await buildAudioTrack(project.audio, duration);
+    } catch {
+      /* Recorded silently rather than failing. */
+    }
+  }
+
+  const stream = new MediaStream([
+    ...videoStream.getVideoTracks(),
+    ...(audio?.tracks ?? []),
+  ]);
   const mimeType = pickMimeType();
   // Reels are full-screen on a phone, so compression artefacts are obvious.
   // 16 Mbps at 1080×1920 leaves headroom for the platform's own re-encode.
@@ -470,6 +538,7 @@ export async function recordProject(
   });
 
   recorder.start();
+  audio?.start();
   const startedAt = performance.now();
 
   await new Promise<void>((resolve) => {
@@ -488,7 +557,9 @@ export async function recordProject(
   });
 
   recorder.stop();
+  audio?.stop();
   stream.getTracks().forEach((track) => track.stop());
+  videoStream.getTracks().forEach((track) => track.stop());
   onProgress?.(1);
 
   return { blob: await finished, mimeType: mimeType || 'video/webm', durationSeconds: duration };

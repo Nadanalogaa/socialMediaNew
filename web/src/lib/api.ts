@@ -210,6 +210,39 @@ export interface Post {
   targets: PostTarget[];
 }
 
+export interface DesignSummary {
+  id: string;
+  name: string;
+  kind: 'image' | 'video';
+  ratio: string;
+  shortDescription: string | null;
+  tags: string[];
+  thumbnailUrl: string | null;
+  previewUrl: string | null;
+  updatedAt: string;
+}
+
+/** Uploads an audio file; Cloudinary stores these under its video resource type. */
+export async function uploadAudio(
+  file: File,
+  signature: UploadSignature,
+): Promise<{ url: string; publicId: string }> {
+  const form = new FormData();
+  form.append('file', file);
+  form.append('api_key', signature.apiKey);
+  form.append('timestamp', String(signature.timestamp));
+  form.append('signature', signature.signature);
+  form.append('folder', signature.folder);
+
+  const response = await fetch(
+    `https://api.cloudinary.com/v1_1/${signature.cloudName}/video/upload`,
+    { method: 'POST', body: form },
+  );
+  if (!response.ok) throw new Error('Could not upload that audio file.');
+  const body = await response.json();
+  return { url: body.secure_url, publicId: body.public_id };
+}
+
 export interface AnalyticsPayload {
   summary: {
     posts: { published: number; scheduled: number; failed: number };
@@ -313,6 +346,39 @@ export const api = {
     bytes?: number;
     providerRef?: string;
   }) => request<MediaAsset>('/media', { method: 'POST', body: JSON.stringify(input) }),
+
+  // --- Saved designs ---
+  listDesigns: (params: { kind?: string; tag?: string } = {}) => {
+    const query = new URLSearchParams(
+      Object.entries(params).filter(([, v]) => v) as [string, string][],
+    ).toString();
+    return request<{ designs: DesignSummary[]; tags: string[] }>(
+      `/creatives/designs${query ? `?${query}` : ''}`,
+    );
+  },
+
+  saveDesign: (input: {
+    id?: string;
+    name: string;
+    kind: 'image' | 'video';
+    ratio: string;
+    document: Record<string, unknown>;
+    shortDescription?: string;
+    description?: string;
+    tags?: string[];
+    renderedAssetId?: string;
+  }) => request<{ id: string }>('/creatives/designs', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  }),
+
+  getDesign: (id: string) =>
+    request<{ id: string; name: string; document: Record<string, unknown> }>(
+      `/creatives/designs/${id}`,
+    ),
+
+  deleteDesign: (id: string) =>
+    request<void>(`/creatives/designs/${id}`, { method: 'DELETE' }),
 
   // --- Analytics ---
   getAnalytics: (days: number) => request<AnalyticsPayload>(`/analytics?days=${days}`),

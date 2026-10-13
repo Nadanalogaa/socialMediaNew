@@ -35,10 +35,28 @@ export interface ProjectScene {
   layers: ProjectLayer[];
 }
 
+/**
+ * Music or voiceover mixed into the recording.
+ *
+ * The file is the user's own: using someone else's music gets a post muted or
+ * removed by the platforms, so nothing is bundled here.
+ */
+export interface ProjectAudio {
+  url: string;
+  name: string;
+  /** 0..1 */
+  volume: number;
+  /** Seconds into the track to begin, for skipping a long intro. */
+  startSeconds: number;
+  /** Fades the last second out, so a reel does not end mid-note. */
+  fadeOut: boolean;
+}
+
 export interface ReelProject {
   name: string;
   ratio: AspectRatioKey;
   scenes: ProjectScene[];
+  audio?: ProjectAudio;
 }
 
 export function projectDuration(project: ReelProject): number {
