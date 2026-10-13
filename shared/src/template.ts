@@ -37,6 +37,20 @@ export interface LayerBox {
   h: number;
 }
 
+/** A drop shadow, which is what lifts text off a busy photo. */
+export interface TextShadow {
+  color: string;
+  blur: number;
+  offsetY: number;
+}
+
+/** An outline around glyphs, legible over any background. */
+export interface TextStroke {
+  color: string;
+  /** Width as a percentage of font size, so it scales with the text. */
+  widthPct: number;
+}
+
 export interface LayerStyle {
   /** Font size as a percentage of canvas height, so type scales with the output. */
   fontSizePct?: number;
@@ -56,6 +70,13 @@ export interface LayerStyle {
   /** Darkens an image layer so text above it stays legible. */
   overlay?: string;
   paddingPct?: number;
+
+  shadow?: TextShadow;
+  stroke?: TextStroke;
+  /** Two colours fill the text with a vertical gradient between them. */
+  gradient?: [string, string];
+  /** Rotation in degrees about the layer's centre. */
+  rotation?: number;
 }
 
 export interface TemplateLayer {

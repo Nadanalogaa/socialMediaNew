@@ -13,7 +13,13 @@
 import type { AspectRatioKey } from './domain.js';
 import type { TemplateField, TemplateLayer } from './template.js';
 
-/** How a layer enters its scene. */
+/**
+ * How a layer enters its scene.
+ *
+ * The `letter-*` and `typewriter` entries animate each character separately,
+ * which is what reads as "modern" in a reel — the whole line arriving at once
+ * looks like a slide, whereas glyphs landing in sequence looks authored.
+ */
 export type LayerAnimation =
   | 'none'
   | 'fade-in'
@@ -22,7 +28,45 @@ export type LayerAnimation =
   | 'slide-right'
   | 'pop'
   /** Slow drift across a photo, which keeps a still image feeling alive. */
-  | 'ken-burns';
+  | 'ken-burns'
+  | 'typewriter'
+  | 'letter-rise'
+  | 'letter-pop'
+  | 'letter-wave';
+
+/** Animations that act per character rather than on the layer as a whole. */
+export const CHARACTER_ANIMATIONS: LayerAnimation[] = [
+  'typewriter',
+  'letter-rise',
+  'letter-pop',
+  'letter-wave',
+];
+
+export function isCharacterAnimation(animation: LayerAnimation | undefined): boolean {
+  return animation ? CHARACTER_ANIMATIONS.includes(animation) : false;
+}
+
+/** Every animation, for the editor's picker. */
+export const LAYER_ANIMATIONS: { value: LayerAnimation; label: string }[] = [
+  { value: 'none', label: 'None' },
+  { value: 'fade-in', label: 'Fade in' },
+  { value: 'rise', label: 'Rise up' },
+  { value: 'slide-left', label: 'Slide from right' },
+  { value: 'slide-right', label: 'Slide from left' },
+  { value: 'pop', label: 'Pop' },
+  { value: 'ken-burns', label: 'Slow zoom (photos)' },
+  { value: 'typewriter', label: 'Typewriter' },
+  { value: 'letter-rise', label: 'Letters rise' },
+  { value: 'letter-pop', label: 'Letters pop' },
+  { value: 'letter-wave', label: 'Letters wave' },
+];
+
+export const SCENE_TRANSITIONS: { value: SceneTransition; label: string }[] = [
+  { value: 'cut', label: 'Cut' },
+  { value: 'fade', label: 'Fade' },
+  { value: 'slide-up', label: 'Slide up' },
+  { value: 'wipe', label: 'Wipe' },
+];
 
 /** How one scene gives way to the next. */
 export type SceneTransition = 'cut' | 'fade' | 'slide-up' | 'wipe';
