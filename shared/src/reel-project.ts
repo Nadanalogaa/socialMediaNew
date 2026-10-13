@@ -8,13 +8,15 @@
  */
 
 import type { AspectRatioKey } from './domain.js';
+import type { ParticleSettings } from './particles.js';
+import { DEFAULT_PARTICLE_SETTINGS } from './particles.js';
 import type { LayerStyle } from './template.js';
 import type { LayerAnimation, SceneTransition, VideoTemplateDefinition } from './video.js';
 import { resolveLayerContent } from './template.js';
 
 export interface ProjectLayer {
   id: string;
-  type: 'text' | 'image' | 'shape';
+  type: 'text' | 'image' | 'shape' | 'particles';
   /** Shown in the layer list; defaults from the content. */
   name: string;
   /** Text, an image URL, or a colour, depending on `type`. */
@@ -24,6 +26,8 @@ export interface ProjectLayer {
   animation: LayerAnimation;
   delaySeconds: number;
   hidden?: boolean;
+  /** Only on a `particles` layer. */
+  particles?: ParticleSettings;
 }
 
 export interface ProjectScene {
@@ -153,6 +157,22 @@ export function createImageLayer(url: string, isLogo = false): ProjectLayer {
     style: { fit: isLogo ? 'contain' : 'cover', opacity: 1 },
     animation: isLogo ? 'fade-in' : 'ken-burns',
     delaySeconds: 0,
+  };
+}
+
+/** An effect layer covering the whole frame by default. */
+export function createParticleLayer(settings?: Partial<ParticleSettings>): ProjectLayer {
+  const particles = { ...DEFAULT_PARTICLE_SETTINGS, ...settings };
+  return {
+    id: newId('layer'),
+    type: 'particles',
+    name: 'Effect',
+    content: particles.effect,
+    box: { x: 0, y: 0, w: 100, h: 100 },
+    style: {},
+    animation: 'none',
+    delaySeconds: 0,
+    particles,
   };
 }
 

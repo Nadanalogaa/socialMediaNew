@@ -6,6 +6,7 @@ import {
   applyImageToAllScenes,
   projectPhotos,
   createImageLayer,
+  createParticleLayer,
   createShapeLayer,
   createTextLayer,
   duplicateScene,
@@ -987,7 +988,13 @@ function ReelEditor({
                           : 'text-slate-700 hover:bg-slate-100'
                       }`}
                     >
-                      {layer.type === 'text' ? '¶' : layer.type === 'image' ? '▣' : '■'}{' '}
+                      {layer.type === 'text'
+                        ? '¶'
+                        : layer.type === 'image'
+                          ? '▣'
+                          : layer.type === 'particles'
+                            ? '✨'
+                            : '■'}{' '}
                       {layer.name}
                     </button>
                     <button
@@ -1042,6 +1049,12 @@ function ReelEditor({
                 className="rounded-lg border border-slate-300 px-2 py-1 text-xs hover:bg-slate-50"
               >
                 + Colour
+              </button>
+              <button
+                onClick={() => addLayer(createParticleLayer())}
+                className="col-span-2 rounded-lg border border-slate-300 px-2 py-1 text-xs hover:bg-slate-50"
+              >
+                ✨ + Effect
               </button>
             </div>
           </Card>
@@ -1239,7 +1252,13 @@ function ReelEditor({
                           : 'text-slate-700'
                       }`}
                     >
-                      {layer.type === 'text' ? '¶' : layer.type === 'image' ? '▣' : '■'}{' '}
+                      {layer.type === 'text'
+                        ? '¶'
+                        : layer.type === 'image'
+                          ? '▣'
+                          : layer.type === 'particles'
+                            ? '✨'
+                            : '■'}{' '}
                       {layer.name}
                     </button>
                     <button
@@ -1278,6 +1297,13 @@ function ReelEditor({
                 </Button>
                 <Button variant="secondary" onClick={() => addLayer(createShapeLayer('#4f46e5'))}>
                   + Colour
+                </Button>
+                <Button
+                  variant="secondary"
+                  className="col-span-2"
+                  onClick={() => addLayer(createParticleLayer())}
+                >
+                  ✨ + Effect
                 </Button>
               </li>
             </ul>

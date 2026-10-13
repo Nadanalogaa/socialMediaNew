@@ -1,4 +1,9 @@
-import { LAYER_ANIMATIONS, type ProjectLayer } from '@socialboost/shared';
+import {
+  LAYER_ANIMATIONS,
+  PARTICLE_EFFECTS,
+  PARTICLE_LABELS,
+  type ProjectLayer,
+} from '@socialboost/shared';
 import { FONT_CHOICES } from '../lib/renderProject';
 
 /**
@@ -311,6 +316,107 @@ export function LayerProperties({
         </>
       )}
 
+      {layer.type === 'particles' && layer.particles && (
+        <>
+          <Field label="Effect">
+            <select
+              value={layer.particles.effect}
+              onChange={(e) =>
+                onChange({
+                  content: e.target.value,
+                  name: PARTICLE_LABELS[e.target.value as keyof typeof PARTICLE_LABELS],
+                  particles: {
+                    ...layer.particles!,
+                    effect: e.target.value as typeof layer.particles.effect,
+                  },
+                })
+              }
+              className={inputClass}
+            >
+              {PARTICLE_EFFECTS.map((effect) => (
+                <option key={effect} value={effect}>
+                  {PARTICLE_LABELS[effect]}
+                </option>
+              ))}
+            </select>
+          </Field>
+
+          <Field label={`How many — ${layer.particles.count}`}>
+            <input
+              type="range"
+              min="5"
+              max="150"
+              value={layer.particles.count}
+              onChange={(e) =>
+                onChange({ particles: { ...layer.particles!, count: Number(e.target.value) } })
+              }
+            />
+          </Field>
+
+          <Field label={`Speed ${layer.particles.speed.toFixed(1)}×`}>
+            <input
+              type="range"
+              min="0.2"
+              max="3"
+              step="0.1"
+              value={layer.particles.speed}
+              onChange={(e) =>
+                onChange({ particles: { ...layer.particles!, speed: Number(e.target.value) } })
+              }
+            />
+          </Field>
+
+          <Field label={`Size ${layer.particles.size.toFixed(1)}×`}>
+            <input
+              type="range"
+              min="0.3"
+              max="3"
+              step="0.1"
+              value={layer.particles.size}
+              onChange={(e) =>
+                onChange({ particles: { ...layer.particles!, size: Number(e.target.value) } })
+              }
+            />
+          </Field>
+
+          <Field label={`Strength ${Math.round(layer.particles.opacity * 100)}%`}>
+            <input
+              type="range"
+              min="0.1"
+              max="1"
+              step="0.05"
+              value={layer.particles.opacity}
+              onChange={(e) =>
+                onChange({ particles: { ...layer.particles!, opacity: Number(e.target.value) } })
+              }
+            />
+          </Field>
+
+          <Field label="Colour">
+            <div className="flex items-center gap-2">
+              <input
+                type="color"
+                value={layer.particles.color ?? '#ffffff'}
+                onChange={(e) =>
+                  onChange({ particles: { ...layer.particles!, color: e.target.value } })
+                }
+                className="h-9 w-16 cursor-pointer rounded border border-slate-300"
+              />
+              {layer.particles.color && (
+                <button
+                  onClick={() =>
+                    onChange({ particles: { ...layer.particles!, color: undefined } })
+                  }
+                  className="text-xs text-brand-600 hover:underline"
+                >
+                  Use the effect's own colours
+                </button>
+              )}
+            </div>
+          </Field>
+        </>
+      )}
+
       {layer.type === 'shape' && (
         <Field label="Colour">
           <input
@@ -345,6 +451,7 @@ export function LayerProperties({
         />
       </Field>
 
+      {layer.type !== 'particles' && (
       <div className="grid grid-cols-2 gap-2">
         <Field label="Animation">
           <select
@@ -371,6 +478,7 @@ export function LayerProperties({
           />
         </Field>
       </div>
+      )}
 
       <div className="grid grid-cols-4 gap-2">
         <NumberField label="X" value={layer.box.x} onChange={(x) => onChange({ box: { ...layer.box, x } })} />

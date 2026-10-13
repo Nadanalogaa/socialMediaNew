@@ -5,3 +5,4 @@ export * from './templates.js';
 export * from './video.js';
 export * from './video-templates.js';
 export * from './reel-project.js';
+export * from './particles.js';

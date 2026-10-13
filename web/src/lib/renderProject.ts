@@ -7,6 +7,7 @@
  */
 
 import { prepareAudioForRecording } from './audio.js';
+import { drawParticles } from './drawParticles.js';
 import {
   ASPECT_RATIOS,
   easeOutCubic,
@@ -374,6 +375,10 @@ function drawLayer(
       }
       ctx.restore();
     }
+  } else if (layer.type === 'particles' && layer.particles) {
+    // Elapsed time drives the effect, so the preview and the recording show
+    // exactly the same frame at the same moment.
+    drawParticles(ctx, layer.particles, elapsed, box, width, height);
   } else if (layer.type === 'text' && layer.content) {
     drawTextLayer(ctx, layer, box, elapsed, height);
   }
