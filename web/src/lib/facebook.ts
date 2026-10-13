@@ -112,9 +112,18 @@ export function facebookLogin(): Promise<string> {
     }
 
     // Business login takes a configuration; classic login takes scopes.
+    //
+    // `auth_type: 'rerequest'` stops Facebook offering "continue with your
+    // previous settings", which silently reuses an earlier, narrower grant and
+    // never lets the user switch account or approve more permissions.
     const loginOptions = configId
-      ? { config_id: configId, response_type: 'token', override_default_response_type: true }
-      : { scope: REQUIRED_SCOPES, return_scopes: true };
+      ? {
+          config_id: configId,
+          response_type: 'token',
+          override_default_response_type: true,
+          auth_type: 'rerequest',
+        }
+      : { scope: REQUIRED_SCOPES, return_scopes: true, auth_type: 'rerequest' };
 
     window.FB.login(
       (response) => {
