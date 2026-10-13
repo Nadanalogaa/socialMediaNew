@@ -12,7 +12,7 @@ import { db } from '../../db/client.js';
 import { mediaAssets, postMedia, postTargets, posts } from '../../db/schema.js';
 import { badRequest, notFound, serviceUnavailable } from '../../lib/errors.js';
 import { logger } from '../../lib/logger.js';
-import { publishQueue } from '../../queue/index.js';
+import { enqueue as enqueueJob, publishQueue } from '../../queue/index.js';
 import { canPublishInline, publishPost } from './publisher.js';
 import { resolveConnection } from '../connections/service.js';
 import { assertWithinQuota } from '../usage/service.js';
@@ -147,7 +147,7 @@ export async function dispatch(
  */
 async function enqueue(organizationId: string, postId: string, delay = 0): Promise<void> {
   try {
-    await publishQueue.add('publish-post', { postId, organizationId }, delay ? { delay } : {});
+    await enqueueJob(publishQueue, 'publish-post', { postId, organizationId }, delay ? { delay } : {});
     if (!delay) {
       await db
         .update(posts)

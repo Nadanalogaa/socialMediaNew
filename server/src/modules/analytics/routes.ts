@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
 import { asyncHandler, requireAuth, validate, withOrganization } from '../../http/middleware.js';
-import { metricsQueue } from '../../queue/index.js';
+import { enqueue, metricsQueue } from '../../queue/index.js';
 import { fetchAudienceSizes } from '../../queue/processors/metrics.js';
 import * as analytics from './service.js';
 
@@ -47,7 +47,9 @@ analyticsRouter.get(
 analyticsRouter.post(
   '/refresh',
   asyncHandler(async (req, res) => {
-    await metricsQueue.add('refresh-metrics', { organizationId: req.tenant!.organizationId });
+    await enqueue(metricsQueue, 'refresh-metrics', {
+      organizationId: req.tenant!.organizationId,
+    });
     res.status(202).json({ queued: true });
   }),
 );
