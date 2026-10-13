@@ -62,10 +62,15 @@ export async function beginMetaConnection(
     logger.warn({ organizationId, granted }, 'Facebook connect returned no Pages');
 
     if (!granted.includes('pages_show_list')) {
+      // Permissions at standard access are only offered to people holding a
+      // role on the Meta app, and Facebook skips them silently otherwise — so
+      // naming the account that signed in is what makes this diagnosable.
       throw badRequest(
-        'Facebook did not grant permission to list your Pages. Press Connect again and ' +
-          'make sure every permission stays switched on. ' +
-          `Granted: ${granted.join(', ') || 'none'}.`,
+        `Facebook granted only: ${granted.join(', ') || 'none'}. ` +
+          `You signed in as ${owner.name} (ID ${owner.id}). ` +
+          'Permissions still at standard access are only offered to people with a role on ' +
+          'the Meta app, so check this account is listed under App roles — or sign in with ' +
+          'one that is.',
       );
     }
 
