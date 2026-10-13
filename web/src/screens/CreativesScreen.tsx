@@ -8,7 +8,7 @@ import {
   type TemplateDefinition,
   type TemplateField,
 } from '@socialboost/shared';
-import { ApiError, api, uploadToCloudinary, type MediaAsset } from '../lib/api';
+import { ApiError, api, getFeatures, uploadToCloudinary, type MediaAsset } from '../lib/api';
 import { renderToBlob, renderToDataUrl } from '../lib/renderTemplate';
 import { Alert, Button, Card, Spinner } from '../components/ui';
 
@@ -118,6 +118,12 @@ function TemplateEditor({
   const [notice, setNotice] = useState<string | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const [uploadingField, setUploadingField] = useState<string | null>(null);
+  // Offering a button that always fails is worse than not offering it.
+  const [aiAvailable, setAiAvailable] = useState(false);
+
+  useEffect(() => {
+    void getFeatures().then((features) => setAiAvailable(features.ai));
+  }, []);
 
   const spec: CreativeSpec = useMemo(() => ({ template, values, ratio }), [template, values, ratio]);
   const missing = findMissingFields(spec);
@@ -216,6 +222,7 @@ function TemplateEditor({
 
       <div className="grid gap-5 lg:grid-cols-[1fr_320px]">
         <div className="space-y-4">
+          {aiAvailable && (
           <Card>
             <h3 className="mb-2 text-sm font-medium text-slate-900">Write it for me</h3>
             <div className="flex gap-2">
@@ -233,6 +240,7 @@ function TemplateEditor({
               Describe the ad in a sentence and the wording is filled in for you.
             </p>
           </Card>
+          )}
 
           <Card>
             <div className="space-y-3">

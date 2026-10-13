@@ -9,7 +9,7 @@ import { mediaRouter } from '../modules/media/routes.js';
 import { organizationsRouter } from '../modules/organizations/routes.js';
 import { postsRouter } from '../modules/posts/routes.js';
 import { legacyWebhooksRouter, webhooksRouter } from '../modules/webhooks/routes.js';
-import { env, isProduction } from '../lib/env.js';
+import { env, features, isProduction } from '../lib/env.js';
 import { logger } from '../lib/logger.js';
 import { errorHandler, notFoundHandler } from './middleware.js';
 
@@ -53,6 +53,16 @@ export function createApp(): Express {
   };
   app.get('/health', health);
   app.get('/api/health', health);
+
+  /**
+   * What this deployment can actually do.
+   *
+   * The client hides features whose integration is unconfigured, rather than
+   * offering a button that always fails.
+   */
+  app.get('/api/config', (_req, res) => {
+    res.json({ features });
+  });
 
   app.use('/api/auth', authRouter);
   app.use('/api/connections', connectionsRouter);

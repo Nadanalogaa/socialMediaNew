@@ -218,6 +218,24 @@ export interface UploadSignature {
   folder: string;
 }
 
+export interface ServerFeatures {
+  ai: boolean;
+  meta: boolean;
+  cloudinary: boolean;
+  billing: boolean;
+}
+
+/** Cached for the session: configuration does not change between requests. */
+let featuresPromise: Promise<ServerFeatures> | null = null;
+
+export function getFeatures(): Promise<ServerFeatures> {
+  featuresPromise ??= fetch('/api/config')
+    .then((r) => r.json())
+    .then((body: { features: ServerFeatures }) => body.features)
+    .catch(() => ({ ai: false, meta: false, cloudinary: false, billing: false }));
+  return featuresPromise;
+}
+
 export const api = {
   register: (input: {
     email: string;
@@ -267,6 +285,7 @@ export const api = {
     thumbnailUrl?: string;
     width?: number;
     height?: number;
+    durationSeconds?: number;
     bytes?: number;
     providerRef?: string;
   }) => request<MediaAsset>('/media', { method: 'POST', body: JSON.stringify(input) }),
