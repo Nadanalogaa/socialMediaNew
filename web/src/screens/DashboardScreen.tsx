@@ -5,6 +5,7 @@ import { ComposeScreen } from './ComposeScreen';
 import { ConnectionsScreen } from './ConnectionsScreen';
 import { CreativesScreen } from './CreativesScreen';
 import { ReelsScreen } from './ReelsScreen';
+import { AnalyticsScreen } from './AnalyticsScreen';
 import { PostsScreen } from './PostsScreen';
 import { Badge, Card } from '../components/ui';
 
@@ -22,11 +23,20 @@ interface Props {
   onSessionChange: (session: Session) => void;
 }
 
-type TabKey = 'compose' | 'posts' | 'channels' | 'creatives' | 'reels' | 'whatsapp' | 'ads';
+type TabKey =
+  | 'compose'
+  | 'posts'
+  | 'analytics'
+  | 'channels'
+  | 'creatives'
+  | 'reels'
+  | 'whatsapp'
+  | 'ads';
 
 const TABS: { key: TabKey; label: string; icon: string; ready: boolean }[] = [
   { key: 'compose', label: 'Compose', icon: '✎', ready: true },
   { key: 'posts', label: 'Posts', icon: '☰', ready: true },
+  { key: 'analytics', label: 'Analytics', icon: '◳', ready: true },
   { key: 'channels', label: 'Channels', icon: '⚯', ready: true },
   { key: 'creatives', label: 'Posters', icon: '▣', ready: true },
   { key: 'reels', label: 'Reels', icon: '▶', ready: true },
@@ -102,6 +112,7 @@ export function DashboardScreen({ session, onSignOut, onSessionChange }: Props) 
         {tab === 'channels' && <ConnectionsScreen key={session.organization.id} />}
         {tab === 'creatives' && <CreativesScreen key={session.organization.id} />}
         {tab === 'reels' && <ReelsScreen key={session.organization.id} />}
+        {tab === 'analytics' && <AnalyticsScreen key={session.organization.id} />}
         {(tab === 'whatsapp' || tab === 'ads') && (
           <Card>
             <div className="flex items-center gap-2">

@@ -9,6 +9,7 @@
 import { Worker, type Job } from 'bullmq';
 import { closeDatabase } from './db/client.js';
 import { QUEUE_NAMES, connection } from './queue/index.js';
+import { processMetricsJob } from './queue/processors/metrics.js';
 import { processPublishJob } from './queue/processors/publish.js';
 import { logger } from './lib/logger.js';
 
@@ -36,7 +37,7 @@ const notImplemented = (name: string) => async (job: Job) => {
 register(QUEUE_NAMES.publish, processPublishJob as (job: Job) => Promise<void>, 3);
 register(QUEUE_NAMES.render, notImplemented(QUEUE_NAMES.render));
 register(QUEUE_NAMES.whatsapp, notImplemented(QUEUE_NAMES.whatsapp));
-register(QUEUE_NAMES.metrics, notImplemented(QUEUE_NAMES.metrics));
+register(QUEUE_NAMES.metrics, processMetricsJob as (job: Job) => Promise<void>, 2);
 
 logger.info({ queues: Object.values(QUEUE_NAMES) }, 'Worker started');
 

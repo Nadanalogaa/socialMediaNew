@@ -475,6 +475,29 @@ export async function getInstagramPostMetrics(
   }
 }
 
+/**
+ * Audience size for a Page or Instagram account.
+ *
+ * The two platforms name the field differently, which is why this exists
+ * rather than callers branching.
+ */
+export async function getFollowerCount(
+  objectId: string,
+  accessToken: string,
+  platform: 'facebook' | 'instagram',
+): Promise<number> {
+  const field = platform === 'instagram' ? 'followers_count' : 'fan_count';
+  try {
+    const data = await graphRequest<Record<string, number>>(`/${objectId}`, {
+      params: { access_token: accessToken, fields: field },
+    });
+    return data[field] ?? 0;
+  } catch (error) {
+    if (error instanceof GraphApiError && error.isMissingObject) return 0;
+    throw error;
+  }
+}
+
 // --- Comments -------------------------------------------------------------
 
 export interface NormalisedComment {

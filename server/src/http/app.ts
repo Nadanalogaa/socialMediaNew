@@ -3,6 +3,7 @@ import express, { type Express, type Request, type Response } from 'express';
 import helmet from 'helmet';
 import { pinoHttp } from 'pino-http';
 import { authRouter } from '../modules/auth/routes.js';
+import { analyticsRouter } from '../modules/analytics/routes.js';
 import { connectionsRouter } from '../modules/connections/routes.js';
 import { googleCallbackRouter } from '../modules/connections/google-callback.js';
 import { creativesRouter } from '../modules/creatives/routes.js';
@@ -70,6 +71,7 @@ export function createApp(): Express {
   app.use('/api/connections', googleCallbackRouter);
   app.use('/api/connections', connectionsRouter);
   app.use('/api/organizations', organizationsRouter);
+  app.use('/api/analytics', analyticsRouter);
   app.use('/api/creatives', creativesRouter);
   app.use('/api/media', mediaRouter);
   app.use('/api/posts', postsRouter);

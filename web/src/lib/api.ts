@@ -210,6 +210,30 @@ export interface Post {
   targets: PostTarget[];
 }
 
+export interface AnalyticsPayload {
+  summary: {
+    posts: { published: number; scheduled: number; failed: number };
+    engagement: { likes: number; comments: number; shares: number; total: number };
+    channels: number;
+  };
+  timeseries: { date: string; posts: number; engagement: number }[];
+  channels: {
+    connectionId: string;
+    displayName: string;
+    provider: string;
+    posts: number;
+    engagement: number;
+  }[];
+  topPosts: {
+    postId: string;
+    caption: string;
+    publishedAt: string | null;
+    engagement: number;
+    permalink: string | null;
+  }[];
+  days: number;
+}
+
 export interface UploadSignature {
   cloudName: string;
   apiKey: string;
@@ -289,6 +313,11 @@ export const api = {
     bytes?: number;
     providerRef?: string;
   }) => request<MediaAsset>('/media', { method: 'POST', body: JSON.stringify(input) }),
+
+  // --- Analytics ---
+  getAnalytics: (days: number) => request<AnalyticsPayload>(`/analytics?days=${days}`),
+
+  refreshAnalytics: () => request<{ queued: boolean }>('/analytics/refresh', { method: 'POST' }),
 
   // --- Creatives ---
   autofillTemplate: (templateSlug: string, brief: string) =>

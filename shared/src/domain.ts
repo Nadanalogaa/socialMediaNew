@@ -60,7 +60,15 @@ export const POST_STATUSES = [
 export type PostStatus = (typeof POST_STATUSES)[number];
 
 /** Per-channel outcome of a post. A post is `partially_failed` when targets disagree. */
-export const TARGET_STATUSES = ['pending', 'publishing', 'published', 'failed', 'skipped'] as const;
+export const TARGET_STATUSES = [
+  'pending',
+  'publishing',
+  'published',
+  'failed',
+  'skipped',
+  /** Published successfully, then removed on the platform itself. */
+  'deleted_on_platform',
+] as const;
 export type TargetStatus = (typeof TARGET_STATUSES)[number];
 
 // --- WhatsApp -------------------------------------------------------------
