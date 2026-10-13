@@ -11,10 +11,15 @@ export function LayerProperties({
   layer,
   onChange,
   onPickImage,
+  repositioning,
+  onToggleReposition,
 }: {
   layer: ProjectLayer;
   onChange: (patch: Partial<ProjectLayer>) => void;
   onPickImage: () => void;
+  /** True while dragging on the canvas pans the photo inside its frame. */
+  repositioning?: boolean;
+  onToggleReposition?: () => void;
 }) {
   const style = layer.style;
   const setStyle = (patch: Partial<ProjectLayer['style']>) =>
@@ -221,6 +226,70 @@ export function LayerProperties({
               <option value="contain">Fit inside (no crop)</option>
             </select>
           </Field>
+
+          {(style.fit ?? 'cover') === 'cover' && (
+            <fieldset className="rounded-lg border border-slate-200 p-2">
+              <legend className="px-1 text-xs font-medium text-slate-600">
+                Which part shows
+              </legend>
+
+              {onToggleReposition && (
+                <button
+                  onClick={onToggleReposition}
+                  className={`mb-2 w-full rounded-lg px-2 py-2 text-xs font-medium transition ${
+                    repositioning
+                      ? 'bg-brand-600 text-white'
+                      : 'border border-slate-300 text-slate-700 hover:bg-slate-50'
+                  }`}
+                >
+                  {repositioning ? '✓ Done repositioning' : 'Drag to reposition the photo'}
+                </button>
+              )}
+
+              <label className="block">
+                <span className="mb-1 block text-xs text-slate-500">
+                  Across {Math.round(style.focusX ?? 50)}%
+                </span>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={style.focusX ?? 50}
+                  onChange={(e) => setStyle({ focusX: Number(e.target.value) })}
+                  className="w-full"
+                />
+              </label>
+
+              <label className="block">
+                <span className="mb-1 block text-xs text-slate-500">
+                  Down {Math.round(style.focusY ?? 50)}%
+                </span>
+                <input
+                  type="range"
+                  min="0"
+                  max="100"
+                  value={style.focusY ?? 50}
+                  onChange={(e) => setStyle({ focusY: Number(e.target.value) })}
+                  className="w-full"
+                />
+              </label>
+
+              <label className="block">
+                <span className="mb-1 block text-xs text-slate-500">
+                  Zoom {((style.imageZoom ?? 1) * 100).toFixed(0)}%
+                </span>
+                <input
+                  type="range"
+                  min="1"
+                  max="3"
+                  step="0.05"
+                  value={style.imageZoom ?? 1}
+                  onChange={(e) => setStyle({ imageZoom: Number(e.target.value) })}
+                  className="w-full"
+                />
+              </label>
+            </fieldset>
+          )}
           <Field label="Darken behind text">
             <select
               value={style.overlay ?? ''}

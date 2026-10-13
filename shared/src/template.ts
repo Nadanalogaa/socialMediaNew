@@ -67,6 +67,15 @@ export interface LayerStyle {
   opacity?: number;
   /** Image only: how the picture fills its box. */
   fit?: 'cover' | 'contain';
+  /**
+   * Which part of a cropped image to show, as a percentage of the overflow.
+   * 50/50 is centred, which is what a crop does by default and often cuts off
+   * the subject.
+   */
+  focusX?: number;
+  focusY?: number;
+  /** Magnification beyond filling the box, for cropping in further. */
+  imageZoom?: number;
   /** Darkens an image layer so text above it stays legible. */
   overlay?: string;
   paddingPct?: number;

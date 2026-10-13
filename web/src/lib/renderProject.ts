@@ -331,21 +331,31 @@ function drawLayer(
       ctx.clip();
 
       const t = sceneDuration > 0 ? elapsed / sceneDuration : 0;
-      const zoom = layer.animation === 'ken-burns' ? 1.06 + 0.06 * t : 1;
+      const kenBurns = layer.animation === 'ken-burns' ? 1.06 + 0.06 * t : 1;
       const fit = style.fit ?? 'cover';
       const base =
         fit === 'cover'
           ? Math.max(box.w / image.width, box.h / image.height)
           : Math.min(box.w / image.width, box.h / image.height);
-      const scale = base * zoom;
+      const scale = base * kenBurns * (style.imageZoom ?? 1);
       const drawWidth = image.width * scale;
       const drawHeight = image.height * scale;
+
+      /*
+       * The focal point decides which part of a cropped image survives.
+       * 0 shows the left/top edge, 100 the right/bottom, 50 the middle — which
+       * is the default and is what cuts the subject out of a tall photo.
+       */
+      const overflowX = drawWidth - box.w;
+      const overflowY = drawHeight - box.h;
+      const focusX = (style.focusX ?? 50) / 100;
+      const focusY = (style.focusY ?? 50) / 100;
       const drift = layer.animation === 'ken-burns' ? (t - 0.5) * box.h * 0.04 : 0;
 
       ctx.drawImage(
         image,
-        box.x + (box.w - drawWidth) / 2,
-        box.y + (box.h - drawHeight) / 2 + drift,
+        box.x - overflowX * focusX,
+        box.y - overflowY * focusY + drift,
         drawWidth,
         drawHeight,
       );

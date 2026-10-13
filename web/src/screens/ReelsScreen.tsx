@@ -33,6 +33,7 @@ import { SoundPanel } from '../components/SoundPanel';
 import { MobileSheet, type SheetHeight } from '../components/MobileSheet';
 import { Alert, Button, Card, Spinner } from '../components/ui';
 import { useIsMobile } from '../lib/useMediaQuery';
+import { useHistory } from '../lib/useHistory';
 
 export function ReelsScreen({
   onPublish,
@@ -84,7 +85,6 @@ export function ReelsScreen({
     <ReelEditor
       key={designId ?? 'new'}
       project={project}
-      setProject={setProject}
       onBack={() => setProject(null)}
       onPublish={onPublish}
       initialDesignId={designId}
@@ -157,18 +157,19 @@ function ReelPicker({ onPick }: { onPick: (project: ReelProject) => void }) {
 }
 
 function ReelEditor({
-  project,
-  setProject,
+  project: initialProject,
   onBack,
   onPublish,
   initialDesignId,
 }: {
   project: ReelProject;
-  setProject: (project: ReelProject) => void;
   onBack: () => void;
   onPublish?: (asset: MediaAsset) => void;
   initialDesignId?: string;
 }) {
+  const history = useHistory<ReelProject>(initialProject);
+  const project = history.state;
+  const setProject = history.set;
   const [sceneIndex, setSceneIndex] = useState(0);
   const [selectedLayerId, setSelectedLayerId] = useState<string | null>(null);
   const [playing, setPlaying] = useState(false);
@@ -186,6 +187,19 @@ function ReelEditor({
   /** Which panel is showing on a phone, where the columns cannot sit side by side. */
   const [panel, setPanel] = useState<'scenes' | 'layers' | 'style' | 'media'>('scenes');
   const [sheetHeight, setSheetHeight] = useState<SheetHeight>('peek');
+  /** While true, dragging pans the photo inside its frame instead of moving it. */
+  const [repositioning, setRepositioning] = useState(false);
+  /** Two-finger gesture state, for pinch to zoom and twist to rotate. */
+  const pinch = useRef<{
+    layerId: string;
+    startDistance: number;
+    startAngle: number;
+    startZoom: number;
+    startRotation: number;
+    startW: number;
+    startH: number;
+  } | null>(null);
+  const pointers = useRef(new Map<number, { x: number; y: number }>());
   const isMobile = useIsMobile();
   const [shortDescription, setShortDescription] = useState('');
   const [tagText, setTagText] = useState('');
@@ -277,22 +291,28 @@ function ReelEditor({
   }, [project, scene, playing, images, canvasW, canvasH, selectedLayerId]);
 
   const updateScene = useCallback(
-    (patch: Partial<ProjectScene>) => {
-      setProject({
-        ...project,
-        scenes: project.scenes.map((s) => (s.id === scene.id ? { ...s, ...patch } : s)),
-      });
+    (patch: Partial<ProjectScene>, coalesceKey?: string) => {
+      setProject(
+        {
+          ...project,
+          scenes: project.scenes.map((s) => (s.id === scene.id ? { ...s, ...patch } : s)),
+        },
+        coalesceKey,
+      );
     },
     [project, scene.id, setProject],
   );
 
   const updateLayer = useCallback(
-    (layerId: string, patch: Partial<ProjectLayer>) => {
-      updateScene({
-        layers: scene.layers.map((layer) =>
-          layer.id === layerId ? { ...layer, ...patch } : layer,
-        ),
-      });
+    (layerId: string, patch: Partial<ProjectLayer>, coalesceKey?: string) => {
+      updateScene(
+        {
+          layers: scene.layers.map((layer) =>
+            layer.id === layerId ? { ...layer, ...patch } : layer,
+          ),
+        },
+        coalesceKey,
+      );
     },
     [scene.layers, updateScene],
   );
@@ -359,6 +379,12 @@ function ReelEditor({
   }
 
   function handlePointerDown(event: React.PointerEvent<HTMLCanvasElement>) {
+    pointers.current.set(event.pointerId, pointerPercent(event));
+    if (pointers.current.size > 1) {
+      // A second finger means a gesture, so stop any drag in progress.
+      dragState.current = null;
+      return;
+    }
     const point = pointerPercent(event);
     // Topmost layer wins, matching what the user sees.
     const hit = [...scene.layers]
@@ -378,6 +404,7 @@ function ReelEditor({
     }
 
     const alreadySelected = hit.id === selectedLayerId;
+    if (!alreadySelected) setRepositioning(false);
     setSelectedLayerId(hit.id);
     if (isMobile) {
       // Properties live behind a tab here, so the selection has to take the
@@ -402,6 +429,14 @@ function ReelEditor({
   }
 
   function handlePointerMove(event: React.PointerEvent<HTMLCanvasElement>) {
+    if (pointers.current.has(event.pointerId)) {
+      pointers.current.set(event.pointerId, pointerPercent(event));
+    }
+    if (pointers.current.size > 1) {
+      handleGesture();
+      return;
+    }
+
     const drag = dragState.current;
     if (!drag) return;
     const point = pointerPercent(event);
@@ -416,14 +451,107 @@ function ReelEditor({
     if (!drag.moved && Math.hypot(dx, dy) < 1.5) return;
     drag.moved = true;
 
-    updateLayer(drag.layerId, {
-      box: {
-        ...layer.box,
-        // Clamped so a layer cannot be dragged entirely off the canvas.
-        x: Math.max(-layer.box.w + 5, Math.min(95, drag.boxX + dx)),
-        y: Math.max(-layer.box.h + 5, Math.min(95, drag.boxY + dy)),
+    if (repositioning && layer.type === 'image') {
+      /*
+       * Panning moves the focal point the opposite way to the finger, so the
+       * photo appears to follow the drag. The gain reflects how much hidden
+       * image there is: a slight crop needs a big drag to shift much.
+       */
+      const gain = 2;
+      updateLayer(
+        drag.layerId,
+        {
+          style: {
+            ...layer.style,
+            focusX: Math.max(0, Math.min(100, (layer.style.focusX ?? 50) - dx * gain)),
+            focusY: Math.max(0, Math.min(100, (layer.style.focusY ?? 50) - dy * gain)),
+          },
+        },
+        `focus:${drag.layerId}`,
+      );
+      drag.startX = point.x;
+      drag.startY = point.y;
+      return;
+    }
+
+    updateLayer(
+      drag.layerId,
+      {
+        box: {
+          ...layer.box,
+          // Clamped so a layer cannot be dragged entirely off the canvas.
+          x: Math.max(-layer.box.w + 5, Math.min(95, drag.boxX + dx)),
+          y: Math.max(-layer.box.h + 5, Math.min(95, drag.boxY + dy)),
+        },
       },
-    });
+      `move:${drag.layerId}`,
+    );
+  }
+
+  /**
+   * Two-finger pinch and twist.
+   *
+   * Pinching an image changes how far it is zoomed inside its frame; pinching
+   * anything else resizes the layer. Twisting rotates it either way.
+   */
+  function handleGesture(): void {
+    const points = [...pointers.current.values()];
+    if (points.length < 2 || !selectedLayer) return;
+
+    const [a, b] = points as [{ x: number; y: number }, { x: number; y: number }];
+    const distance = Math.hypot(b.x - a.x, b.y - a.y);
+    const angle = (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI;
+
+    if (!pinch.current || pinch.current.layerId !== selectedLayer.id) {
+      pinch.current = {
+        layerId: selectedLayer.id,
+        startDistance: distance,
+        startAngle: angle,
+        startZoom: selectedLayer.style.imageZoom ?? 1,
+        startRotation: selectedLayer.style.rotation ?? 0,
+        startW: selectedLayer.box.w,
+        startH: selectedLayer.box.h,
+      };
+      return;
+    }
+
+    const state = pinch.current;
+    if (state.startDistance < 1) return;
+
+    const ratio = distance / state.startDistance;
+    const rotation = Math.round(state.startRotation + (angle - state.startAngle));
+
+    if (selectedLayer.type === 'image' && (selectedLayer.style.fit ?? 'cover') === 'cover') {
+      updateLayer(
+        selectedLayer.id,
+        {
+          style: {
+            ...selectedLayer.style,
+            imageZoom: Math.max(1, Math.min(3, state.startZoom * ratio)),
+            rotation,
+          },
+        },
+        `pinch:${selectedLayer.id}`,
+      );
+      return;
+    }
+
+    // Resizing about the centre keeps the layer where the user put it.
+    const width = Math.max(5, Math.min(100, state.startW * ratio));
+    const height = Math.max(3, Math.min(100, state.startH * ratio));
+    updateLayer(
+      selectedLayer.id,
+      {
+        box: {
+          x: selectedLayer.box.x + (selectedLayer.box.w - width) / 2,
+          y: selectedLayer.box.y + (selectedLayer.box.h - height) / 2,
+          w: width,
+          h: height,
+        },
+        style: { ...selectedLayer.style, rotation },
+      },
+      `pinch:${selectedLayer.id}`,
+    );
   }
 
   async function uploadPhoto(file: File, intent: 'layer' | 'logo' | 'library') {
@@ -543,6 +671,28 @@ function ReelEditor({
           className="rounded-lg border border-transparent px-2 py-1 text-lg font-semibold text-slate-900 hover:border-slate-300 focus:border-brand-500 focus:outline-none"
         />
         <span className="text-sm text-slate-500">{duration.toFixed(1)}s</span>
+
+        <div className="flex gap-1">
+          <button
+            onClick={history.undo}
+            disabled={!history.canUndo}
+            title="Undo (⌘Z)"
+            aria-label="Undo"
+            className="min-h-11 rounded-lg border border-slate-300 px-3 text-sm text-slate-700 transition hover:bg-slate-100 disabled:opacity-40 lg:min-h-0 lg:py-1.5"
+          >
+            ↶
+          </button>
+          <button
+            onClick={history.redo}
+            disabled={!history.canRedo}
+            title="Redo (⇧⌘Z)"
+            aria-label="Redo"
+            className="min-h-11 rounded-lg border border-slate-300 px-3 text-sm text-slate-700 transition hover:bg-slate-100 disabled:opacity-40 lg:min-h-0 lg:py-1.5"
+          >
+            ↷
+          </button>
+        </div>
+
         <Button variant="secondary" onClick={() => void handleSave()} disabled={saving}>
           {saving ? 'Saving…' : designId ? 'Save' : 'Save to my designs'}
         </Button>
@@ -683,7 +833,16 @@ function ReelEditor({
               height={canvasH}
               onPointerDown={handlePointerDown}
               onPointerMove={handlePointerMove}
-              onPointerUp={() => (dragState.current = null)}
+              onPointerUp={(event) => {
+                pointers.current.delete(event.pointerId);
+                if (pointers.current.size < 2) pinch.current = null;
+                dragState.current = null;
+              }}
+              onPointerCancel={(event) => {
+                pointers.current.delete(event.pointerId);
+                pinch.current = null;
+                dragState.current = null;
+              }}
               style={{ aspectRatio: '9 / 16' }}
               className="h-[min(44vh,440px)] w-auto max-w-full touch-none rounded-lg bg-black shadow-2xl lg:h-[min(68vh,760px)] lg:cursor-move"
               aria-label="Reel preview"
@@ -712,9 +871,11 @@ function ReelEditor({
               </div>
             ) : (
               <p className="mt-2 text-center text-xs text-slate-400">
-                {isMobile
-                  ? 'Tap to select · drag the selected item to move it'
-                  : 'Click a layer to select it · drag to move it'}
+                {repositioning
+                  ? 'Drag to choose which part of the photo shows'
+                  : isMobile
+                    ? 'Tap to select · drag to move · pinch to resize'
+                    : 'Click to select · drag to move'}
               </p>
             )}
           </div>
@@ -909,6 +1070,12 @@ function ReelEditor({
               layer={selectedLayer}
               onChange={(patch) => updateLayer(selectedLayer.id, patch)}
               onPickImage={() => openFilePicker('layer')}
+              repositioning={repositioning}
+              onToggleReposition={
+                selectedLayer.type === 'image'
+                  ? () => setRepositioning((on) => !on)
+                  : undefined
+              }
             />
             </div>
           ) : (
@@ -990,6 +1157,12 @@ function ReelEditor({
                 layer={selectedLayer}
                 onChange={(patch) => updateLayer(selectedLayer.id, patch)}
                 onPickImage={() => openFilePicker('layer')}
+                repositioning={repositioning}
+                onToggleReposition={
+                  selectedLayer.type === 'image'
+                    ? () => setRepositioning((on) => !on)
+                    : undefined
+                }
               />
             ) : (
               <p className="py-4 text-center text-sm text-slate-500">
