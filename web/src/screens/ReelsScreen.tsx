@@ -339,8 +339,8 @@ function ReelEditor({
       {error && <Alert>{error}</Alert>}
       {notice && <Alert tone="success">{notice}</Alert>}
 
-      <div className="grid gap-4 lg:grid-cols-[260px_300px_1fr]">
-        {/* Scenes and layers */}
+      <div className="grid items-start gap-4 lg:grid-cols-[220px_minmax(0,1fr)_340px]">
+        {/* Scenes */}
         <div className="space-y-3">
           <Card className="p-3">
             <div className="mb-2 flex items-center justify-between">
@@ -349,7 +349,7 @@ function ReelEditor({
                 + Add
               </button>
             </div>
-            <ul className="space-y-1">
+            <ul className="max-h-56 space-y-1 overflow-y-auto">
               {project.scenes.map((s, index) => (
                 <li key={s.id}>
                   <button
@@ -435,9 +435,64 @@ function ReelEditor({
             </div>
           </Card>
 
+        </div>
+
+        {/* Preview — the centrepiece, sized to the viewport */}
+        <div className="flex flex-col items-center gap-3">
+          <div className="flex w-full flex-col items-center rounded-xl border border-slate-200 bg-slate-900 p-4">
+            <canvas
+              ref={canvasRef}
+              width={canvasW}
+              height={canvasH}
+              onPointerDown={handlePointerDown}
+              onPointerMove={handlePointerMove}
+              onPointerUp={() => (dragState.current = null)}
+              style={{ aspectRatio: '9 / 16' }}
+              className="h-[min(68vh,760px)] w-auto max-w-full cursor-move touch-none rounded-lg bg-black shadow-2xl"
+              aria-label="Reel preview"
+            />
+
+            <div className="mt-3 flex w-full items-center justify-center gap-2">
+              <Button variant="secondary" onClick={() => setPlaying((v) => !v)}>
+                {playing ? '⏸ Pause' : '▶ Play all'}
+              </Button>
+              <Button onClick={() => void handleCreate()} disabled={recording}>
+                {recording ? 'Recording…' : '● Create reel'}
+              </Button>
+            </div>
+
+            {recording ? (
+              <div className="mt-3 w-full max-w-sm">
+                <div className="h-1.5 overflow-hidden rounded-full bg-slate-700">
+                  <div
+                    className="h-full bg-brand-500 transition-all"
+                    style={{ width: `${Math.round(progress * 100)}%` }}
+                  />
+                </div>
+                <p className="mt-1 text-center text-xs text-slate-300">
+                  Recording in real time… {Math.round(progress * 100)}%
+                </p>
+              </div>
+            ) : (
+              <p className="mt-2 text-center text-xs text-slate-400">
+                Click a layer to select it · drag to move it
+              </p>
+            )}
+          </div>
+
+          {result && (
+            <Card className="w-full p-2">
+              <p className="mb-1 text-xs font-medium text-slate-700">Your reel</p>
+              <video src={result} controls playsInline className="w-full rounded-lg" />
+            </Card>
+          )}
+        </div>
+
+        {/* Layers and the selected layer's properties */}
+        <div className="space-y-3">
           <Card className="p-3">
             <h3 className="mb-2 text-sm font-medium text-slate-900">Layers</h3>
-            <ul className="space-y-1">
+            <ul className="max-h-48 space-y-1 overflow-y-auto">
               {[...scene.layers].reverse().map((layer) => {
                 const index = scene.layers.indexOf(layer);
                 return (
@@ -523,14 +578,12 @@ function ReelEditor({
               </button>
             </div>
           </Card>
-        </div>
-
-        {/* Properties */}
         <Card className="p-3">
           <h3 className="mb-2 text-sm font-medium text-slate-900">
             {selectedLayer ? selectedLayer.name : 'Nothing selected'}
           </h3>
           {selectedLayer ? (
+            <div className="max-h-[52vh] overflow-y-auto pr-1">
             <LayerProperties
               layer={selectedLayer}
               onChange={(patch) => updateLayer(selectedLayer.id, patch)}
@@ -539,6 +592,7 @@ function ReelEditor({
                 fileInput.current?.click();
               }}
             />
+            </div>
           ) : (
             <p className="text-sm text-slate-500">
               Click something on the preview, or pick a layer, to edit it. Drag on the preview to
@@ -546,49 +600,6 @@ function ReelEditor({
             </p>
           )}
         </Card>
-
-        {/* Preview */}
-        <div className="space-y-2">
-          <Card className="p-3">
-            <canvas
-              ref={canvasRef}
-              width={canvasW}
-              height={canvasH}
-              onPointerDown={handlePointerDown}
-              onPointerMove={handlePointerMove}
-              onPointerUp={() => (dragState.current = null)}
-              className="w-full max-w-[280px] cursor-move touch-none rounded-lg bg-black"
-              aria-label="Reel preview"
-            />
-            <div className="mt-2 flex gap-2">
-              <Button variant="secondary" onClick={() => setPlaying((v) => !v)}>
-                {playing ? '⏸ Pause' : '▶ Play all'}
-              </Button>
-            </div>
-            {recording && (
-              <div className="mt-2">
-                <div className="h-1.5 overflow-hidden rounded-full bg-slate-200">
-                  <div
-                    className="h-full bg-brand-600 transition-all"
-                    style={{ width: `${Math.round(progress * 100)}%` }}
-                  />
-                </div>
-                <p className="mt-1 text-xs text-slate-500">
-                  Recording… {Math.round(progress * 100)}%
-                </p>
-              </div>
-            )}
-          </Card>
-
-          <Button onClick={() => void handleCreate()} disabled={recording}>
-            {recording ? 'Recording…' : 'Create reel'}
-          </Button>
-
-          {result && (
-            <Card className="p-2">
-              <video src={result} controls playsInline className="w-full rounded-lg" />
-            </Card>
-          )}
         </div>
       </div>
 

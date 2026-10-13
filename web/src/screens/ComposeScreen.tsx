@@ -110,7 +110,7 @@ export function ComposeScreen({ onPublished }: { onPublished: () => void }) {
   }
 
   return (
-    <div className="space-y-5">
+    <div className="mx-auto max-w-3xl space-y-5">
       <div>
         <h2 className="text-lg font-semibold text-slate-900">New post</h2>
         <p className="mt-0.5 text-sm text-slate-600">

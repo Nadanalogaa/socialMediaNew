@@ -63,7 +63,7 @@ export function DashboardScreen({ session, onSignOut, onSessionChange }: Props) 
   return (
     <div className="flex min-h-full flex-col bg-slate-50">
       <header className="sticky top-0 z-10 border-b border-slate-200 bg-white">
-        <div className="mx-auto flex w-full max-w-3xl items-center justify-between px-5 py-3">
+        <div className="mx-auto flex w-full max-w-[1700px] items-center justify-between px-5 py-3">
           <div className="flex min-w-0 items-center gap-2">
             <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-600 text-sm font-bold text-white">
               SB
@@ -78,7 +78,7 @@ export function DashboardScreen({ session, onSignOut, onSessionChange }: Props) 
           </button>
         </div>
 
-        <nav className="mx-auto w-full max-w-3xl overflow-x-auto px-5">
+        <nav className="mx-auto w-full max-w-[1700px] overflow-x-auto px-5">
           <ul className="flex gap-1 pb-2">
             {TABS.map((item) => (
               <li key={item.key}>
@@ -101,7 +101,7 @@ export function DashboardScreen({ session, onSignOut, onSessionChange }: Props) 
         </nav>
       </header>
 
-      <main className="mx-auto w-full max-w-3xl flex-1 px-5 py-6">
+      <main className="mx-auto w-full max-w-[1700px] flex-1 px-5 py-6">
         {tab === 'compose' && (
           <ComposeScreen
             key={session.organization.id}
