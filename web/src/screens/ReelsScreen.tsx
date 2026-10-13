@@ -141,6 +141,7 @@ function ReelEditor({
   const [result, setResult] = useState<MediaAsset | null>(null);
   /** The photo highlighted in the library, which the Use buttons act on. */
   const [activePhoto, setActivePhoto] = useState<string | null>(null);
+  const [previewOpen, setPreviewOpen] = useState(false);
 
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
@@ -533,17 +534,16 @@ function ReelEditor({
             <div className="flex w-full items-center gap-3 rounded-xl border border-emerald-200 bg-emerald-50 p-3">
               {/* Small enough to stay out of the way; the preview above is the
                   thing worth looking at. */}
-              <video
-                src={result.url}
-                muted
-                playsInline
-                onMouseEnter={(e) => void e.currentTarget.play()}
-                onMouseLeave={(e) => {
-                  e.currentTarget.pause();
-                  e.currentTarget.currentTime = 0;
-                }}
-                className="h-20 w-[45px] shrink-0 rounded-md bg-black object-cover"
-              />
+              <button
+                onClick={() => setPreviewOpen(true)}
+                title="Preview"
+                className="relative h-20 w-[45px] shrink-0 overflow-hidden rounded-md bg-black"
+              >
+                <video src={result.url} muted playsInline className="h-full w-full object-cover" />
+                <span className="absolute inset-0 flex items-center justify-center text-white">
+                  ▶
+                </span>
+              </button>
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium text-emerald-900">Reel ready</p>
                 <p className="text-xs text-emerald-800">
@@ -551,6 +551,9 @@ function ReelEditor({
                 </p>
               </div>
               <div className="flex shrink-0 gap-2">
+                <Button variant="secondary" onClick={() => setPreviewOpen(true)}>
+                  Preview
+                </Button>
                 <a
                   href={result.url}
                   download={`${project.name || 'reel'}.mp4`}
@@ -718,6 +721,55 @@ function ReelEditor({
         </Card>
         </div>
       </div>
+
+      {previewOpen && result && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label="Reel preview"
+          onClick={() => setPreviewOpen(false)}
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/80 p-4"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="flex max-h-full flex-col items-center gap-3"
+          >
+            <video
+              src={result.url}
+              controls
+              autoPlay
+              loop
+              playsInline
+              className="max-h-[78vh] rounded-xl bg-black shadow-2xl"
+            />
+            <div className="flex flex-wrap items-center justify-center gap-2">
+              <a
+                href={result.url}
+                download={`${project.name || 'reel'}.mp4`}
+                target="_blank"
+                rel="noreferrer"
+                className="rounded-lg bg-white px-4 py-2 text-sm font-medium text-slate-900 hover:bg-slate-100"
+              >
+                Export MP4
+              </a>
+              <Button
+                onClick={() => {
+                  setPreviewOpen(false);
+                  onPublish?.(result);
+                }}
+              >
+                Publish
+              </Button>
+              <button
+                onClick={() => setPreviewOpen(false)}
+                className="rounded-lg border border-white/30 px-4 py-2 text-sm text-white hover:bg-white/10"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <input
         ref={fileInput}

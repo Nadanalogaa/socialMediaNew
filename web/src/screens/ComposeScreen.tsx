@@ -83,7 +83,7 @@ export function ComposeScreen({
     }
   }
 
-  async function handlePublish() {
+  async function handleSubmit(asDraft: boolean) {
     setError(null);
     setNotice(null);
     if (!asset) return setError('Add a photo or video first.');
@@ -97,12 +97,15 @@ export function ComposeScreen({
         mediaAssetIds: [asset.id],
         targets: [...selected].map((connectionId) => ({ connectionId })),
         scheduledAt: scheduledAt ? new Date(scheduledAt).toISOString() : undefined,
+        asDraft,
       });
 
       setNotice(
-        post.status === 'scheduled'
-          ? 'Scheduled. It will publish automatically at the time you set.'
-          : 'Publishing now — watch its progress in Posts.',
+        asDraft
+          ? 'Saved as a draft. Publish it from the Posts tab when you are ready.'
+          : post.status === 'scheduled'
+            ? 'Scheduled. It will publish automatically at the time you set.'
+            : 'Publishing now — watch its progress in Posts.',
       );
       setCaption('');
       setHashtagText('');
@@ -285,11 +288,24 @@ export function ComposeScreen({
         </label>
       </Card>
 
-      <div className="flex justify-end">
-        <Button onClick={handlePublish} disabled={busy || !asset || selected.size === 0}>
+      <div className="flex flex-wrap justify-end gap-2">
+        <Button
+          variant="secondary"
+          onClick={() => void handleSubmit(true)}
+          disabled={busy || !asset || selected.size === 0}
+        >
+          Save as draft
+        </Button>
+        <Button
+          onClick={() => void handleSubmit(false)}
+          disabled={busy || !asset || selected.size === 0}
+        >
           {busy ? 'Working…' : scheduledAt ? 'Schedule post' : 'Publish now'}
         </Button>
       </div>
+      <p className="text-right text-xs text-slate-500">
+        A draft is saved privately — nothing reaches your audience until you publish it.
+      </p>
     </div>
   );
 }

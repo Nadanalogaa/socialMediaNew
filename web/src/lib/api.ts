@@ -341,7 +341,15 @@ export const api = {
     mediaAssetIds: string[];
     targets: { connectionId: string; caption?: string }[];
     scheduledAt?: string;
+    /** Defaults to true on the server; publishing is always deliberate. */
+    asDraft?: boolean;
   }) => request<Post>('/posts', { method: 'POST', body: JSON.stringify(input) }),
+
+  publishPost: (id: string, scheduledAt?: string) =>
+    request<Post>(`/posts/${id}/publish`, {
+      method: 'POST',
+      body: JSON.stringify(scheduledAt ? { scheduledAt } : {}),
+    }),
 
   deletePost: (id: string) => request<void>(`/posts/${id}`, { method: 'DELETE' }),
 };

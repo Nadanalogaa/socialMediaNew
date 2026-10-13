@@ -11,3 +11,15 @@ ReactDOM.createRoot(rootElement).render(
     <App />
   </React.StrictMode>,
 );
+
+/**
+ * Registers the service worker, which is what makes the app installable.
+ *
+ * Deferred until after load so it never competes with the first render, and
+ * failures are ignored: the app works perfectly well without it.
+ */
+if ('serviceWorker' in navigator && import.meta.env.PROD) {
+  window.addEventListener('load', () => {
+    void navigator.serviceWorker.register('/sw.js').catch(() => undefined);
+  });
+}

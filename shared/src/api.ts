@@ -119,6 +119,12 @@ export const createPostSchema = z
     targets: z.array(postTargetSchema).min(1).max(20),
     /** Omit to publish immediately. */
     scheduledAt: z.coerce.date().optional(),
+    /**
+     * Saves without publishing, so the post can be reviewed and edited first.
+     * Defaults to true: publishing to a live audience should be a deliberate
+     * act, not what happens when a field is left out.
+     */
+    asDraft: z.boolean().default(true),
   })
   .refine((v) => !v.scheduledAt || v.scheduledAt.getTime() > Date.now(), {
     message: 'scheduledAt must be in the future',

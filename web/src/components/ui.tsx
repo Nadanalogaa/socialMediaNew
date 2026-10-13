@@ -76,6 +76,8 @@ export function statusTone(status: string): Tone {
     case 'publishing':
     case 'scheduled':
       return 'info';
+    case 'draft':
+      return 'neutral';
     default:
       return 'neutral';
   }

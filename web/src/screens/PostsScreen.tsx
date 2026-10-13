@@ -51,6 +51,17 @@ export function PostsScreen() {
     };
   }, [posts, load]);
 
+  async function handlePublish(id: string) {
+    if (!confirm('Publish this draft to its channels now?')) return;
+    setError(null);
+    try {
+      await api.publishPost(id);
+      await load();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not publish that post.');
+    }
+  }
+
   async function handleDelete(id: string) {
     if (!confirm('Remove this post from your dashboard? It stays live on the platform.')) return;
     try {
@@ -108,11 +119,20 @@ export function PostsScreen() {
                   </div>
                   <div className="flex shrink-0 items-center gap-2">
                     <Badge tone={statusTone(post.status)}>{post.status.replace('_', ' ')}</Badge>
+                    {post.status === 'draft' && (
+                      <Button onClick={() => void handlePublish(post.id)}>Publish</Button>
+                    )}
                     <Button variant="danger" onClick={() => void handleDelete(post.id)}>
                       Remove
                     </Button>
                   </div>
                 </div>
+
+                {post.status === 'draft' && (
+                  <p className="mt-2 border-t border-slate-100 pt-2 text-xs text-slate-500">
+                    Saved privately. Nothing has been sent to your audience.
+                  </p>
+                )}
 
                 <ul className="mt-3 space-y-1.5 border-t border-slate-100 pt-3">
                   {post.targets.map((target) => (

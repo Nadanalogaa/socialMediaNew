@@ -13,3 +13,20 @@ body,
 #root {
   height: 100%;
 }
+
+/* Installed on a phone the app owns the whole screen, so content must clear
+   the notch and the home indicator itself. */
+body {
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* Stops iOS zooming the page when a field is focused, which happens whenever
+   an input's text is under 16px. */
+@media (max-width: 640px) {
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}

@@ -10,7 +10,7 @@ import { and, desc, eq, inArray } from 'drizzle-orm';
 import type { CreatePostInput } from '@socialboost/shared';
 import { db } from '../../db/client.js';
 import { mediaAssets, postMedia, postTargets, posts } from '../../db/schema.js';
-import { badRequest, notFound } from '../../lib/errors.js';
+import { badRequest, notFound, serviceUnavailable } from '../../lib/errors.js';
 import { logger } from '../../lib/logger.js';
 import { publishQueue } from '../../queue/index.js';
 import { canPublishInline, publishPost } from './publisher.js';
@@ -46,6 +46,8 @@ export async function createPost(
     })),
   );
 
+  const initialStatus = input.asDraft ? 'draft' : input.scheduledAt ? 'scheduled' : 'publishing';
+
   const post = await db.transaction(async (tx) => {
     const [created] = await tx
       .insert(posts)
@@ -53,7 +55,7 @@ export async function createPost(
         organizationId,
         caption: input.caption,
         hashtags: input.hashtags,
-        status: input.scheduledAt ? 'scheduled' : 'publishing',
+        status: initialStatus,
         scheduledAt: input.scheduledAt ?? null,
         createdBy: userId,
       })
@@ -81,11 +83,38 @@ export async function createPost(
     return created;
   });
 
-  if (input.scheduledAt) {
+  // A draft is saved and nothing else happens until it is published.
+  if (input.asDraft) return getPost(organizationId, post.id);
+
+  return dispatch(organizationId, post.id, input.scheduledAt);
+}
+
+/**
+ * Sends a saved post on its way.
+ *
+ * Shared by creation and by publishing an existing draft, so both paths behave
+ * identically.
+ */
+export async function dispatch(
+  organizationId: string,
+  postId: string,
+  scheduledAt?: Date,
+) {
+  // Confirms the post is this tenant's before anything is published.
+  const existing = await getPost(organizationId, postId);
+  if (existing.status === 'published') {
+    throw badRequest('This post has already been published.');
+  }
+
+  if (scheduledAt) {
     // BullMQ's delay handles scheduling, so there is no separate cron sweep.
-    const delay = Math.max(0, input.scheduledAt.getTime() - Date.now());
-    await publishQueue.add('publish-post', { postId: post.id, organizationId }, { delay });
-    return getPost(organizationId, post.id);
+    const delay = Math.max(0, scheduledAt.getTime() - Date.now());
+    await db
+      .update(posts)
+      .set({ status: 'scheduled', scheduledAt, updatedAt: new Date() })
+      .where(eq(posts.id, postId));
+    await enqueue(organizationId, postId, delay);
+    return getPost(organizationId, postId);
   }
 
   /*
@@ -94,19 +123,50 @@ export async function createPost(
    * seconds of polling while it transcodes, which outlives any request, so it
    * goes to the queue and waits for a worker.
    */
-  if (await canPublishInline(post.id)) {
+  if (await canPublishInline(postId)) {
     try {
-      await publishPost(post.id, organizationId);
-      return getPost(organizationId, post.id);
+      await publishPost(postId, organizationId);
+      return getPost(organizationId, postId);
     } catch (error) {
       // Falling through to the queue means a transient failure still gets
       // retried rather than leaving the post stuck as `publishing`.
-      logger.warn({ err: error, postId: post.id }, 'Inline publish failed; queueing instead');
+      logger.warn({ err: error, postId }, 'Inline publish failed; queueing instead');
     }
   }
 
-  await publishQueue.add('publish-post', { postId: post.id, organizationId });
-  return getPost(organizationId, post.id);
+  await enqueue(organizationId, postId);
+  return getPost(organizationId, postId);
+}
+
+/**
+ * Queues the publish job.
+ *
+ * If the queue cannot be reached the post is returned to draft rather than
+ * left as `publishing`, which nothing would ever resolve, and the real reason
+ * is reported instead of a generic failure.
+ */
+async function enqueue(organizationId: string, postId: string, delay = 0): Promise<void> {
+  try {
+    await publishQueue.add('publish-post', { postId, organizationId }, delay ? { delay } : {});
+    if (!delay) {
+      await db
+        .update(posts)
+        .set({ status: 'publishing', updatedAt: new Date() })
+        .where(eq(posts.id, postId));
+    }
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    logger.error({ err: error, postId }, 'Could not queue the publish job');
+
+    await db
+      .update(posts)
+      .set({ status: 'draft', updatedAt: new Date() })
+      .where(eq(posts.id, postId));
+
+    throw serviceUnavailable(
+      `This post was saved as a draft but could not be queued for publishing: ${reason}`,
+    );
+  }
 }
 
 export async function getPost(organizationId: string, postId: string) {

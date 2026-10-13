@@ -38,6 +38,23 @@ postsRouter.post(
   }),
 );
 
+/** Publishes a saved draft, or schedules it. */
+postsRouter.post(
+  '/:id/publish',
+  validate(idParamSchema, 'params'),
+  asyncHandler(async (req, res) => {
+    if (!req.params.id) throw badRequest('Post id is required');
+    const scheduledAt =
+      typeof req.body?.scheduledAt === 'string' ? new Date(req.body.scheduledAt) : undefined;
+    const post = await postsService.dispatch(
+      req.tenant!.organizationId,
+      req.params.id,
+      scheduledAt,
+    );
+    res.json(post);
+  }),
+);
+
 postsRouter.get(
   '/:id',
   validate(idParamSchema, 'params'),
