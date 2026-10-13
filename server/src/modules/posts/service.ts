@@ -11,7 +11,9 @@ import type { CreatePostInput } from '@socialboost/shared';
 import { db } from '../../db/client.js';
 import { mediaAssets, postMedia, postTargets, posts } from '../../db/schema.js';
 import { badRequest, notFound } from '../../lib/errors.js';
+import { logger } from '../../lib/logger.js';
 import { publishQueue } from '../../queue/index.js';
+import { canPublishInline, publishPost } from './publisher.js';
 import { resolveConnection } from '../connections/service.js';
 import { assertWithinQuota } from '../usage/service.js';
 
@@ -79,10 +81,31 @@ export async function createPost(
     return created;
   });
 
-  // BullMQ's delay handles scheduling, so there is no separate cron sweep.
-  const delay = input.scheduledAt ? Math.max(0, input.scheduledAt.getTime() - Date.now()) : 0;
-  await publishQueue.add('publish-post', { postId: post.id, organizationId }, { delay });
+  if (input.scheduledAt) {
+    // BullMQ's delay handles scheduling, so there is no separate cron sweep.
+    const delay = Math.max(0, input.scheduledAt.getTime() - Date.now());
+    await publishQueue.add('publish-post', { postId: post.id, organizationId }, { delay });
+    return getPost(organizationId, post.id);
+  }
 
+  /*
+   * An image post takes a couple of seconds, so it publishes here and the
+   * caller gets the real outcome. Video cannot: Instagram needs roughly ninety
+   * seconds of polling while it transcodes, which outlives any request, so it
+   * goes to the queue and waits for a worker.
+   */
+  if (await canPublishInline(post.id)) {
+    try {
+      await publishPost(post.id, organizationId);
+      return getPost(organizationId, post.id);
+    } catch (error) {
+      // Falling through to the queue means a transient failure still gets
+      // retried rather than leaving the post stuck as `publishing`.
+      logger.warn({ err: error, postId: post.id }, 'Inline publish failed; queueing instead');
+    }
+  }
+
+  await publishQueue.add('publish-post', { postId: post.id, organizationId });
   return getPost(organizationId, post.id);
 }
 
