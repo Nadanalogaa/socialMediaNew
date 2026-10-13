@@ -147,6 +147,67 @@ export async function listManagedPages(userAccessToken: string): Promise<Managed
   }));
 }
 
+/**
+ * Permissions actually granted on a token.
+ *
+ * Meta returns an empty Page list both when a user has no Pages and when the
+ * token lacks `pages_show_list`, so the granted set is what distinguishes a
+ * missing permission from a missing Page.
+ */
+export async function getGrantedPermissions(userAccessToken: string): Promise<string[]> {
+  try {
+    const data = await graphRequest<{ data?: { permission: string; status: string }[] }>(
+      '/me/permissions',
+      { params: { access_token: userAccessToken } },
+    );
+    return (data.data ?? [])
+      .filter((entry) => entry.status === 'granted')
+      .map((entry) => entry.permission);
+  } catch (error) {
+    logger.warn({ err: error }, 'Could not read granted permissions');
+    return [];
+  }
+}
+
+/**
+ * Pages reachable through the user's Business portfolios.
+ *
+ * A Page owned by a Business portfolio does not always appear under
+ * `me/accounts`; it has to be read from the business that owns it.
+ */
+export async function listBusinessPages(userAccessToken: string): Promise<ManagedPage[]> {
+  try {
+    const businesses = await graphRequest<{ data?: { id: string; name: string }[] }>(
+      '/me/businesses',
+      { params: { access_token: userAccessToken, limit: '50' } },
+    );
+
+    const pages: ManagedPage[] = [];
+    for (const business of businesses.data ?? []) {
+      for (const edge of ['owned_pages', 'client_pages'] as const) {
+        try {
+          const result = await graphRequest<{
+            data?: { id: string; name: string; access_token?: string }[];
+          }>(`/${business.id}/${edge}`, {
+            params: { access_token: userAccessToken, fields: 'id,name,access_token', limit: '100' },
+          });
+          for (const page of result.data ?? []) {
+            if (page.access_token) {
+              pages.push({ id: page.id, name: page.name, accessToken: page.access_token });
+            }
+          }
+        } catch (error) {
+          logger.warn({ err: error, businessId: business.id, edge }, 'Could not read business pages');
+        }
+      }
+    }
+    return pages;
+  } catch (error) {
+    logger.warn({ err: error }, 'Could not list businesses');
+    return [];
+  }
+}
+
 export interface LinkedInstagramAccount {
   id: string;
   username: string;

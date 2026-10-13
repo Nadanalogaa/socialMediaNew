@@ -46,11 +46,33 @@ export async function beginMetaConnection(
   // Recorded on every connection so a Meta data-deletion request naming this
   // user can find and remove everything they authorised.
   const owner = await meta.getTokenOwner(longLivedToken);
-  const pages = await meta.listManagedPages(longLivedToken);
+  let pages = await meta.listManagedPages(longLivedToken);
+
+  // A Page owned by a Business portfolio may not appear under me/accounts.
+  if (pages.length === 0) {
+    const businessPages = await meta.listBusinessPages(longLivedToken);
+    const seen = new Set(pages.map((page) => page.id));
+    pages = [...pages, ...businessPages.filter((page) => !seen.has(page.id))];
+  }
 
   if (pages.length === 0) {
+    // An empty list means either no Pages or a missing permission, and the
+    // user can only act on the difference if we say which.
+    const granted = await meta.getGrantedPermissions(longLivedToken);
+    logger.warn({ organizationId, granted }, 'Facebook connect returned no Pages');
+
+    if (!granted.includes('pages_show_list')) {
+      throw badRequest(
+        'Facebook did not grant permission to list your Pages. Press Connect again and ' +
+          'make sure every permission stays switched on. ' +
+          `Granted: ${granted.join(', ') || 'none'}.`,
+      );
+    }
+
     throw badRequest(
-      'No Facebook Pages found for this account. You must be an admin of at least one Page.',
+      'Your Facebook account has permission to list Pages, but no Pages were returned. ' +
+        'Check that you are a full admin of the Page (Editor is not enough), and that you ' +
+        'selected it during the Facebook consent step.',
     );
   }
 
