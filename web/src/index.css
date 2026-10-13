@@ -30,3 +30,62 @@ body {
     font-size: 16px;
   }
 }
+
+/* Sliders.
+   Without touch-action:none the browser treats a drag on the thumb as a page
+   scroll, so the control fights the sheet it sits in. The larger thumb is for
+   fingers; the desktop size is unchanged. */
+input[type='range'] {
+  touch-action: none;
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 1.75rem;
+  background: transparent;
+  cursor: pointer;
+}
+
+input[type='range']::-webkit-slider-runnable-track {
+  height: 0.375rem;
+  border-radius: 999px;
+  background: #e2e8f0;
+}
+
+input[type='range']::-moz-range-track {
+  height: 0.375rem;
+  border-radius: 999px;
+  background: #e2e8f0;
+}
+
+input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  margin-top: -0.4375rem;
+  height: 1.25rem;
+  width: 1.25rem;
+  border-radius: 999px;
+  background: #4f46e5;
+  border: 2px solid #ffffff;
+  box-shadow: 0 1px 3px rgb(15 23 42 / 0.3);
+}
+
+input[type='range']::-moz-range-thumb {
+  height: 1.25rem;
+  width: 1.25rem;
+  border-radius: 999px;
+  background: #4f46e5;
+  border: 2px solid #ffffff;
+  box-shadow: 0 1px 3px rgb(15 23 42 / 0.3);
+}
+
+/* Checkboxes and colour swatches need a finger-sized target too. */
+@media (max-width: 1023px) {
+  input[type='checkbox'] {
+    width: 1.15rem;
+    height: 1.15rem;
+  }
+
+  input[type='color'] {
+    height: 2.5rem;
+  }
+}

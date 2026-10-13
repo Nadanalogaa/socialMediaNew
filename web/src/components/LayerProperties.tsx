@@ -222,8 +222,8 @@ export function LayerProperties({
               onChange={(e) => setStyle({ fit: e.target.value as 'cover' | 'contain' })}
               className={inputClass}
             >
-              <option value="cover">Fill the box (crop)</option>
-              <option value="contain">Fit inside (no crop)</option>
+              <option value="cover">Fill the frame — crop the edges</option>
+              <option value="contain">Show the whole photo — leave gaps</option>
             </select>
           </Field>
 
@@ -274,6 +274,11 @@ export function LayerProperties({
                 />
               </label>
 
+              <p className="mb-2 text-xs text-slate-500">
+                Zoom in first if there is nothing to drag — a photo that already
+                fits its frame exactly has nothing hidden to move.
+              </p>
+
               <label className="block">
                 <span className="mb-1 block text-xs text-slate-500">
                   Zoom {((style.imageZoom ?? 1) * 100).toFixed(0)}%
@@ -281,7 +286,7 @@ export function LayerProperties({
                 <input
                   type="range"
                   min="1"
-                  max="3"
+                  max="4"
                   step="0.05"
                   value={style.imageZoom ?? 1}
                   onChange={(e) => setStyle({ imageZoom: Number(e.target.value) })}

@@ -193,9 +193,7 @@ function ReelEditor({
   const pinch = useRef<{
     layerId: string;
     startDistance: number;
-    startAngle: number;
     startZoom: number;
-    startRotation: number;
     startW: number;
     startH: number;
   } | null>(null);
@@ -453,22 +451,36 @@ function ReelEditor({
 
     if (repositioning && layer.type === 'image') {
       /*
-       * Panning moves the focal point the opposite way to the finger, so the
-       * photo appears to follow the drag. The gain reflects how much hidden
-       * image there is: a slight crop needs a big drag to shift much.
+       * The focal point is a percentage of the hidden overflow, so a fixed
+       * multiplier makes the photo move by an amount unrelated to the finger.
+       * Converting the drag into pixels and dividing by the actual overflow
+       * makes the picture track the finger exactly.
        */
-      const gain = 2;
-      updateLayer(
-        drag.layerId,
-        {
-          style: {
-            ...layer.style,
-            focusX: Math.max(0, Math.min(100, (layer.style.focusX ?? 50) - dx * gain)),
-            focusY: Math.max(0, Math.min(100, (layer.style.focusY ?? 50) - dy * gain)),
+      const image = images.get(layer.content);
+      const boxW = (layer.box.w / 100) * canvasW;
+      const boxH = (layer.box.h / 100) * canvasH;
+
+      if (image) {
+        const base = Math.max(boxW / image.width, boxH / image.height);
+        const scale = base * (layer.style.imageZoom ?? 1);
+        const overflowX = image.width * scale - boxW;
+        const overflowY = image.height * scale - boxH;
+
+        const deltaX = overflowX > 1 ? ((dx / 100) * canvasW * 100) / overflowX : 0;
+        const deltaY = overflowY > 1 ? ((dy / 100) * canvasH * 100) / overflowY : 0;
+
+        updateLayer(
+          drag.layerId,
+          {
+            style: {
+              ...layer.style,
+              focusX: Math.max(0, Math.min(100, (layer.style.focusX ?? 50) - deltaX)),
+              focusY: Math.max(0, Math.min(100, (layer.style.focusY ?? 50) - deltaY)),
+            },
           },
-        },
-        `focus:${drag.layerId}`,
-      );
+          `focus:${drag.layerId}`,
+        );
+      }
       drag.startX = point.x;
       drag.startY = point.y;
       return;
@@ -500,15 +512,12 @@ function ReelEditor({
 
     const [a, b] = points as [{ x: number; y: number }, { x: number; y: number }];
     const distance = Math.hypot(b.x - a.x, b.y - a.y);
-    const angle = (Math.atan2(b.y - a.y, b.x - a.x) * 180) / Math.PI;
 
     if (!pinch.current || pinch.current.layerId !== selectedLayer.id) {
       pinch.current = {
         layerId: selectedLayer.id,
         startDistance: distance,
-        startAngle: angle,
         startZoom: selectedLayer.style.imageZoom ?? 1,
-        startRotation: selectedLayer.style.rotation ?? 0,
         startW: selectedLayer.box.w,
         startH: selectedLayer.box.h,
       };
@@ -517,18 +526,17 @@ function ReelEditor({
 
     const state = pinch.current;
     if (state.startDistance < 1) return;
-
     const ratio = distance / state.startDistance;
-    const rotation = Math.round(state.startRotation + (angle - state.startAngle));
 
+    // Rotation is deliberately not derived from the gesture: two fingers are
+    // never perfectly level, so every pinch would tilt the layer slightly.
     if (selectedLayer.type === 'image' && (selectedLayer.style.fit ?? 'cover') === 'cover') {
       updateLayer(
         selectedLayer.id,
         {
           style: {
             ...selectedLayer.style,
-            imageZoom: Math.max(1, Math.min(3, state.startZoom * ratio)),
-            rotation,
+            imageZoom: Math.max(1, Math.min(4, state.startZoom * ratio)),
           },
         },
         `pinch:${selectedLayer.id}`,
@@ -548,7 +556,6 @@ function ReelEditor({
           w: width,
           h: height,
         },
-        style: { ...selectedLayer.style, rotation },
       },
       `pinch:${selectedLayer.id}`,
     );
@@ -833,6 +840,9 @@ function ReelEditor({
               height={canvasH}
               onPointerDown={handlePointerDown}
               onPointerMove={handlePointerMove}
+              /* Stops a two-finger gesture scrolling or zooming the page. */
+              onTouchStart={(event) => event.touches.length > 1 && event.preventDefault()}
+              onTouchMove={(event) => event.touches.length > 1 && event.preventDefault()}
               onPointerUp={(event) => {
                 pointers.current.delete(event.pointerId);
                 if (pointers.current.size < 2) pinch.current = null;
