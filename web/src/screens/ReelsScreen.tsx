@@ -746,8 +746,18 @@ function ReelEditor({
       <div
         className={
           isMobile
-            ? 'flex flex-col gap-4 pb-28'
+            ? 'flex flex-col gap-3'
             : 'grid items-start gap-4 lg:grid-cols-[220px_minmax(0,1fr)_340px]'
+        }
+        /* Keeps the preview clear of the panel below it, so nothing shows
+           through from behind. */
+        style={
+          isMobile
+            ? {
+                paddingBottom:
+                  sheetHeight === 'peek' ? '4.5rem' : sheetHeight === 'half' ? '47dvh' : '75dvh',
+              }
+            : undefined
         }
       >
         {/* Scenes */}
@@ -873,10 +883,18 @@ function ReelEditor({
                 pinch.current = null;
                 dragState.current = null;
               }}
+              /* The canvas shrinks as the panel grows, so the two never
+                 overlap and the preview is always wholly visible. */
               style={{ aspectRatio: '9 / 16' }}
-              /* Sized against the space the header, toolbar, sheet and bottom
-                 bar actually leave, so the preview is never pushed off screen. */
-              className="h-[calc(100dvh-20rem)] max-h-[460px] min-h-[220px] w-auto max-w-full touch-none rounded-lg bg-black shadow-2xl lg:h-[min(68vh,760px)] lg:max-h-none lg:cursor-move"
+              className={`w-auto max-w-full touch-none rounded-lg bg-black shadow-xl lg:h-[min(68vh,760px)] lg:max-h-none lg:cursor-move ${
+                isMobile
+                  ? sheetHeight === 'full'
+                    ? 'h-[18dvh]'
+                    : sheetHeight === 'half'
+                      ? 'h-[36dvh]'
+                      : 'h-[62dvh]'
+                  : ''
+              }`}
               aria-label="Reel preview"
             />
 

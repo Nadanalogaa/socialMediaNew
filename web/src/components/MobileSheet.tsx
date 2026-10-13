@@ -1,14 +1,16 @@
 import { useRef, useState, type ReactNode } from 'react';
 
 /**
- * Bottom sheet for the mobile editor.
+ * The control panel for the mobile editor.
  *
- * Overlays the preview rather than pushing it off screen, so what is being
- * edited stays visible while it is edited — the whole problem with putting
- * controls underneath.
+ * It sits *below* the preview rather than over it. An overlay kept the preview
+ * visible but left the toolbar and canvas edge showing underneath, which read
+ * as broken; a clean split has no layering to go wrong, and the preview is
+ * never covered.
  *
- * Three heights: `peek` shows just the tabs, `half` is the working position,
- * and `full` is for long forms. It can be dragged between them.
+ * Two heights: `half` is the working position and `full` is for long forms,
+ * reached by dragging the handle. `peek` collapses it to give the preview the
+ * whole screen.
  */
 
 export type SheetHeight = 'peek' | 'half' | 'full';
@@ -20,8 +22,8 @@ export type SheetHeight = 'peek' | 'half' | 'full';
  */
 const HEIGHTS: Record<SheetHeight, string> = {
   peek: '3.5rem',
-  half: '42dvh',
-  full: '78dvh',
+  half: '44dvh',
+  full: '72dvh',
 };
 
 export function MobileSheet({
@@ -70,7 +72,7 @@ export function MobileSheet({
 
   return (
     <div
-      className="fixed inset-x-0 bottom-14 z-30 flex flex-col rounded-t-2xl border-t border-slate-200 bg-white shadow-[0_-8px_24px_rgba(15,23,42,0.12)] transition-[height] duration-200 lg:hidden"
+      className="fixed inset-x-0 bottom-14 z-30 flex flex-col border-t border-slate-200 bg-white lg:hidden"
       style={{
         height: `calc(${HEIGHTS[height]} + ${dragOffset < 0 ? -dragOffset : 0}px)`,
         paddingBottom: 'env(safe-area-inset-bottom)',
