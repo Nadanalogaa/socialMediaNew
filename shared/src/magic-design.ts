@@ -11,6 +11,8 @@ import type { AspectRatioKey } from './domain.js';
 import { newId, type ProjectLayer, type ProjectScene, type ReelProject } from './reel-project.js';
 
 export interface ParsedScene {
+  /** From a heading like "Scene 1 - Opening Scene". */
+  label?: string;
   /** The line that carries the message. */
   headline: string;
   /** Supporting lines, shown smaller beneath it. */
@@ -21,20 +23,28 @@ export interface ParsedScene {
   wantsPhoto: boolean;
 }
 
-const SCENE_MARKER = /^\s*scene\s*\d+\s*[:.\-]?\s*$/i;
+/**
+ * A scene heading, with an optional label after the number.
+ *
+ * "Scene 1", "Scene 2:", and "Scene 1 - Opening Scene" are all headings; the
+ * label names the scene rather than becoming its first line of text. A line
+ * without a number after "scene" is ordinary content.
+ */
+const SCENE_MARKER = /^\s*scene\s*(\d+)\s*[:.\-–—)]*\s*(.*)$/i;
 const PHOTO_REQUEST = /^\s*(and\s+)?(add|use|insert|put)\s+(a|an|the|some)?\s*(photo|image|picture|pic|video)s?\b/i;
 const CONTACT_LINE = /^\s*(contact|phone|call|mobile|whats?app|website|web|url|email|e-mail|mail|address|visit)\b\s*[:\-–]?/i;
 
 /** Splits a brief into scenes, however it was written. */
 export function parseBrief(brief: string): ParsedScene[] {
   const lines = brief.split('\n');
-  const blocks: string[][] = [];
+  const blocks: { lines: string[]; label?: string }[] = [];
   let current: string[] | null = null;
 
   for (const line of lines) {
-    if (SCENE_MARKER.test(line)) {
+    const heading = SCENE_MARKER.exec(line);
+    if (heading) {
       current = [];
-      blocks.push(current);
+      blocks.push({ lines: current, label: heading[2]?.trim() || undefined });
       continue;
     }
     if (line.trim() === '' && current && current.length > 0) {
@@ -44,23 +54,25 @@ export function parseBrief(brief: string): ParsedScene[] {
     }
     if (!current) {
       current = [];
-      blocks.push(current);
+      blocks.push({ lines: current });
     }
     if (line.trim()) current.push(line.trim());
   }
 
-  const populated = blocks.filter((block) => block.length > 0);
+  const populated = blocks.filter((block) => block.lines.length > 0);
 
   // One unbroken block of prose is a summary, not a scene: a whole paragraph
   // as a single headline is unreadable, so split it into a few scenes.
   const isSingleProseBlock =
     populated.length === 1 &&
-    populated[0]!.length === 1 &&
-    populated[0]![0]!.split(/\s+/).length > 12;
+    populated[0]!.lines.length === 1 &&
+    populated[0]!.lines[0]!.split(/\s+/).length > 12;
 
-  if (populated.length > 0 && !isSingleProseBlock) return populated.map(toScene);
+  if (populated.length > 0 && !isSingleProseBlock) {
+    return populated.map((block) => toScene(block.lines, block.label));
+  }
 
-  const source = isSingleProseBlock ? populated[0]![0]! : brief;
+  const source = isSingleProseBlock ? populated[0]!.lines[0]! : brief;
   const sentences = source
     .split(/(?<=[.!?•])\s+/)
     .map((sentence) => sentence.trim())
@@ -70,7 +82,7 @@ export function parseBrief(brief: string): ParsedScene[] {
 
   // Three scenes is the shape a short reel wants; fewer sentences give fewer.
   const perScene = Math.max(1, Math.ceil(sentences.length / Math.min(3, sentences.length)));
-  return chunk(sentences, perScene).map(toScene);
+  return chunk(sentences, perScene).map((block) => toScene(block));
 }
 
 function chunk<T>(items: T[], size: number): T[][] {
@@ -79,7 +91,7 @@ function chunk<T>(items: T[], size: number): T[][] {
   return out;
 }
 
-function toScene(block: string[]): ParsedScene {
+function toScene(block: string[], label?: string): ParsedScene {
   const body: string[] = [];
   const contact: string[] = [];
   let wantsPhoto = false;
@@ -101,7 +113,7 @@ function toScene(block: string[]): ParsedScene {
   // A scene of nothing but contact details still needs something to lead with.
   if (!headline && contact.length > 0) headline = contact.shift()!;
 
-  return { headline, body, contact, wantsPhoto };
+  return { label, headline, body, contact, wantsPhoto };
 }
 
 /**
@@ -119,7 +131,12 @@ export function sceneDurationFor(scene: ParsedScene): number {
 }
 
 export interface MagicDesignOptions {
-  /** Photos to draw on, in order. Reused if there are fewer than scenes. */
+  /**
+   * A photo chosen for a specific scene, by index. Takes precedence over the
+   * pool, so "this picture on scene 2" is honoured exactly.
+   */
+  scenePhotos?: (string | undefined)[];
+  /** Photos to draw on when a scene has none of its own. */
   photos: string[];
   brandColor: string;
   accentColor: string;
@@ -137,22 +154,26 @@ export function buildProjectFromBrief(
   return {
     name: options.name?.trim() || 'Magic design',
     ratio: options.ratio ?? 'story',
-    scenes: scenes.map((scene, index) => buildScene(scene, index, photos, brandColor, accentColor)),
+    scenes: scenes.map((scene, index) =>
+      buildScene(scene, index, options.scenePhotos?.[index], photos, brandColor, accentColor),
+    ),
   };
 }
 
 function buildScene(
   scene: ParsedScene,
   index: number,
+  chosenPhoto: string | undefined,
   photos: string[],
   brandColor: string,
   accentColor: string,
 ): ProjectScene {
   const layers: ProjectLayer[] = [];
-  // A photo every other scene by default, so a reel alternates rather than
-  // showing the same treatment throughout.
-  const photo = photos.length > 0 ? photos[index % photos.length] : undefined;
-  const usePhoto = Boolean(photo) && (scene.wantsPhoto || index % 2 === 0);
+  // A photo chosen for this scene always wins; otherwise one is taken from the
+  // pool, alternating so a reel is not the same treatment throughout.
+  const fallback = photos.length > 0 ? photos[index % photos.length] : undefined;
+  const photo = chosenPhoto ?? fallback;
+  const usePhoto = Boolean(photo) && (Boolean(chosenPhoto) || scene.wantsPhoto || index % 2 === 0);
 
   layers.push({
     id: newId('layer'),
@@ -249,7 +270,7 @@ function buildScene(
 
   return {
     id: newId('scene'),
-    name: `Scene ${index + 1}`,
+    name: scene.label ? `${index + 1}. ${scene.label}` : `Scene ${index + 1}`,
     durationSeconds: sceneDurationFor(scene),
     // The first scene has nothing to transition from.
     transitionIn: index === 0 ? 'cut' : index % 2 === 0 ? 'slide-up' : 'fade',

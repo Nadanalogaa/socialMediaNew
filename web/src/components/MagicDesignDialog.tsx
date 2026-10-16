@@ -42,7 +42,12 @@ export function MagicDesignDialog({
   const [brandColor, setBrandColor] = useState('#4f46e5');
   const [accentColor, setAccentColor] = useState('#0f172a');
   const [library, setLibrary] = useState<MediaAsset[] | null>(null);
-  const [chosen, setChosen] = useState<string[]>([]);
+  /** A photo picked for one scene, keyed by its position in the brief. */
+  const [scenePhotos, setScenePhotos] = useState<Record<number, string>>({});
+  /** Which scene the picker below is choosing for. */
+  const [pickingFor, setPickingFor] = useState<number | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const photoInput = useRef<HTMLInputElement>(null);
   const [audio, setAudio] = useState<ProjectAudio | undefined>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -82,17 +87,39 @@ export function MagicDesignDialog({
     }
   }
 
+  async function handlePhotoFile(file: File, sceneIndex: number) {
+    setUploading(true);
+    setError(null);
+    try {
+      const signature = await api.uploadSignature();
+      const uploaded = await uploadToCloudinary(file, signature);
+      const asset = await api.registerMedia({
+        kind: 'image',
+        url: uploaded.url,
+        width: uploaded.width,
+        height: uploaded.height,
+      });
+      setLibrary((prev) => [asset, ...(prev ?? [])]);
+      setScenePhotos((prev) => ({ ...prev, [sceneIndex]: asset.url }));
+      setPickingFor(null);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not upload that photo.');
+    } finally {
+      setUploading(false);
+    }
+  }
+
   function handleCreate() {
     if (scenes.length === 0) return;
     setBusy(true);
-    // Chosen photos first, then the rest of the library, so a selection is
-    // honoured but a reel is never left without pictures it asked for.
-    const photos = [
-      ...chosen,
-      ...(library ?? []).map((asset) => asset.url).filter((url) => !chosen.includes(url)),
-    ];
     onCreate(
-      buildProjectFromBrief(scenes, { photos, brandColor, accentColor }),
+      buildProjectFromBrief(scenes, {
+        // A photo chosen for a scene wins; the library fills the rest.
+        scenePhotos: scenes.map((_, index) => scenePhotos[index]),
+        photos: (library ?? []).map((asset) => asset.url),
+        brandColor,
+        accentColor,
+      }),
       audio,
     );
   }
@@ -138,7 +165,8 @@ export function MagicDesignDialog({
 
         <div className="mt-1 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
           <span>
-            Start a line with <strong>Scene 1</strong>, <strong>Scene 2</strong> and so on. Write{' '}
+            Start a line with <strong>Scene 1</strong> — a name after it, like{' '}
+            <strong>Scene 1 - Opening</strong>, is used as the scene's title. Write{' '}
             <strong>add a photo</strong> on its own line where you want a picture. Lines starting
             with <strong>Contact:</strong> or <strong>Website:</strong> are set apart.
           </span>
@@ -157,77 +185,127 @@ export function MagicDesignDialog({
             <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">
               {scenes.length} scene{scenes.length === 1 ? '' : 's'} · {totalSeconds.toFixed(1)}s
             </p>
-            <ul className="space-y-1.5">
+            <ul className="space-y-2">
               {scenes.map((scene, index) => (
-                <li key={index} className="text-sm">
-                  <span className="mr-1.5 inline-flex h-5 w-5 items-center justify-center rounded bg-brand-600 text-xs font-medium text-white">
+                <li
+                  key={index}
+                  className="flex items-start gap-2 rounded-lg border border-slate-200 bg-white p-2"
+                >
+                  <span className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded bg-brand-600 text-xs font-medium text-white">
                     {index + 1}
                   </span>
-                  <span className="font-medium text-slate-900">{scene.headline}</span>
-                  {scene.body.length > 0 && (
-                    <span className="text-slate-500"> · {scene.body.join(' · ')}</span>
-                  )}
-                  {scene.contact.length > 0 && (
-                    <span className="text-slate-400"> · {scene.contact.length} contact line(s)</span>
-                  )}
-                  {scene.wantsPhoto && <span className="ml-1 text-brand-600">📷</span>}
+
+                  <span className="min-w-0 flex-1 text-sm">
+                    <span className="block font-medium text-slate-900">
+                      {scene.headline || <em className="text-slate-400">No headline</em>}
+                    </span>
+                    {scene.label && (
+                      <span className="block text-xs text-slate-400">{scene.label}</span>
+                    )}
+                    {scene.body.length > 0 && (
+                      <span className="block text-xs text-slate-500">{scene.body.join(' · ')}</span>
+                    )}
+                    {scene.contact.length > 0 && (
+                      <span className="block text-xs text-slate-500">
+                        {scene.contact.join(' · ')}
+                      </span>
+                    )}
+                  </span>
+
+                  {/* A photo per scene, chosen or uploaded right here. */}
+                  <button
+                    onClick={() => setPickingFor(pickingFor === index ? null : index)}
+                    className={`shrink-0 overflow-hidden rounded-lg border-2 transition ${
+                      pickingFor === index ? 'border-brand-500' : 'border-slate-200'
+                    }`}
+                    title="Choose a photo for this scene"
+                  >
+                    {scenePhotos[index] ? (
+                      <img
+                        src={scenePhotos[index]}
+                        alt=""
+                        className="h-12 w-12 object-cover"
+                      />
+                    ) : (
+                      <span className="flex h-12 w-12 flex-col items-center justify-center bg-slate-50 text-[10px] leading-tight text-slate-400">
+                        <span className="text-base leading-none">＋</span>
+                        photo
+                      </span>
+                    )}
+                  </button>
                 </li>
               ))}
             </ul>
+
+            {pickingFor !== null && (
+              <div className="mt-2 rounded-lg border border-brand-200 bg-white p-2">
+                <div className="mb-1.5 flex items-center justify-between">
+                  <span className="text-xs font-medium text-slate-700">
+                    Photo for scene {pickingFor + 1}
+                  </span>
+                  <div className="flex gap-2">
+                    <button
+                      onClick={() => photoInput.current?.click()}
+                      disabled={uploading}
+                      className="text-xs font-medium text-brand-600 hover:underline disabled:opacity-50"
+                    >
+                      {uploading ? 'Uploading…' : 'Upload new'}
+                    </button>
+                    {scenePhotos[pickingFor] && (
+                      <button
+                        onClick={() =>
+                          setScenePhotos((prev) => {
+                            const next = { ...prev };
+                            delete next[pickingFor];
+                            return next;
+                          })
+                        }
+                        className="text-xs text-red-600 hover:underline"
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                {library === null ? (
+                  <Spinner className="h-4 w-4 text-slate-400" />
+                ) : library.length === 0 ? (
+                  <p className="text-xs text-slate-500">
+                    No photos yet — upload one, or leave it and this scene gets a colour
+                    background.
+                  </p>
+                ) : (
+                  <ul className="grid grid-cols-8 gap-1">
+                    {library.slice(0, 16).map((asset) => (
+                      <li key={asset.id}>
+                        <button
+                          onClick={() => {
+                            setScenePhotos((prev) => ({ ...prev, [pickingFor]: asset.url }));
+                            setPickingFor(null);
+                          }}
+                          className={`block w-full overflow-hidden rounded border-2 ${
+                            scenePhotos[pickingFor] === asset.url
+                              ? 'border-brand-500'
+                              : 'border-transparent hover:border-slate-300'
+                          }`}
+                        >
+                          <img
+                            src={asset.thumbnailUrl ?? asset.url}
+                            alt=""
+                            className="aspect-square w-full object-cover"
+                          />
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+            )}
           </div>
         )}
 
-        <div className="mt-3 grid gap-3 sm:grid-cols-2">
-          <div>
-            <p className="mb-1.5 text-xs font-medium text-slate-700">
-              Photos{' '}
-              <span className="font-normal text-slate-400">
-                — tap to choose, otherwise your newest are used
-              </span>
-            </p>
-            {library === null ? (
-              <Spinner className="h-4 w-4 text-slate-400" />
-            ) : library.length === 0 ? (
-              <p className="text-xs text-slate-500">
-                No photos yet. The reel will use colour backgrounds; add photos to any scene
-                afterwards.
-              </p>
-            ) : (
-              <ul className="grid grid-cols-6 gap-1">
-                {library.slice(0, 12).map((asset) => {
-                  const picked = chosen.includes(asset.url);
-                  return (
-                    <li key={asset.id}>
-                      <button
-                        onClick={() =>
-                          setChosen((prev) =>
-                            picked
-                              ? prev.filter((url) => url !== asset.url)
-                              : [...prev, asset.url],
-                          )
-                        }
-                        className={`relative block w-full overflow-hidden rounded border-2 ${
-                          picked ? 'border-brand-500' : 'border-transparent'
-                        }`}
-                      >
-                        <img
-                          src={asset.thumbnailUrl ?? asset.url}
-                          alt=""
-                          className="aspect-square w-full object-cover"
-                        />
-                        {picked && (
-                          <span className="absolute right-0 top-0 bg-brand-600 px-1 text-[10px] text-white">
-                            {chosen.indexOf(asset.url) + 1}
-                          </span>
-                        )}
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </div>
-
+        <div className="mt-3">
           <div>
             <p className="mb-1.5 text-xs font-medium text-slate-700">Sound</p>
             {audio ? (
@@ -281,6 +359,18 @@ export function MagicDesignDialog({
             {busy ? 'Building…' : `Create ${scenes.length || ''} scene reel`}
           </Button>
         </div>
+
+        <input
+          ref={photoInput}
+          type="file"
+          accept="image/*"
+          hidden
+          onChange={(e) => {
+            const file = e.target.files?.[0];
+            if (file && pickingFor !== null) void handlePhotoFile(file, pickingFor);
+            e.target.value = '';
+          }}
+        />
 
         <input
           ref={audioInput}
