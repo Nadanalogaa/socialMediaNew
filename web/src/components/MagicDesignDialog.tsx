@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import {
   buildProjectFromBrief,
   parseBrief,
@@ -21,9 +21,19 @@ Dance • Music • Art • Creativity
 
 Scene 3 - Join us
 Learn. Create. Perform. Grow.
-Join Nadanaloga Fine Arts Academy
+Join Nadanaloga Fine Arts Academy [bold, yellow]
 Contact: 095668 66588
 Website: www.nadanaloga.com`;
+
+/** What can go in square brackets at the end of a line. */
+const INSTRUCTION_GROUPS: { title: string; words: string }[] = [
+  { title: 'Look', words: 'bold · light · big · huge · small · caps' },
+  { title: 'Colour', words: 'yellow · gold · red · orange · green · blue · pink · white · or #ff8800' },
+  { title: 'Place', words: 'left · right · centre · gap (space above the line)' },
+  { title: 'Font', words: 'serif · rounded · condensed · mono' },
+  { title: 'Motion', words: 'fade · rise · pop · typewriter · letters · wave · still' },
+  { title: 'Where', words: 'title · body · contact (if a line lands in the wrong place)' },
+];
 
 /**
  * Builds a whole reel from a written brief.
@@ -57,6 +67,7 @@ export function MagicDesignDialog({
   const [audio, setAudio] = useState<ProjectAudio | undefined>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showInstructions, setShowInstructions] = useState(false);
   const audioInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -176,7 +187,16 @@ export function MagicDesignDialog({
             Start a line with <strong>Scene 1</strong> — a name after it, like{' '}
             <strong>Scene 1 - Opening</strong>, is used as the scene's title. Write{' '}
             <strong>add a photo</strong> on its own line where you want a picture. Lines starting
-            with <strong>Contact:</strong> or <strong>Website:</strong> are set apart.
+            with <strong>Contact:</strong> or <strong>Website:</strong> are set apart. Style any
+            line with brackets at its end, like <strong>[bold, big, yellow]</strong> —{' '}
+            <button
+              type="button"
+              onClick={() => setShowInstructions((v) => !v)}
+              className="font-medium text-brand-600 hover:underline"
+            >
+              {showInstructions ? 'hide the list' : 'see all'}
+            </button>
+            .
           </span>
           {brief.trim() === '' && (
             <button
@@ -187,6 +207,21 @@ export function MagicDesignDialog({
             </button>
           )}
         </div>
+
+        {showInstructions && (
+          <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
+            {INSTRUCTION_GROUPS.map((group) => (
+              <Fragment key={group.title}>
+                <dt className="font-medium text-slate-900">{group.title}</dt>
+                <dd>{group.words}</dd>
+              </Fragment>
+            ))}
+            <dd className="col-span-2 pt-1 text-slate-500">
+              Combine them in one bracket: <strong>Admissions open [gap, bold, gold, pop]</strong>.
+              Each line in the brief stays as one line in the reel.
+            </dd>
+          </dl>
+        )}
 
         {scenes.length > 0 && (
           <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">

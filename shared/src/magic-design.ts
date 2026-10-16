@@ -10,6 +10,30 @@
 import type { AspectRatioKey } from './domain.js';
 import { newId, type ProjectLayer, type ProjectScene, type ReelProject } from './reel-project.js';
 
+/**
+ * Instructions written at the end of a line, in square brackets:
+ * "Join us today [bold, big, yellow]". Each one adjusts only that line.
+ */
+export interface LineStyle {
+  weight?: number;
+  /** Multiplier on the size the line would otherwise get. */
+  sizeScale?: number;
+  color?: string;
+  align?: 'left' | 'center' | 'right';
+  uppercase?: boolean;
+  fontFamily?: string;
+  animation?: ProjectLayer['animation'];
+  /** Extra space above the line, to set it apart from what came before. */
+  gapBefore?: boolean;
+  /** Where the line belongs, when the author overrides the guess. */
+  role?: 'headline' | 'body' | 'contact';
+}
+
+export interface BriefLine {
+  text: string;
+  style: LineStyle;
+}
+
 export interface ParsedScene {
   /** From a heading like "Scene 1 - Opening Scene". */
   label?: string;
@@ -21,6 +45,106 @@ export interface ParsedScene {
   contact: string[];
   /** The brief asked for a picture in this scene. */
   wantsPhoto: boolean;
+  /** The same lines with their instructions, for the builder. */
+  lines: {
+    headline?: BriefLine;
+    body: BriefLine[];
+    contact: BriefLine[];
+  };
+}
+
+/** Named colours a brief can ask for; chosen to read over a darkened photo. */
+export const BRIEF_COLORS: Record<string, string> = {
+  white: '#ffffff',
+  black: '#111111',
+  red: '#ef4444',
+  yellow: '#fde047',
+  gold: '#f5c542',
+  orange: '#f97316',
+  green: '#22c55e',
+  lime: '#a3e635',
+  teal: '#2dd4bf',
+  cyan: '#22d3ee',
+  blue: '#60a5fa',
+  purple: '#a78bfa',
+  pink: '#f472b6',
+  cream: '#fef3c7',
+  grey: '#cbd5e1',
+  gray: '#cbd5e1',
+};
+
+/** Font families a brief can ask for, matching the editor's choices. */
+export const BRIEF_FONTS: Record<string, string> = {
+  serif: 'Georgia, "Times New Roman", serif',
+  classic: 'Georgia, "Times New Roman", serif',
+  rounded: '"Trebuchet MS", "Segoe UI", sans-serif',
+  condensed: '"Arial Narrow", "Helvetica Neue", sans-serif',
+  narrow: '"Arial Narrow", "Helvetica Neue", sans-serif',
+  mono: '"SF Mono", Menlo, Consolas, monospace',
+};
+
+const BRIEF_ANIMATIONS: Record<string, ProjectLayer['animation']> = {
+  fade: 'fade-in',
+  rise: 'rise',
+  pop: 'pop',
+  typewriter: 'typewriter',
+  type: 'typewriter',
+  letters: 'letter-rise',
+  wave: 'letter-wave',
+  slide: 'slide-left',
+  still: 'none',
+};
+
+const INSTRUCTIONS = /\s*\[([^\[\]]+)\]\s*$/;
+
+/**
+ * Reads "[bold, big, yellow]" off the end of a line.
+ *
+ * Only brackets that contain at least one known word are instructions; a
+ * line that happens to end in brackets, like "(Sat) [10am]", is left alone.
+ */
+export function readLineInstructions(line: string): BriefLine {
+  const match = INSTRUCTIONS.exec(line);
+  if (!match) return { text: line.trim(), style: {} };
+
+  const style: LineStyle = {};
+  let recognised = false;
+  const words = match[1]!
+    .toLowerCase()
+    .split(/[,\s]+/)
+    .map((word) => word.trim())
+    .filter(Boolean);
+
+  for (const word of words) {
+    let known = true;
+    if (word === 'bold' || word === 'strong') style.weight = 800;
+    else if (word === 'light' || word === 'thin' || word === 'normal') style.weight = 400;
+    else if (word === 'huge' || word === 'biggest') style.sizeScale = 1.6;
+    else if (word === 'big' || word === 'bigger' || word === 'large') style.sizeScale = 1.3;
+    else if (word === 'small' || word === 'smaller') style.sizeScale = 0.8;
+    else if (word === 'tiny') style.sizeScale = 0.65;
+    else if (word === 'caps' || word === 'uppercase' || word === 'capital') style.uppercase = true;
+    else if (word === 'left') style.align = 'left';
+    else if (word === 'right') style.align = 'right';
+    else if (word === 'center' || word === 'centre' || word === 'middle') style.align = 'center';
+    else if (word === 'gap' || word === 'space' || word === 'break') style.gapBefore = true;
+    else if (word === 'title' || word === 'headline' || word === 'heading') style.role = 'headline';
+    else if (word === 'body' || word === 'text' || word === 'plain') style.role = 'body';
+    else if (word === 'contact' || word === 'footer') style.role = 'contact';
+    else if (BRIEF_COLORS[word]) style.color = BRIEF_COLORS[word];
+    else if (/^#([0-9a-f]{3}|[0-9a-f]{6})$/.test(word)) style.color = word;
+    else if (BRIEF_FONTS[word]) style.fontFamily = BRIEF_FONTS[word];
+    else if (BRIEF_ANIMATIONS[word] !== undefined) style.animation = BRIEF_ANIMATIONS[word];
+    else known = false;
+    recognised ||= known;
+  }
+
+  if (!recognised) return { text: line.trim(), style: {} };
+  return { text: line.slice(0, match.index).trim(), style };
+}
+
+function hasInstructions(style: LineStyle): boolean {
+  return Object.keys(style).length > 0;
 }
 
 /**
@@ -105,28 +229,40 @@ function chunk<T>(items: T[], size: number): T[][] {
 }
 
 function toScene(block: string[], label?: string): ParsedScene {
-  const body: string[] = [];
-  const contact: string[] = [];
+  const body: BriefLine[] = [];
+  const contact: BriefLine[] = [];
+  let headline: BriefLine | undefined;
   let wantsPhoto = false;
-  let headline = '';
 
-  for (const line of block) {
-    if (PHOTO_REQUEST.test(line)) {
+  for (const raw of block) {
+    if (PHOTO_REQUEST.test(raw)) {
       wantsPhoto = true;
       continue;
     }
-    if (isContactLine(line)) {
-      contact.push(line);
-      continue;
-    }
-    if (!headline) headline = line;
+    const line = readLineInstructions(raw);
+    if (!line.text) continue;
+
+    // The author's word on where a line belongs beats the guess.
+    const role =
+      line.style.role ??
+      (isContactLine(line.text) ? 'contact' : !headline ? 'headline' : 'body');
+
+    if (role === 'contact') contact.push(line);
+    else if (role === 'headline' && !headline) headline = line;
     else body.push(line);
   }
 
   // A scene of nothing but contact details still needs something to lead with.
   if (!headline && contact.length > 0) headline = contact.shift()!;
 
-  return { label, headline, body, contact, wantsPhoto };
+  return {
+    label,
+    headline: headline?.text ?? '',
+    body: body.map((line) => line.text),
+    contact: contact.map((line) => line.text),
+    wantsPhoto,
+    lines: { headline, body, contact },
+  };
 }
 
 /**
@@ -172,6 +308,62 @@ interface TextBlock {
   animation: ProjectLayer['animation'];
   delaySeconds: number;
   heightPct: number;
+  align?: 'left' | 'center' | 'right';
+  uppercase?: boolean;
+  fontFamily?: string;
+  /** Space above this block, in place of the standard gap. */
+  gapBefore?: number;
+}
+
+/**
+ * Lines of one role, grouped so that neighbours with the same instructions
+ * share a block and a line with its own instructions stands alone.
+ */
+function groupLines(lines: BriefLine[]): BriefLine[][] {
+  const groups: BriefLine[][] = [];
+  for (const line of lines) {
+    const last = groups[groups.length - 1];
+    const canJoin = last && !hasInstructions(line.style) && !hasInstructions(last[0]!.style);
+    if (canJoin) last.push(line);
+    else groups.push([line]);
+  }
+  return groups;
+}
+
+/** The base look of a role, which line instructions then adjust. */
+interface RoleSpec {
+  fontSizePct: number;
+  minFontSizePct: number;
+  maxLines: number;
+  keepLines?: boolean;
+  weight: number;
+  lineHeight: number;
+  color: string;
+  animation: ProjectLayer['animation'];
+  delaySeconds: number;
+}
+
+function blockFor(name: string, lines: BriefLine[], base: RoleSpec, gapBefore?: number): TextBlock {
+  const style = lines[0]!.style;
+  const scale = style.sizeScale ?? 1;
+  const block = fitBlock({
+    name,
+    text: lines.map((line) => line.text).join('\n'),
+    fontSizePct: base.fontSizePct * scale,
+    minFontSizePct: base.minFontSizePct * scale,
+    maxLines: base.maxLines,
+    keepLines: base.keepLines,
+    weight: style.weight ?? base.weight,
+    lineHeight: base.lineHeight,
+    color: style.color ?? base.color,
+    animation: style.animation ?? base.animation,
+    delaySeconds: base.delaySeconds,
+  });
+  block.align = style.align;
+  block.uppercase = style.uppercase;
+  block.fontFamily = style.fontFamily;
+  block.gapBefore = style.gapBefore ? Math.max(gapBefore ?? 0, 5) : gapBefore;
+  return block;
 }
 
 /**
@@ -301,13 +493,13 @@ function buildScene(
    * wordy scene lengthens its stack and a short one sits in the middle.
    */
   const blocks: TextBlock[] = [];
+  const { lines } = scene;
 
-  if (scene.headline) {
+  if (lines.headline) {
+    const headline = lines.headline.text;
     blocks.push(
-      fitBlock({
-        name: scene.headline.slice(0, 24),
-        text: scene.headline,
-        fontSizePct: scene.headline.length > 42 ? 6.4 : scene.headline.length > 24 ? 7.6 : 9,
+      blockFor(headline.slice(0, 24), [lines.headline], {
+        fontSizePct: headline.length > 42 ? 6.4 : headline.length > 24 ? 7.6 : 9,
         minFontSizePct: 4.6,
         maxLines: 2,
         weight: 800,
@@ -319,49 +511,47 @@ function buildScene(
     );
   }
 
-  if (scene.body.length > 0) {
-    blocks.push(
-      fitBlock({
-        name: 'Details',
-        text: scene.body.join('\n'),
-        fontSizePct: 4,
-        minFontSizePct: 2.4,
-        maxLines: 6,
-        keepLines: true,
-        weight: 500,
-        lineHeight: 1.45,
-        color: '#e2e8f0',
-        animation: 'fade-in',
-        delaySeconds: 0.6,
-      }),
-    );
-  }
+  const BODY: RoleSpec = {
+    fontSizePct: 4,
+    minFontSizePct: 2.4,
+    maxLines: 6,
+    keepLines: true,
+    weight: 500,
+    lineHeight: 1.45,
+    color: '#e2e8f0',
+    animation: 'fade-in',
+    delaySeconds: 0.6,
+  };
+  const CONTACT: RoleSpec = {
+    fontSizePct: 3.4,
+    minFontSizePct: 2.4,
+    maxLines: 4,
+    keepLines: true,
+    weight: 700,
+    lineHeight: 1.4,
+    color: '#ffffff',
+    animation: 'rise',
+    delaySeconds: 0.95,
+  };
 
-  if (scene.contact.length > 0) {
-    blocks.push(
-      fitBlock({
-        name: 'Contact',
-        text: scene.contact.join('\n'),
-        fontSizePct: 3.4,
-        minFontSizePct: 2.4,
-        maxLines: 4,
-        keepLines: true,
-        weight: 700,
-        lineHeight: 1.4,
-        color: '#ffffff',
-        animation: 'rise',
-        delaySeconds: 0.95,
-      }),
-    );
-  }
+  // Lines within a role sit close together; roles are set further apart.
+  const INNER_GAP = 1.2;
+  groupLines(lines.body).forEach((group, i) => {
+    blocks.push(blockFor('Details', group, BODY, i === 0 ? undefined : INNER_GAP));
+  });
+  groupLines(lines.contact).forEach((group, i) => {
+    blocks.push(blockFor('Contact', group, CONTACT, i === 0 ? undefined : INNER_GAP));
+  });
 
   const GAP = 3;
   const SAFE_TOP = 12;
   const SAFE_BOTTOM = 92;
   const available = SAFE_BOTTOM - SAFE_TOP;
 
-  let totalHeight =
-    blocks.reduce((sum, block) => sum + block.heightPct, 0) + GAP * Math.max(0, blocks.length - 1);
+  let gapScale = 1;
+  const gapAbove = (block: TextBlock, i: number) =>
+    i === 0 ? 0 : (block.gapBefore ?? GAP) * gapScale;
+  let totalHeight = blocks.reduce((sum, block, i) => sum + block.heightPct + gapAbove(block, i), 0);
 
   // An extreme brief can outgrow the safe band even at minimum sizes; scale
   // the whole stack down rather than let the last block sit under the
@@ -372,13 +562,15 @@ function buildScene(
       block.fontSizePct *= scale;
       block.heightPct *= scale;
     }
+    gapScale = scale;
     totalHeight = available;
   }
 
   // Centred within the band where nothing else is drawn over it.
   let cursorY = SAFE_TOP + (available - totalHeight) / 2;
 
-  for (const block of blocks) {
+  blocks.forEach((block, i) => {
+    cursorY += gapAbove(block, i);
     layers.push({
       id: newId('layer'),
       type: 'text',
@@ -389,15 +581,17 @@ function buildScene(
         fontSizePct: block.fontSizePct,
         fontWeight: block.weight,
         color: block.color,
-        align: 'center',
+        align: block.align ?? 'center',
         lineHeight: block.lineHeight,
         shadow: { color: 'rgba(0,0,0,0.45)', blur: 22, offsetY: 2 },
+        ...(block.uppercase ? { textTransform: 'uppercase' as const } : {}),
+        ...(block.fontFamily ? { fontFamily: block.fontFamily } : {}),
       },
       animation: block.animation,
       delaySeconds: block.delaySeconds,
     });
-    cursorY += block.heightPct + GAP;
-  }
+    cursorY += block.heightPct;
+  });
 
   return {
     id: newId('scene'),
