@@ -8,3 +8,5 @@ legacy
 !.env.example
 *.log
 deploy
+api
+vercel.json
