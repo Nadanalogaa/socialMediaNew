@@ -9,7 +9,7 @@
 import { and, desc, eq, sql } from 'drizzle-orm';
 import type { AspectRatioKey, CreativeKind } from '@socialboost/shared';
 import { db } from '../../db/client.js';
-import { creatives, mediaAssets } from '../../db/schema.js';
+import { creatives, magicBriefs, mediaAssets } from '../../db/schema.js';
 import { notFound } from '../../lib/errors.js';
 
 export interface SaveDesignInput {
@@ -129,4 +129,59 @@ export async function listTags(organizationId: string): Promise<string[]> {
     .where(eq(creatives.organizationId, organizationId));
 
   return [...new Set(rows.map((row) => row.tag))].sort();
+}
+
+// --- Magic Design briefs ---------------------------------------------------
+
+export interface SaveBriefInput {
+  id?: string;
+  name: string;
+  brief: string;
+  scenePhotos: Record<string, string>;
+  brandColor: string;
+  accentColor: string;
+}
+
+/** Records a brief, updating the entry it was reopened from. */
+export async function saveBrief(organizationId: string, userId: string, input: SaveBriefInput) {
+  const values = {
+    organizationId,
+    name: input.name.trim().slice(0, 120) || 'Untitled brief',
+    brief: input.brief,
+    scenePhotos: input.scenePhotos,
+    brandColor: input.brandColor,
+    accentColor: input.accentColor,
+    updatedAt: new Date(),
+  };
+
+  if (input.id) {
+    const [updated] = await db
+      .update(magicBriefs)
+      .set(values)
+      .where(and(eq(magicBriefs.id, input.id), eq(magicBriefs.organizationId, organizationId)))
+      .returning();
+    if (updated) return updated;
+    // The entry was deleted meanwhile; keep the brief rather than lose it.
+  }
+
+  const [created] = await db
+    .insert(magicBriefs)
+    .values({ ...values, createdBy: userId })
+    .returning();
+  return created!;
+}
+
+export async function listBriefs(organizationId: string) {
+  return db
+    .select()
+    .from(magicBriefs)
+    .where(eq(magicBriefs.organizationId, organizationId))
+    .orderBy(desc(magicBriefs.updatedAt))
+    .limit(50);
+}
+
+export async function deleteBrief(organizationId: string, id: string): Promise<void> {
+  await db
+    .delete(magicBriefs)
+    .where(and(eq(magicBriefs.id, id), eq(magicBriefs.organizationId, organizationId)));
 }

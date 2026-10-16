@@ -269,6 +269,29 @@ export const creatives = pgTable(
   (t) => [index('creatives_org_idx').on(t.organizationId, t.createdAt)],
 );
 
+/**
+ * Every brief a Magic Design was built from, so it can be found again and
+ * rebuilt or edited — whether or not the reel itself was saved.
+ */
+export const magicBriefs = pgTable(
+  'magic_briefs',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    brief: text('brief').notNull(),
+    /** Photo per scene, keyed by scene position. */
+    scenePhotos: jsonb('scene_photos').$type<Record<string, string>>().notNull().default({}),
+    brandColor: text('brand_color').notNull(),
+    accentColor: text('accent_color').notNull(),
+    createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
+    ...timestamps,
+  },
+  (t) => [index('magic_briefs_org_idx').on(t.organizationId, t.updatedAt)],
+);
+
 // --- Organic publishing ---------------------------------------------------
 
 export const posts = pgTable(

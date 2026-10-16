@@ -210,6 +210,16 @@ export interface Post {
   targets: PostTarget[];
 }
 
+export interface SavedBrief {
+  id: string;
+  name: string;
+  brief: string;
+  scenePhotos: Record<string, string>;
+  brandColor: string;
+  accentColor: string;
+  updatedAt: string;
+}
+
 export interface DesignSummary {
   id: string;
   name: string;
@@ -379,6 +389,20 @@ export const api = {
 
   deleteDesign: (id: string) =>
     request<void>(`/creatives/designs/${id}`, { method: 'DELETE' }),
+
+  // --- Magic Design briefs ---
+  listBriefs: () => request<{ briefs: SavedBrief[] }>('/creatives/briefs'),
+
+  saveBrief: (input: {
+    id?: string;
+    name: string;
+    brief: string;
+    scenePhotos: Record<string, string>;
+    brandColor: string;
+    accentColor: string;
+  }) => request<SavedBrief>('/creatives/briefs', { method: 'POST', body: JSON.stringify(input) }),
+
+  deleteBrief: (id: string) => request<void>(`/creatives/briefs/${id}`, { method: 'DELETE' }),
 
   // --- Analytics ---
   getAnalytics: (days: number) => request<AnalyticsPayload>(`/analytics?days=${days}`),

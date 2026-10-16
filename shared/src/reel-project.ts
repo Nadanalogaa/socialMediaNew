@@ -67,6 +67,8 @@ export interface ProjectAudio {
  * closed, and changing one word meant retyping all of it.
  */
 export interface MagicBrief {
+  /** Its row in the brief history, once saved. */
+  id?: string;
   brief: string;
   scenePhotos: Record<number, string>;
   brandColor: string;

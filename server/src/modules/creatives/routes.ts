@@ -140,3 +140,38 @@ creativesRouter.delete(
     res.status(204).end();
   }),
 );
+
+// --- Magic Design briefs ---------------------------------------------------
+
+const saveBriefSchema = z.object({
+  id: z.string().uuid().optional(),
+  name: z.string().max(200),
+  brief: z.string().min(1).max(20000),
+  scenePhotos: z.record(z.string(), z.string().url()).default({}),
+  brandColor: z.string().max(32),
+  accentColor: z.string().max(32),
+});
+
+creativesRouter.get(
+  '/briefs',
+  asyncHandler(async (req, res) => {
+    res.json({ briefs: await designs.listBriefs(req.tenant!.organizationId) });
+  }),
+);
+
+creativesRouter.post(
+  '/briefs',
+  validate(saveBriefSchema),
+  asyncHandler(async (req, res) => {
+    const brief = await designs.saveBrief(req.tenant!.organizationId, req.auth!.userId, req.body);
+    res.status(req.body.id ? 200 : 201).json(brief);
+  }),
+);
+
+creativesRouter.delete(
+  '/briefs/:id',
+  asyncHandler(async (req, res) => {
+    await designs.deleteBrief(req.tenant!.organizationId, String(req.params.id));
+    res.status(204).end();
+  }),
+);

@@ -453,11 +453,12 @@ function buildScene(
   accentColor: string,
 ): ProjectScene {
   const layers: ProjectLayer[] = [];
-  // A photo chosen for this scene always wins; otherwise one is taken from the
-  // pool, alternating so a reel is not the same treatment throughout.
+  // A scene shows a photo only when the author chose one for it, or wrote
+  // "add a photo" and left the choice to the library. A scene with neither
+  // gets a plain colour: nothing the author did not ask for.
   const fallback = photos.length > 0 ? photos[index % photos.length] : undefined;
-  const photo = chosenPhoto ?? fallback;
-  const usePhoto = Boolean(photo) && (Boolean(chosenPhoto) || scene.wantsPhoto || index % 2 === 0);
+  const photo = chosenPhoto ?? (scene.wantsPhoto ? fallback : undefined);
+  const usePhoto = Boolean(photo);
 
   layers.push({
     id: newId('layer'),

@@ -7,7 +7,7 @@ import {
   type ProjectAudio,
   type ReelProject,
 } from '@socialboost/shared';
-import { api, uploadAudio, uploadToCloudinary, type MediaAsset } from '../lib/api';
+import { api, uploadAudio, uploadToCloudinary, type MediaAsset, type SavedBrief } from '../lib/api';
 import { Alert, Button, Spinner } from './ui';
 
 const EXAMPLE = `Scene 1 - Opening
@@ -68,7 +68,40 @@ export function MagicDesignDialog({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showInstructions, setShowInstructions] = useState(false);
+  /** Every brief this workspace has built from, newest first. */
+  const [history, setHistory] = useState<SavedBrief[] | null>(null);
+  const [showHistory, setShowHistory] = useState(false);
+  /** The history entry this brief came from, so a rebuild updates it. */
+  const [briefId, setBriefId] = useState<string | undefined>(initial?.id);
   const audioInput = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    api
+      .listBriefs()
+      .then(({ briefs }) => setHistory(briefs))
+      .catch(() => setHistory([]));
+  }, []);
+
+  function loadFromHistory(saved: SavedBrief) {
+    setBrief(saved.brief);
+    setBrandColor(saved.brandColor);
+    setAccentColor(saved.accentColor);
+    setScenePhotos(
+      Object.fromEntries(Object.entries(saved.scenePhotos).map(([k, v]) => [Number(k), v])),
+    );
+    setBriefId(saved.id);
+    setShowHistory(false);
+  }
+
+  async function removeFromHistory(id: string) {
+    setHistory((prev) => (prev ?? []).filter((entry) => entry.id !== id));
+    if (id === briefId) setBriefId(undefined);
+    try {
+      await api.deleteBrief(id);
+    } catch {
+      // The list refreshes next time; a failed delete is not worth interrupting for.
+    }
+  }
 
   useEffect(() => {
     api
@@ -126,18 +159,38 @@ export function MagicDesignDialog({
     }
   }
 
-  function handleCreate() {
+  async function handleCreate() {
     if (scenes.length === 0) return;
     setBusy(true);
+
+    // Remembered before the reel is built, so the brief is never lost even
+    // if the reel is closed unsaved. A failure here must not block creating.
+    let id = briefId;
+    try {
+      const saved = await api.saveBrief({
+        id,
+        name: scenes[0]?.headline || brief.split('\n')[0]!.slice(0, 80),
+        brief,
+        scenePhotos: Object.fromEntries(
+          Object.entries(scenePhotos).filter(([, url]) => url).map(([k, v]) => [String(k), v]),
+        ),
+        brandColor,
+        accentColor,
+      });
+      id = saved.id;
+    } catch {
+      // History is a convenience; the reel still gets built.
+    }
+
     onCreate(
       buildProjectFromBrief(scenes, {
-        // A photo chosen for a scene wins; the library fills the rest.
+        // A photo chosen for a scene wins; "add a photo" draws on the library.
         scenePhotos: scenes.map((_, index) => scenePhotos[index]),
         photos: (library ?? []).map((asset) => asset.url),
         brandColor,
         accentColor,
       }),
-      { brief, scenePhotos, brandColor, accentColor },
+      { id, brief, scenePhotos, brandColor, accentColor },
       audio,
     );
   }
@@ -163,16 +216,90 @@ export function MagicDesignDialog({
                 : 'Write what each scene should say. The reel is built for you, and you can change anything afterwards.'}
             </p>
           </div>
-          <button
-            onClick={onClose}
-            aria-label="Close"
-            className="shrink-0 rounded-lg px-2 py-1 text-slate-400 hover:bg-slate-100"
-          >
-            ✕
-          </button>
+          <div className="flex shrink-0 items-center gap-1">
+            <button
+              type="button"
+              onClick={() => setShowHistory((v) => !v)}
+              className={`rounded-lg border px-2.5 py-1 text-sm ${
+                showHistory
+                  ? 'border-brand-500 bg-brand-50 text-brand-700'
+                  : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+              }`}
+              title="Briefs you have built before"
+            >
+              🕘 History{history && history.length > 0 ? ` (${history.length})` : ''}
+            </button>
+            <button
+              onClick={onClose}
+              aria-label="Close"
+              className="rounded-lg px-2 py-1 text-slate-400 hover:bg-slate-100"
+            >
+              ✕
+            </button>
+          </div>
         </div>
 
         {error && <Alert>{error}</Alert>}
+
+        {showHistory && (
+          <div className="mb-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
+            <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">
+              Previous briefs
+            </p>
+            {history === null ? (
+              <Spinner />
+            ) : history.length === 0 ? (
+              <p className="text-sm text-slate-500">
+                Nothing yet — every brief you build from is kept here, so you can come back and
+                change it.
+              </p>
+            ) : (
+              <ul className="max-h-64 space-y-1 overflow-y-auto">
+                {history.map((entry) => (
+                  <li
+                    key={entry.id}
+                    className={`flex items-center gap-2 rounded-lg border bg-white p-2 ${
+                      entry.id === briefId ? 'border-brand-400' : 'border-slate-200'
+                    }`}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => loadFromHistory(entry)}
+                      className="min-w-0 flex-1 text-left"
+                      title="Load this brief"
+                    >
+                      <span className="block truncate text-sm font-medium text-slate-900">
+                        {entry.name}
+                      </span>
+                      <span className="block truncate text-xs text-slate-500">
+                        {new Date(entry.updatedAt).toLocaleString()} ·{' '}
+                        {parseBrief(entry.brief).length} scenes
+                        {Object.keys(entry.scenePhotos).length > 0
+                          ? ` · ${Object.keys(entry.scenePhotos).length} photos`
+                          : ''}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => loadFromHistory(entry)}
+                      className="shrink-0 rounded-md bg-brand-600 px-2 py-1 text-xs font-medium text-white hover:bg-brand-700"
+                    >
+                      Open
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => removeFromHistory(entry.id)}
+                      aria-label="Delete this brief"
+                      className="shrink-0 rounded-md px-1.5 py-1 text-slate-400 hover:bg-slate-100 hover:text-red-600"
+                    >
+                      🗑
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
 
         <textarea
           value={brief}
