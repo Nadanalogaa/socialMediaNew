@@ -386,6 +386,61 @@ function drawLayer(
   ctx.restore();
 }
 
+/**
+ * Where a layer can actually be clicked, as percentages of the canvas.
+ *
+ * Text is measured rather than taken from its declared box: raising the font
+ * size or typing a longer line makes the text spill outside the box, and
+ * hit-testing the box then selects whatever is behind — usually the
+ * background photo. Text is also narrowed to the width it really occupies, so
+ * clicking beside a short centred line reaches what is underneath.
+ */
+export function layerHitBox(
+  layer: ProjectLayer,
+  ctx: CanvasRenderingContext2D,
+  width: number,
+  height: number,
+): { x: number; y: number; w: number; h: number } {
+  if (layer.type !== 'text' || !layer.content) return layer.box;
+
+  const style = layer.style;
+  const boxX = (layer.box.x / 100) * width;
+  const boxY = (layer.box.y / 100) * height;
+  const boxW = (layer.box.w / 100) * width;
+  const boxH = (layer.box.h / 100) * height;
+
+  const fontSize = ((style.fontSizePct ?? 5) / 100) * height;
+  const text = style.textTransform === 'uppercase' ? layer.content.toUpperCase() : layer.content;
+
+  ctx.save();
+  ctx.font = `${style.fontWeight ?? 400} ${fontSize}px ${style.fontFamily ?? FONT_STACK}`;
+  const lines = wrapText(ctx, text, boxW);
+  const widest = Math.max(...lines.map((line) => ctx.measureText(line).width), 1);
+  ctx.restore();
+
+  const lineHeight = fontSize * (style.lineHeight ?? 1.25);
+  const blockHeight = lines.length * lineHeight;
+
+  let top = boxY;
+  if (style.verticalAlign === 'center') top = boxY + (boxH - blockHeight) / 2;
+  else if (style.verticalAlign === 'bottom') top = boxY + boxH - blockHeight;
+
+  let left = boxX;
+  if (style.align === 'center') left = boxX + (boxW - widest) / 2;
+  else if (style.align === 'right') left = boxX + boxW - widest;
+
+  // A little slack, so thin text is not a pixel-perfect target.
+  const padX = fontSize * 0.25;
+  const padY = fontSize * 0.2;
+
+  return {
+    x: ((left - padX) / width) * 100,
+    y: ((top - padY) / height) * 100,
+    w: ((widest + padX * 2) / width) * 100,
+    h: ((blockHeight + padY * 2) / height) * 100,
+  };
+}
+
 export function sceneAt(
   project: ReelProject,
   elapsed: number,

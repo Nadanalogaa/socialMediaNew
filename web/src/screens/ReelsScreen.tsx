@@ -24,6 +24,7 @@ import { api, uploadAudio, uploadToCloudinary, type MediaAsset } from '../lib/ap
 import {
   drawProjectFrame,
   drawSelectionOutline,
+  layerHitBox,
   preloadProjectImages,
   recordProject,
   type ImageCache,
@@ -295,7 +296,16 @@ function ReelEditor({
           sceneElapsed: Math.min(scene.durationSeconds, 1.2),
         });
         const selected = scene.layers.find((layer) => layer.id === selectedLayerId);
-        if (selected) drawSelectionOutline(ctx, selected, canvasW, canvasH);
+        if (selected) {
+          // Outlining the hit area, not the declared box, so what is shown as
+          // selected is exactly what responds to a click.
+          drawSelectionOutline(
+            ctx,
+            { box: layerHitBox(selected, ctx, canvasW, canvasH) },
+            canvasW,
+            canvasH,
+          );
+        }
       }
       frameId = requestAnimationFrame(loop);
     };
@@ -382,6 +392,28 @@ function ReelEditor({
     setSceneIndex(scenes.length - 1);
   }
 
+  /**
+   * The layer under a point.
+   *
+   * Topmost wins, matching what the user sees. Text is hit-tested against the
+   * area it actually occupies rather than its declared box, so clicking a line
+   * that has outgrown its box no longer selects the photo behind it.
+   */
+  function layerAt(point: { x: number; y: number }) {
+    const ctx = canvasRef.current?.getContext('2d');
+
+    return [...scene.layers].reverse().find((layer) => {
+      if (layer.hidden) return false;
+      const box = ctx ? layerHitBox(layer, ctx, canvasW, canvasH) : layer.box;
+      return (
+        point.x >= box.x &&
+        point.x <= box.x + box.w &&
+        point.y >= box.y &&
+        point.y <= box.y + box.h
+      );
+    });
+  }
+
   /** Canvas coordinates as a percentage, which is how boxes are stored. */
   function pointerPercent(event: React.PointerEvent<HTMLCanvasElement>) {
     const rect = event.currentTarget.getBoundingClientRect();
@@ -399,17 +431,7 @@ function ReelEditor({
       return;
     }
     const point = pointerPercent(event);
-    // Topmost layer wins, matching what the user sees.
-    const hit = [...scene.layers]
-      .reverse()
-      .find(
-        (layer) =>
-          !layer.hidden &&
-          point.x >= layer.box.x &&
-          point.x <= layer.box.x + layer.box.w &&
-          point.y >= layer.box.y &&
-          point.y <= layer.box.y + layer.box.h,
-      );
+    const hit = layerAt(point);
 
     if (!hit) {
       setSelectedLayerId(null);
