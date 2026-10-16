@@ -64,6 +64,8 @@ export function DashboardScreen({ session, onSignOut, onSessionChange }: Props) 
   const [pendingAsset, setPendingAsset] = useState<MediaAsset | null>(null);
   /** Set when opening a saved design from the library. */
   const [openDesignId, setOpenDesignId] = useState<string | undefined>();
+  /** Set when editing a post from the Posts screen. */
+  const [editingPostId, setEditingPostId] = useState<string | undefined>();
 
   function handleSwitch(organization: Organization) {
     onSessionChange(setActiveOrganization(session, organization));
@@ -92,6 +94,7 @@ export function DashboardScreen({ session, onSignOut, onSessionChange }: Props) 
                     onClick={() => {
                       setTab(item.key);
                       if (item.key !== 'library') setOpenDesignId(undefined);
+                      if (item.key === 'compose') setEditingPostId(undefined);
                     }}
                     aria-current={tab === item.key ? 'page' : undefined}
                     className={`flex items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-sm transition ${
@@ -125,16 +128,30 @@ export function DashboardScreen({ session, onSignOut, onSessionChange }: Props) 
       <main className="mx-auto w-full max-w-[1700px] flex-1 px-4 py-3 pb-24 lg:pb-4">
         {tab === 'compose' && (
           <ComposeScreen
-            key={session.organization.id}
+            key={`${session.organization.id}:${editingPostId ?? 'new'}`}
             initialAsset={pendingAsset}
+            editingPostId={editingPostId}
             onPublished={() => setPostsKey((k) => k + 1)}
             onViewPosts={() => {
               setPendingAsset(null);
+              setEditingPostId(undefined);
               setTab('posts');
             }}
           />
         )}
-        {tab === 'posts' && <PostsScreen key={`${session.organization.id}:${postsKey}`} />}
+        {tab === 'posts' && (
+          <PostsScreen
+            key={`${session.organization.id}:${postsKey}`}
+            onEdit={(post) => {
+              setEditingPostId(post.id);
+              setTab('compose');
+            }}
+            onCompose={() => {
+              setEditingPostId(undefined);
+              setTab('compose');
+            }}
+          />
+        )}
         {tab === 'channels' && <ConnectionsScreen key={session.organization.id} />}
         {tab === 'creatives' && (
           <CreativesScreen
@@ -190,6 +207,7 @@ export function DashboardScreen({ session, onSignOut, onSessionChange }: Props) 
         onSelect={(key) => {
           setTab(key as TabKey);
           if (key !== 'library') setOpenDesignId(undefined);
+          if (key === 'compose') setEditingPostId(undefined);
         }}
         onSignOut={onSignOut}
       />

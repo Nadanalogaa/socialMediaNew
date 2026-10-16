@@ -217,12 +217,14 @@ export async function listConnections(organizationId: string) {
       avatarUrl: connections.avatarUrl,
       status: connections.status,
       lastError: connections.lastError,
+      tokenExpiresAt: connections.tokenExpiresAt,
       createdAt: connections.createdAt,
     })
     .from(connections)
     .where(eq(connections.organizationId, organizationId));
 
-  // Tokens are deliberately absent from this projection.
+  // Tokens are deliberately absent from this projection; only when one
+  // runs out is, so the client can warn before scheduled posts start failing.
   return rows;
 }
 

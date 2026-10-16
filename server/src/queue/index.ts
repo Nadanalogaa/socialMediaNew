@@ -92,6 +92,20 @@ function isConnectionClosed(error: unknown): boolean {
 }
 
 /**
+ * Removes a waiting or delayed job, so a rescheduled post does not also fire
+ * at its old time. A job that has already started or finished is left alone.
+ */
+export async function removeJob(queue: Queue, jobId: string): Promise<void> {
+  await ensureConnected();
+  const job = await queue.getJob(jobId);
+  if (!job) return;
+  const state = await job.getState();
+  if (state === 'delayed' || state === 'waiting' || state === 'prioritized') {
+    await job.remove();
+  }
+}
+
+/**
  * Adds a job, reopening the connection if the previous one died.
  *
  * One retry is enough: a second failure is a real outage rather than a stale

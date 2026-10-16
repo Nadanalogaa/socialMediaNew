@@ -11,7 +11,7 @@ import { and, asc, eq } from 'drizzle-orm';
 import type { Role } from '@socialboost/shared';
 import { db } from '../../db/client.js';
 import { brandProfiles, memberships, organizations } from '../../db/schema.js';
-import { forbidden, notFound } from '../../lib/errors.js';
+import { badRequest, forbidden, notFound } from '../../lib/errors.js';
 
 export interface OrganizationSummary {
   id: string;
@@ -103,4 +103,40 @@ export async function rename(
 
   if (!updated) throw notFound('Organization not found');
   return { id: updated.id, name: updated.name, slug: updated.slug, role: membership.role };
+}
+
+// --- Settings -----------------------------------------------------------------
+
+export async function getSettings(organizationId: string) {
+  const [row] = await db
+    .select({
+      timezone: organizations.timezone,
+      postingSlots: organizations.postingSlots,
+    })
+    .from(organizations)
+    .where(eq(organizations.id, organizationId))
+    .limit(1);
+  return row ?? { timezone: 'Asia/Kolkata', postingSlots: [] };
+}
+
+export async function updateSettings(
+  organizationId: string,
+  input: { timezone?: string; postingSlots?: { days: number[]; time: string }[] },
+) {
+  if (input.timezone) {
+    try {
+      new Intl.DateTimeFormat('en-US', { timeZone: input.timezone });
+    } catch {
+      throw badRequest('That time zone is not recognised.');
+    }
+  }
+  await db
+    .update(organizations)
+    .set({
+      ...(input.timezone ? { timezone: input.timezone } : {}),
+      ...(input.postingSlots ? { postingSlots: input.postingSlots } : {}),
+      updatedAt: new Date(),
+    })
+    .where(eq(organizations.id, organizationId));
+  return getSettings(organizationId);
 }

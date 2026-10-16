@@ -1,3 +1,4 @@
+import { daysUntil } from '../lib/dates';
 import { useEffect, useState } from 'react';
 import {
   ApiError,
@@ -307,9 +308,13 @@ export function ConnectionsScreen() {
                     <p className="mt-1 text-xs text-red-600">{connection.lastError}</p>
                   )}
                 </div>
-                <Badge tone={connection.status === 'active' ? 'success' : 'danger'}>
-                  {connection.status === 'active' ? 'Active' : 'Reconnect needed'}
-                </Badge>
+                {(() => {
+                  const days = connection.tokenExpiresAt ? daysUntil(connection.tokenExpiresAt) : null;
+                  if (connection.status !== 'active') return <Badge tone="danger">Reconnect needed</Badge>;
+                  if (days !== null && days <= 0) return <Badge tone="danger">Access expired</Badge>;
+                  if (days !== null && days <= 10) return <Badge tone="warning">Expires in {days}d</Badge>;
+                  return <Badge tone="success">Active</Badge>;
+                })()}
                 <Button
                   variant="danger"
                   onClick={() => handleDisconnect(connection.id, connection.displayName)}

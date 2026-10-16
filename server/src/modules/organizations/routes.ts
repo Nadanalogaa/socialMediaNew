@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { asyncHandler, requireAuth, validate } from '../../http/middleware.js';
+import { organizationSettingsSchema } from '@socialboost/shared';
+import { asyncHandler, requireAuth, validate, withOrganization } from '../../http/middleware.js';
 import * as organizationsService from './service.js';
 
 const nameSchema = z.object({ name: z.string().min(1).max(120) });
@@ -38,5 +39,23 @@ organizationsRouter.patch(
       req.body.name,
     );
     res.json(organization);
+  }),
+);
+
+// Scoped to the active organisation, unlike the discovery endpoints above.
+organizationsRouter.get(
+  '/current/settings',
+  withOrganization,
+  asyncHandler(async (req, res) => {
+    res.json(await organizationsService.getSettings(req.tenant!.organizationId));
+  }),
+);
+
+organizationsRouter.patch(
+  '/current/settings',
+  withOrganization,
+  validate(organizationSettingsSchema),
+  asyncHandler(async (req, res) => {
+    res.json(await organizationsService.updateSettings(req.tenant!.organizationId, req.body));
   }),
 );

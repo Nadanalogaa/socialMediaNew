@@ -54,10 +54,24 @@ export const organizations = pgTable(
     planCode: text('plan_code').notNull().default('free'),
     /** Set once Razorpay has a customer record for this org. */
     razorpayCustomerId: text('razorpay_customer_id'),
+    /** IANA zone every scheduling time is read and shown in. */
+    timezone: text('timezone').notNull().default('Asia/Kolkata'),
+    /**
+     * The queue's posting times: "9:00 on weekdays, 19:30 every day". A post
+     * added to the queue takes the next free one.
+     */
+    postingSlots: jsonb('posting_slots').$type<PostingSlot[]>().notNull().default([]),
     ...timestamps,
   },
   (t) => [uniqueIndex('organizations_slug_idx').on(t.slug)],
 );
+
+export interface PostingSlot {
+  /** 0 = Sunday … 6 = Saturday. */
+  days: number[];
+  /** Local time, "HH:MM". */
+  time: string;
+}
 
 export const users = pgTable(
   'users',
@@ -311,6 +325,13 @@ export const posts = pgTable(
     status: text('status').$type<PostStatus>().notNull().default('draft'),
     scheduledAt: timestamp('scheduled_at', { withTimezone: true }),
     publishedAt: timestamp('published_at', { withTimezone: true }),
+    /** Posted as the first comment right after publishing — hashtags often live here. */
+    firstComment: text('first_comment'),
+    /** Evergreen content: republished every N days until the date (or forever). */
+    repeatEveryDays: integer('repeat_every_days'),
+    repeatUntil: timestamp('repeat_until', { withTimezone: true }),
+    /** The post this one was recycled from. */
+    parentPostId: uuid('parent_post_id'),
     createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
     ...timestamps,
   },
@@ -357,6 +378,8 @@ export const postTargets = pgTable(
     permalink: text('permalink'),
     error: text('error'),
     publishedAt: timestamp('published_at', { withTimezone: true }),
+    firstCommentId: text('first_comment_id'),
+    firstCommentError: text('first_comment_error'),
     ...timestamps,
   },
   (t) => [
@@ -366,6 +389,21 @@ export const postTargets = pgTable(
 );
 
 /** Engagement snapshots. Append-only so growth over time can be charted. */
+/** Named sets of hashtags, inserted into a caption in one click. */
+export const hashtagGroups = pgTable(
+  'hashtag_groups',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'cascade' }),
+    name: text('name').notNull(),
+    tags: jsonb('tags').$type<string[]>().notNull().default([]),
+    ...timestamps,
+  },
+  (t) => [uniqueIndex('hashtag_groups_org_name_idx').on(t.organizationId, t.name)],
+);
+
 export const postMetrics = pgTable(
   'post_metrics',
   {

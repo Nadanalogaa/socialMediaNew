@@ -169,6 +169,8 @@ export interface Connection {
   avatarUrl: string | null;
   status: string;
   lastError: string | null;
+  /** When the stored token runs out; null for tokens that do not expire. */
+  tokenExpiresAt: string | null;
   createdAt: string;
 }
 
@@ -191,12 +193,24 @@ export interface MediaAsset {
 
 export interface PostTarget {
   id: string;
+  connectionId: string;
   provider: string;
+  /** Per-channel caption; null means the shared caption is used. */
+  caption: string | null;
   status: string;
   externalPostId: string | null;
   permalink: string | null;
   error: string | null;
   publishedAt: string | null;
+  firstCommentId: string | null;
+  firstCommentError: string | null;
+}
+
+export interface PostMedia {
+  id: string;
+  kind: 'image' | 'video';
+  url: string;
+  thumbnailUrl: string | null;
 }
 
 export interface Post {
@@ -206,8 +220,40 @@ export interface Post {
   status: string;
   scheduledAt: string | null;
   publishedAt: string | null;
+  firstComment: string | null;
+  repeatEveryDays: number | null;
+  repeatUntil: string | null;
+  parentPostId: string | null;
   createdAt: string;
   targets: PostTarget[];
+  media: PostMedia[];
+}
+
+export interface HashtagGroup {
+  id: string;
+  name: string;
+  tags: string[];
+}
+
+export interface PostingSlot {
+  days: number[];
+  time: string;
+}
+
+export interface OrganizationSettings {
+  timezone: string;
+  postingSlots: PostingSlot[];
+}
+
+export interface SlotSuggestion {
+  at: string;
+  label: string;
+}
+
+export interface BestTimesReport {
+  basis: 'history' | 'default';
+  timezone: string;
+  times: { weekday: number; hour: number; label: string; score: number; samples: number }[];
 }
 
 export interface SavedBrief {
@@ -429,7 +475,14 @@ export const api = {
     }),
 
   // --- Posts ---
-  listPosts: () => request<{ posts: Post[] }>('/posts'),
+  listPosts: (limit = 50) => request<{ posts: Post[] }>(`/posts?limit=${limit}`),
+
+  calendarPosts: (from: Date, to: Date) =>
+    request<{ posts: Post[] }>(
+      `/posts/calendar?from=${encodeURIComponent(from.toISOString())}&to=${encodeURIComponent(to.toISOString())}`,
+    ),
+
+  getPost: (id: string) => request<Post>(`/posts/${id}`),
 
   createPost: (input: {
     caption: string;
@@ -437,9 +490,27 @@ export const api = {
     mediaAssetIds: string[];
     targets: { connectionId: string; caption?: string }[];
     scheduledAt?: string;
+    firstComment?: string;
+    repeatEveryDays?: number;
+    repeatUntil?: string;
     /** Defaults to true on the server; publishing is always deliberate. */
     asDraft?: boolean;
   }) => request<Post>('/posts', { method: 'POST', body: JSON.stringify(input) }),
+
+  updatePost: (
+    id: string,
+    input: {
+      caption?: string;
+      hashtags?: string[];
+      mediaAssetIds?: string[];
+      targets?: { connectionId: string; caption?: string }[];
+      /** null cancels a schedule (back to draft); a date (re)schedules. */
+      scheduledAt?: string | null;
+      firstComment?: string | null;
+      repeatEveryDays?: number | null;
+      repeatUntil?: string | null;
+    },
+  ) => request<Post>(`/posts/${id}`, { method: 'PATCH', body: JSON.stringify(input) }),
 
   publishPost: (id: string, scheduledAt?: string) =>
     request<Post>(`/posts/${id}/publish`, {
@@ -447,7 +518,30 @@ export const api = {
       body: JSON.stringify(scheduledAt ? { scheduledAt } : {}),
     }),
 
+  duplicatePost: (id: string) => request<Post>(`/posts/${id}/duplicate`, { method: 'POST' }),
+
   deletePost: (id: string) => request<void>(`/posts/${id}`, { method: 'DELETE' }),
+
+  nextSlots: (count = 5) => request<{ slots: SlotSuggestion[] }>(`/posts/next-slots?count=${count}`),
+
+  bestTimes: () => request<BestTimesReport>('/posts/best-times'),
+
+  listHashtagGroups: () => request<{ groups: HashtagGroup[] }>('/posts/hashtag-groups'),
+
+  saveHashtagGroup: (input: { name: string; tags: string[] }) =>
+    request<HashtagGroup>('/posts/hashtag-groups', { method: 'POST', body: JSON.stringify(input) }),
+
+  deleteHashtagGroup: (id: string) =>
+    request<void>(`/posts/hashtag-groups/${id}`, { method: 'DELETE' }),
+
+  // --- Organisation settings ---
+  getSettings: () => request<OrganizationSettings>('/organizations/current/settings'),
+
+  updateSettings: (input: Partial<OrganizationSettings>) =>
+    request<OrganizationSettings>('/organizations/current/settings', {
+      method: 'PATCH',
+      body: JSON.stringify(input),
+    }),
 };
 
 /**

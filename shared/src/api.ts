@@ -119,6 +119,11 @@ export const createPostSchema = z
     targets: z.array(postTargetSchema).min(1).max(20),
     /** Omit to publish immediately. */
     scheduledAt: z.coerce.date().optional(),
+    /** Posted as the first comment after publishing, on every channel. */
+    firstComment: z.string().max(2200).optional(),
+    /** Republish every N days (evergreen content), optionally until a date. */
+    repeatEveryDays: z.number().int().min(1).max(365).optional(),
+    repeatUntil: z.coerce.date().optional(),
     /**
      * Saves without publishing, so the post can be reviewed and edited first.
      * Defaults to true: publishing to a live audience should be a deliberate
@@ -131,6 +136,44 @@ export const createPostSchema = z
     path: ['scheduledAt'],
   });
 export type CreatePostInput = z.infer<typeof createPostSchema>;
+
+/**
+ * Edits to a post that has not been published. `scheduledAt: null` takes a
+ * scheduled post back to a draft; a date (re)schedules it.
+ */
+export const updatePostSchema = z.object({
+  caption: z.string().max(5000).optional(),
+  hashtags: z.array(z.string().max(80)).max(30).optional(),
+  mediaAssetIds: z.array(z.string().uuid()).min(1).max(10).optional(),
+  targets: z.array(postTargetSchema).min(1).max(20).optional(),
+  scheduledAt: z.coerce.date().nullable().optional(),
+  firstComment: z.string().max(2200).nullable().optional(),
+  repeatEveryDays: z.number().int().min(1).max(365).nullable().optional(),
+  repeatUntil: z.coerce.date().nullable().optional(),
+});
+export type UpdatePostInput = z.infer<typeof updatePostSchema>;
+
+export const hashtagGroupSchema = z.object({
+  name: z.string().min(1).max(60),
+  tags: z.array(z.string().min(1).max(80)).min(1).max(30),
+});
+export type HashtagGroupInput = z.infer<typeof hashtagGroupSchema>;
+
+export const postingSlotSchema = z.object({
+  days: z.array(z.number().int().min(0).max(6)).min(1).max(7),
+  time: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'Time must be HH:MM'),
+});
+
+export const organizationSettingsSchema = z.object({
+  timezone: z.string().min(1).max(64).optional(),
+  postingSlots: z.array(postingSlotSchema).max(20).optional(),
+});
+export type OrganizationSettingsInput = z.infer<typeof organizationSettingsSchema>;
+
+export const dateRangeSchema = z.object({
+  from: z.coerce.date(),
+  to: z.coerce.date(),
+});
 
 export const generateCaptionSchema = z.object({
   brief: z.string().min(3).max(1000),

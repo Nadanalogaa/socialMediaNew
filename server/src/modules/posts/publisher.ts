@@ -15,6 +15,7 @@ import type { PostStatus } from '@socialboost/shared';
 import { db } from '../../db/client.js';
 import { mediaAssets, postMedia, postTargets, posts } from '../../db/schema.js';
 import { logger } from '../../lib/logger.js';
+import { enqueue, publishQueue } from '../../queue/index.js';
 import * as meta from '../../integrations/meta.js';
 import { markConnectionError, resolveConnection } from '../connections/service.js';
 import { recordUsage } from '../usage/service.js';
@@ -103,6 +104,29 @@ export async function publishPost(
         postId,
       });
       succeeded++;
+
+      // The first comment is a courtesy, not part of the publish: it must
+      // never turn a published post into a failed one.
+      if (post.firstComment) {
+        try {
+          const commentId = await meta.createComment(
+            result.externalId,
+            connection.accessToken,
+            post.firstComment,
+          );
+          await db
+            .update(postTargets)
+            .set({ firstCommentId: commentId })
+            .where(eq(postTargets.id, target.id));
+        } catch (error) {
+          const reason = error instanceof Error ? error.message : String(error);
+          logger.warn({ err: error, postId, targetId: target.id }, 'First comment failed');
+          await db
+            .update(postTargets)
+            .set({ firstCommentError: reason })
+            .where(eq(postTargets.id, target.id));
+        }
+      }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       logger.error({ err: error, postId, targetId: target.id }, 'Target publish failed');
@@ -129,7 +153,82 @@ export async function publishPost(
     .where(eq(posts.id, postId));
 
   logger.info({ postId, status, succeeded, total: targets.length }, 'Publish finished');
+
+  if (succeeded > 0 && post.repeatEveryDays) {
+    await scheduleRepeat(post, targets, media).catch((error) =>
+      logger.error({ err: error, postId }, 'Could not schedule the next repeat'),
+    );
+  }
+
   return { status, succeeded, total: targets.length };
+}
+
+type PostRow = typeof posts.$inferSelect;
+type TargetRow = typeof postTargets.$inferSelect;
+
+/**
+ * Evergreen posts: a copy is queued for N days on, until the end date.
+ *
+ * Each repeat is its own post, so the history shows every time it went out
+ * and any one occurrence can be edited or cancelled without touching the rest.
+ */
+async function scheduleRepeat(
+  post: PostRow,
+  targets: TargetRow[],
+  media: { kind: string; url: string; position: number }[],
+): Promise<void> {
+  const days = post.repeatEveryDays!;
+  const base = post.scheduledAt ?? new Date();
+  const next = new Date(Math.max(base.getTime(), Date.now()) + days * 86_400_000);
+  if (post.repeatUntil && next.getTime() > post.repeatUntil.getTime()) return;
+
+  const mediaRows = await db
+    .select({ mediaAssetId: postMedia.mediaAssetId, position: postMedia.position })
+    .from(postMedia)
+    .where(eq(postMedia.postId, post.id));
+  void media;
+
+  const copy = await db.transaction(async (tx) => {
+    const [created] = await tx
+      .insert(posts)
+      .values({
+        organizationId: post.organizationId,
+        caption: post.caption,
+        hashtags: post.hashtags,
+        status: 'scheduled',
+        scheduledAt: next,
+        firstComment: post.firstComment,
+        repeatEveryDays: post.repeatEveryDays,
+        repeatUntil: post.repeatUntil,
+        parentPostId: post.parentPostId ?? post.id,
+        createdBy: post.createdBy,
+      })
+      .returning();
+    if (!created) throw new Error('Failed to create the repeat');
+
+    if (mediaRows.length > 0) {
+      await tx
+        .insert(postMedia)
+        .values(mediaRows.map((m) => ({ postId: created.id, mediaAssetId: m.mediaAssetId, position: m.position })));
+    }
+    await tx.insert(postTargets).values(
+      targets.map((t) => ({
+        postId: created.id,
+        connectionId: t.connectionId,
+        provider: t.provider,
+        caption: t.caption,
+      })),
+    );
+    return created;
+  });
+
+  await enqueue(
+    publishQueue,
+    'publish-post',
+    { postId: copy.id, organizationId: post.organizationId },
+    { jobId: `post:${copy.id}`, delay: Math.max(0, next.getTime() - Date.now()) },
+  );
+  logger.info({ postId: post.id, nextPostId: copy.id, next }, 'Repeat scheduled');
 }
 
 type ResolvedConnection = Awaited<ReturnType<typeof resolveConnection>>;

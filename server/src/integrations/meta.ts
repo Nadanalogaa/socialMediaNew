@@ -545,6 +545,23 @@ export async function listComments(
   }));
 }
 
+/**
+ * Posts a comment under a published post or media. Facebook accepts a page
+ * post or video id; Instagram a media id (needs instagram_manage_comments).
+ */
+export async function createComment(
+  objectId: string,
+  pageAccessToken: string,
+  message: string,
+): Promise<string> {
+  const params = new URLSearchParams({ access_token: pageAccessToken, message });
+  const data = await graphRequest<{ id: string }>(`/${objectId}/comments`, {
+    method: 'POST',
+    body: params,
+  });
+  return data.id;
+}
+
 export async function replyToComment(
   commentId: string,
   pageAccessToken: string,
