@@ -5,9 +5,9 @@
 #   compose path docker-compose.yml → paste the variables from
 #   deploy/stack.env.example → Deploy. Redeploy with "Pull and redeploy".
 #
-# Only Nginx Proxy Manager reaches the API, over nadanaloga-main-network (the
-# network the other site already uses). Point a proxy host at
-# socialboost-api:3001 — see deploy/README.md.
+# Only Nginx Proxy Manager reaches the API, over the Docker network NPM is
+# attached to (PROXY_NETWORK; find it in Portainer → Networks). Point a proxy
+# host at socialboost-api:3001 — see deploy/README.md.
 
 services:
   api:
@@ -149,3 +149,4 @@ volumes:
 networks:
   nadanaloga-main-network:
     external: true
+    name: ${PROXY_NETWORK:-nadanaloga-main-network}

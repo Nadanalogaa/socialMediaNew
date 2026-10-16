@@ -16,12 +16,10 @@ Browser ──HTTPS──▶ Nginx Proxy Manager ──▶ socialboost-api:3001 
 ## 1. DNS
 
 At the domain registrar, add an **A record** for the domain (and one for
-`www`) pointing at the VPS: **79.137.75.174** (the OVH server that runs
-`dev.nadanaloga.com`, Portainer at `:9443` and Nginx Proxy Manager at `:81`).
-Wait until `https://dnschecker.org` shows it resolving.
-
-(The Contabo server at 62.171.159.200 hosts `www.nadanaloga.com` and also has
-Portainer; this stack goes on the OVH one, beside the other project.)
+`www`) pointing at the VPS: **62.171.159.200** (the Contabo server, with
+Portainer at `https://62.171.159.200:9443` and Nginx Proxy Manager at
+`http://62.171.159.200:81`). Wait until `https://dnschecker.org` shows it
+resolving.
 
 ## 2. Create the stack in Portainer
 
@@ -32,6 +30,9 @@ Portainer; this stack goes on the OVH one, beside the other project.)
    - Compose path: `docker-compose.yml`
 3. **Environment variables → Advanced mode** and paste the contents of
    [`stack.env.example`](stack.env.example) with the values filled in.
+   `PROXY_NETWORK` must be the Docker network Nginx Proxy Manager sits on:
+   **Portainer → Networks**, look for the one attached to the
+   `nginx-proxy-manager` container (not `bridge`/`host`/`none`).
    The secrets are in `.env.production` on your Mac. Keep `JWT_SECRET` and
    `TOKEN_ENCRYPTION_KEY` **identical** to the current ones, or every saved
    login and every connected Facebook/Instagram account stops working.
@@ -118,7 +119,7 @@ The server holds customers' Facebook and Instagram tokens.
 
 - Only ports 22, 80, 443 and Portainer's 9443 should be open on the VPS firewall.
 - The database and Redis publish no ports; they are reachable only from
-  containers on `nadanaloga-main-network`.
+  containers on the proxy network.
 - The volume `socialboost-pgdata` belongs to this database alone. Never mount
   it in another container (this is how the other site's database was
   corrupted in September 2026).
