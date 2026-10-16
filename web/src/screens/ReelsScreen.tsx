@@ -32,6 +32,7 @@ import { startPreviewLoop } from '../lib/audio';
 import { LayerProperties } from '../components/LayerProperties';
 import { SoundPanel } from '../components/SoundPanel';
 import { MobileSheet, type SheetHeight } from '../components/MobileSheet';
+import { SceneFilmstrip } from '../components/SceneFilmstrip';
 import { Alert, Button, Card, Spinner } from '../components/ui';
 import { useIsMobile } from '../lib/useMediaQuery';
 import { useHistory } from '../lib/useHistory';
@@ -189,6 +190,9 @@ function ReelEditor({
   const [panel, setPanel] = useState<'scenes' | 'layers' | 'style' | 'media' | 'details'>(
     'scenes',
   );
+  /** Desktop right column. Stacking these meant scrolling past three cards to
+   *  reach the one that changes what is selected. */
+  const [sidePanel, setSidePanel] = useState<'style' | 'media' | 'scene'>('style');
   const [sheetHeight, setSheetHeight] = useState<SheetHeight>('peek');
   /** While true, dragging pans the photo inside its frame instead of moving it. */
   const [repositioning, setRepositioning] = useState(false);
@@ -411,6 +415,7 @@ function ReelEditor({
     // does not: the preview is sized against it, so growing it here would
     // resize the canvas under the finger that is about to drag.
     if (isMobile) setPanel('style');
+    else setSidePanel('style');
 
     // The first touch only selects. Moving something requires selecting it
     // first, which is what stops a stray tap shifting the design.
@@ -716,12 +721,35 @@ function ReelEditor({
           disabled={saving}
           title="Save to my designs"
           aria-label="Save to my designs"
-          className="min-h-11 shrink-0 rounded-lg bg-brand-600 px-3 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-60 lg:min-h-0 lg:py-1.5"
+          className="min-h-11 shrink-0 rounded-lg border border-slate-300 px-3 text-sm font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-60 lg:min-h-0 lg:py-1.5"
         >
           <span className="lg:hidden">{saving ? '…' : '✓'}</span>
           <span className="hidden lg:inline">{saving ? 'Saving…' : 'Save'}</span>
         </button>
+
+        {/* The two things you do constantly, always in the same place. */}
+        <div className="hidden shrink-0 gap-2 lg:flex">
+          <Button variant="secondary" onClick={() => setPlaying((v) => !v)}>
+            {playing ? '⏸ Pause' : '▶ Play'}
+          </Button>
+          <Button onClick={() => void handleCreate()} disabled={recording}>
+            {recording ? `Recording ${Math.round(progress * 100)}%` : '● Create reel'}
+          </Button>
+        </div>
       </div>
+
+      {!isMobile && (
+        <SceneFilmstrip
+          project={project}
+          images={images}
+          activeIndex={sceneIndex}
+          onSelect={(index) => {
+            setSceneIndex(index);
+            setSelectedLayerId(null);
+          }}
+          onAdd={addScene}
+        />
+      )}
 
       {/* On a wide screen there is room for these inline. */}
       <div className="hidden gap-2 sm:grid-cols-2 lg:grid">
@@ -746,7 +774,7 @@ function ReelEditor({
         className={
           isMobile
             ? 'flex flex-col gap-3'
-            : 'grid items-start gap-4 lg:grid-cols-[220px_minmax(0,1fr)_340px]'
+            : 'grid gap-4 lg:h-[calc(100dvh-17rem)] lg:grid-cols-[minmax(0,1fr)_360px]'
         }
         /* Keeps the preview clear of the panel below it, so nothing shows
            through from behind. */
@@ -759,107 +787,10 @@ function ReelEditor({
             : undefined
         }
       >
-        {/* Scenes */}
-        <div className={`space-y-3 ${isMobile ? 'hidden' : ''}`}>
-          <Card className="p-3">
-            <div className="mb-2 flex items-center justify-between">
-              <h3 className="text-sm font-medium text-slate-900">Scenes</h3>
-              <button onClick={addScene} className="text-xs text-brand-600 hover:underline">
-                + Add
-              </button>
-            </div>
-            <ul className="max-h-56 space-y-1 overflow-y-auto">
-              {project.scenes.map((s, index) => (
-                <li key={s.id}>
-                  <button
-                    onClick={() => {
-                      setSceneIndex(index);
-                      setSelectedLayerId(null);
-                    }}
-                    className={`flex w-full items-center justify-between rounded-lg px-2 py-1.5 text-left text-sm transition ${
-                      index === sceneIndex
-                        ? 'bg-brand-50 font-medium text-brand-700'
-                        : 'text-slate-700 hover:bg-slate-100'
-                    }`}
-                  >
-                    <span className="truncate">{s.name}</span>
-                    <span className="text-xs text-slate-400">{s.durationSeconds}s</span>
-                  </button>
-                </li>
-              ))}
-            </ul>
-
-            <div className="mt-3 space-y-2 border-t border-slate-100 pt-2">
-              <label className="block">
-                <span className="mb-1 block text-xs font-medium text-slate-600">
-                  Length {scene.durationSeconds.toFixed(1)}s
-                </span>
-                <input
-                  type="range"
-                  min="1"
-                  max="10"
-                  step="0.5"
-                  value={scene.durationSeconds}
-                  onChange={(e) => updateScene({ durationSeconds: Number(e.target.value) })}
-                  className="w-full"
-                />
-              </label>
-              <label className="block">
-                <span className="mb-1 block text-xs font-medium text-slate-600">Entrance</span>
-                <select
-                  value={scene.transitionIn}
-                  onChange={(e) =>
-                    updateScene({ transitionIn: e.target.value as SceneTransition })
-                  }
-                  className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
-                >
-                  {SCENE_TRANSITIONS.map((t) => (
-                    <option key={t.value} value={t.value}>
-                      {t.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <div className="flex gap-1">
-                <button
-                  onClick={() => {
-                    const copy = duplicateScene(scene);
-                    setProject({
-                      ...project,
-                      scenes: [
-                        ...project.scenes.slice(0, sceneIndex + 1),
-                        copy,
-                        ...project.scenes.slice(sceneIndex + 1),
-                      ],
-                    });
-                  }}
-                  className="flex-1 rounded-lg border border-slate-300 px-2 py-1 text-xs hover:bg-slate-50"
-                >
-                  Duplicate
-                </button>
-                <button
-                  disabled={project.scenes.length <= 1}
-                  onClick={() => {
-                    setProject({
-                      ...project,
-                      scenes: project.scenes.filter((s) => s.id !== scene.id),
-                    });
-                    setSceneIndex(Math.max(0, sceneIndex - 1));
-                  }}
-                  className="flex-1 rounded-lg border border-red-300 px-2 py-1 text-xs text-red-700 hover:bg-red-50 disabled:opacity-40"
-                >
-                  Delete
-                </button>
-              </div>
-            </div>
-          </Card>
-
-        </div>
-
-        {/* Preview — the centrepiece, sized to the viewport */}
-        <div className="flex flex-col items-center gap-3">
+        {/* Preview — stays put while the panels beside it scroll. */}
+        <div className="flex min-h-0 flex-col items-center gap-3">
           <div
-            className={`flex w-full flex-col items-center rounded-xl border border-slate-200 bg-slate-900 p-3 lg:p-4 ${
+            className={`flex w-full min-h-0 flex-1 flex-col items-center rounded-xl border border-slate-200 bg-slate-900 p-3 lg:p-4 ${
               isMobile ? 'sticky top-32 z-10' : ''
             }`}
           >
@@ -892,7 +823,7 @@ function ReelEditor({
               /* The canvas shrinks as the panel grows, so the two never
                  overlap and the preview is always wholly visible. */
               style={{ aspectRatio: '9 / 16' }}
-              className={`w-auto max-w-full touch-none rounded-lg bg-black shadow-xl transition-[height] duration-200 lg:h-[min(68vh,760px)] lg:max-h-none lg:cursor-move ${
+              className={`w-auto max-w-full touch-none rounded-lg bg-black shadow-xl transition-[height] duration-200 lg:h-full lg:max-h-none lg:cursor-move ${
                 isMobile
                   ? sheetHeight === 'full'
                     ? 'h-[18dvh]'
@@ -904,7 +835,7 @@ function ReelEditor({
               aria-label="Reel preview"
             />
 
-            <div className="mt-3 flex w-full items-center justify-center gap-2">
+            <div className="mt-3 flex w-full items-center justify-center gap-2 lg:hidden">
               <Button variant="secondary" onClick={() => setPlaying((v) => !v)}>
                 {playing ? '⏸' : '▶'}
                 <span className="ml-1 hidden sm:inline">{playing ? 'Pause' : 'Play all'}</span>
@@ -976,10 +907,37 @@ function ReelEditor({
           )}
         </div>
 
-        {/* Layers, photos and the selected layer's properties */}
-        <div className={`space-y-3 ${isMobile ? 'hidden' : ''}`}>
-          <Card className="p-3">
-            <h3 className="mb-2 text-sm font-medium text-slate-900">Layers</h3>
+        {/* Layers and whichever panel is open, scrolling independently. */}
+        <div
+          className={`flex min-h-0 flex-col gap-3 lg:overflow-hidden ${isMobile ? 'hidden' : ''}`}
+        >
+          <div className="flex shrink-0 gap-1 rounded-xl border border-slate-200 bg-white p-1">
+            {(
+              [
+                ['style', selectedLayer ? 'Selected' : 'Style'],
+                ['media', 'Photos & sound'],
+                ['scene', 'Scene'],
+              ] as const
+            ).map(([key, label]) => (
+              <button
+                key={key}
+                onClick={() => setSidePanel(key)}
+                className={`flex-1 whitespace-nowrap rounded-lg px-2 py-1.5 text-xs transition ${
+                  sidePanel === key
+                    ? 'bg-brand-600 font-medium text-white'
+                    : 'text-slate-600 hover:bg-slate-100'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
+
+          <Card className="shrink-0 p-3">
+            <div className="mb-1 flex items-baseline justify-between">
+              <h3 className="text-sm font-medium text-slate-900">What is in this scene</h3>
+              <span className="text-xs text-slate-400">top of the list is in front</span>
+            </div>
             <ul className="max-h-48 space-y-1 overflow-y-auto">
               {[...scene.layers].reverse().map((layer) => {
                 const index = scene.layers.indexOf(layer);
@@ -1064,7 +1022,86 @@ function ReelEditor({
             </div>
           </Card>
 
-          <Card className="p-3">
+          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
+          <Card className={`p-3 ${sidePanel === 'scene' ? '' : 'hidden'}`}>
+            <h3 className="mb-2 text-sm font-medium text-slate-900">
+              Scene {sceneIndex + 1} of {project.scenes.length}
+            </h3>
+            <p className="mb-3 text-xs text-slate-500">
+              A reel plays its scenes one after another. Pick one in the strip above to edit it.
+            </p>
+
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium text-slate-600">
+                How long it stays on screen — {scene.durationSeconds.toFixed(1)}s
+              </span>
+              <input
+                type="range"
+                min="1"
+                max="10"
+                step="0.5"
+                value={scene.durationSeconds}
+                onChange={(e) =>
+                  updateScene({ durationSeconds: Number(e.target.value) }, 'duration')
+                }
+                className="w-full"
+              />
+            </label>
+
+            <label className="mt-2 block">
+              <span className="mb-1 block text-xs font-medium text-slate-600">
+                How it arrives
+              </span>
+              <select
+                value={scene.transitionIn}
+                onChange={(e) => updateScene({ transitionIn: e.target.value as SceneTransition })}
+                className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm"
+              >
+                {SCENE_TRANSITIONS.map((t) => (
+                  <option key={t.value} value={t.value}>
+                    {t.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <div className="mt-3 flex gap-2">
+              <Button
+                variant="secondary"
+                className="flex-1"
+                onClick={() => {
+                  const copy = duplicateScene(scene);
+                  setProject({
+                    ...project,
+                    scenes: [
+                      ...project.scenes.slice(0, sceneIndex + 1),
+                      copy,
+                      ...project.scenes.slice(sceneIndex + 1),
+                    ],
+                  });
+                  setSceneIndex(sceneIndex + 1);
+                }}
+              >
+                Duplicate
+              </Button>
+              <Button
+                variant="danger"
+                className="flex-1"
+                disabled={project.scenes.length <= 1}
+                onClick={() => {
+                  setProject({
+                    ...project,
+                    scenes: project.scenes.filter((item) => item.id !== scene.id),
+                  });
+                  setSceneIndex(Math.max(0, sceneIndex - 1));
+                }}
+              >
+                Delete
+              </Button>
+            </div>
+          </Card>
+
+          <Card className={`p-3 ${sidePanel === 'media' ? '' : 'hidden'}`}>
             <h3 className="mb-2 text-sm font-medium text-slate-900">Sound</h3>
             <SoundPanel
               audio={project.audio}
@@ -1074,7 +1111,7 @@ function ReelEditor({
             />
           </Card>
 
-          <Card className="p-3">
+          <Card className={`p-3 ${sidePanel === 'media' ? '' : 'hidden'}`}>
             <div className="mb-2 flex items-center justify-between">
               <h3 className="text-sm font-medium text-slate-900">Photos</h3>
               <button
@@ -1154,6 +1191,7 @@ function ReelEditor({
             </p>
           )}
         </Card>
+          </div>
         </div>
       </div>
 
