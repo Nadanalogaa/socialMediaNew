@@ -34,6 +34,19 @@ const SCENE_MARKER = /^\s*scene\s*(\d+)\s*[:.\-–—)]*\s*(.*)$/i;
 const PHOTO_REQUEST = /^\s*(and\s+)?(add|use|insert|put)\s+(a|an|the|some)?\s*(photo|image|picture|pic|video)s?\b/i;
 const CONTACT_LINE = /^\s*(contact|phone|call|mobile|whats?app|website|web|url|email|e-mail|mail|address|visit)\b\s*[:\-–]?/i;
 
+/**
+ * A line that is only a phone number, a web address or an email is contact
+ * detail even without a "Contact:" label. "75679 19201" and
+ * "www.nadanaloga.com" belong with the phone number, not in the body.
+ */
+const BARE_PHONE = /^\s*(\+?\d[\d\s\-().]{6,}\d)\s*$/;
+const BARE_URL = /^\s*(https?:\/\/\S+|www\.\S+|[a-z0-9-]+(\.[a-z0-9-]+)*\.(com|in|org|net|co|io|app|edu)(\/\S*)?)\s*$/i;
+const BARE_EMAIL = /^\s*[^\s@]+@[^\s@]+\.[a-z]{2,}\s*$/i;
+
+function isContactLine(line: string): boolean {
+  return CONTACT_LINE.test(line) || BARE_PHONE.test(line) || BARE_URL.test(line) || BARE_EMAIL.test(line);
+}
+
 /** Splits a brief into scenes, however it was written. */
 export function parseBrief(brief: string): ParsedScene[] {
   const lines = brief.split('\n');
@@ -102,7 +115,7 @@ function toScene(block: string[], label?: string): ParsedScene {
       wantsPhoto = true;
       continue;
     }
-    if (CONTACT_LINE.test(line)) {
+    if (isContactLine(line)) {
       contact.push(line);
       continue;
     }
