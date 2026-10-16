@@ -147,7 +147,7 @@ export interface MagicDesignOptions {
 const CANVAS_W = 1080;
 const CANVAS_H = 1920;
 /** Horizontal margin each side, as a percentage of width. */
-const TEXT_MARGIN_PCT = 8;
+const TEXT_MARGIN_PCT = 6;
 
 interface TextBlock {
   name: string;
@@ -192,17 +192,34 @@ function estimateLines(text: string, fontSizePct: number, weight: number): numbe
   }, 0);
 }
 
-/** Shrinks a block's type until it fits its line budget, then sizes it. */
-function fitBlock(spec: Omit<TextBlock, 'heightPct'> & { minFontSizePct: number; maxLines: number }): TextBlock {
+/**
+ * Shrinks a block's type until it fits its line budget, then sizes it.
+ *
+ * With `keepLines`, the budget is the number of lines the author wrote: a
+ * line in the brief is a line on screen. "Join Nadanaloga Fine Arts Academy"
+ * typed as one line must not come out as two, so the type gets smaller
+ * before it is allowed to wrap. Only below the minimum size does wrapping
+ * become the lesser evil.
+ */
+function fitBlock(
+  spec: Omit<TextBlock, 'heightPct'> & {
+    minFontSizePct: number;
+    maxLines: number;
+    keepLines?: boolean;
+  },
+): TextBlock {
+  const authored = spec.text.split('\n').length;
+  const budget = spec.keepLines ? authored : spec.maxLines;
+
   let fontSizePct = spec.fontSizePct;
   let lines = estimateLines(spec.text, fontSizePct, spec.weight);
 
-  while (lines > spec.maxLines && fontSizePct > spec.minFontSizePct) {
-    fontSizePct = Math.max(spec.minFontSizePct, fontSizePct - 0.4);
+  while (lines > budget && fontSizePct > spec.minFontSizePct) {
+    fontSizePct = Math.max(spec.minFontSizePct, fontSizePct - 0.2);
     lines = estimateLines(spec.text, fontSizePct, spec.weight);
   }
 
-  const { minFontSizePct: _min, maxLines: _max, ...rest } = spec;
+  const { minFontSizePct: _min, maxLines: _max, keepLines: _keep, ...rest } = spec;
   return { ...rest, fontSizePct, heightPct: lines * fontSizePct * spec.lineHeight + 0.5 };
 }
 
@@ -279,7 +296,7 @@ function buildScene(
         text: scene.headline,
         fontSizePct: scene.headline.length > 42 ? 6.4 : scene.headline.length > 24 ? 7.6 : 9,
         minFontSizePct: 4.6,
-        maxLines: 3,
+        maxLines: 2,
         weight: 800,
         lineHeight: 1.15,
         color: '#ffffff',
@@ -295,8 +312,9 @@ function buildScene(
         name: 'Details',
         text: scene.body.join('\n'),
         fontSizePct: 4,
-        minFontSizePct: 2.8,
+        minFontSizePct: 2.4,
         maxLines: 6,
+        keepLines: true,
         weight: 500,
         lineHeight: 1.45,
         color: '#e2e8f0',
@@ -312,8 +330,9 @@ function buildScene(
         name: 'Contact',
         text: scene.contact.join('\n'),
         fontSizePct: 3.4,
-        minFontSizePct: 2.6,
+        minFontSizePct: 2.4,
         maxLines: 4,
+        keepLines: true,
         weight: 700,
         lineHeight: 1.4,
         color: '#ffffff',
