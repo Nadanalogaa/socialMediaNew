@@ -14,6 +14,7 @@ import { BrandScreen } from './BrandScreen';
 import { TeamScreen } from './TeamScreen';
 import { BillingScreen } from './BillingScreen';
 import { AdminScreen } from './AdminScreen';
+import { HomeScreen } from './HomeScreen';
 import { Badge, Card } from '../components/ui';
 
 /**
@@ -38,6 +39,7 @@ interface Props {
 }
 
 type TabKey =
+  | 'home'
   | 'compose'
   | 'posts'
   | 'ideas'
@@ -54,6 +56,7 @@ type TabKey =
   | 'ads';
 
 const TABS: { key: TabKey; label: string; icon: string; ready: boolean }[] = [
+  { key: 'home', label: 'Home', icon: '⌂', ready: true },
   { key: 'compose', label: 'Compose', icon: '✎', ready: true },
   { key: 'posts', label: 'Posts', icon: '☰', ready: true },
   { key: 'ideas', label: 'Ideas', icon: '💡', ready: true },
@@ -70,7 +73,7 @@ const TABS: { key: TabKey; label: string; icon: string; ready: boolean }[] = [
 ];
 
 /** Shown in the mobile bar; the rest live behind "More". */
-const PRIMARY_MOBILE_TABS: TabKey[] = ['compose', 'reels', 'posts', 'library'];
+const PRIMARY_MOBILE_TABS: TabKey[] = ['home', 'compose', 'reels', 'posts'];
 
 const COMING_SOON: Record<string, string> = {
   whatsapp: 'Opt-in contact lists, approved message templates and throttled campaigns.',
@@ -88,7 +91,7 @@ export function DashboardScreen({
   onStopImpersonating,
 }: Props) {
   const isPlatformAdmin = Boolean(session.user.isPlatformAdmin);
-  const [tab, setTab] = useState<TabKey>('compose');
+  const [tab, setTab] = useState<TabKey>('home');
   // Bumping this forces the posts list to refetch after a publish.
   const [postsKey, setPostsKey] = useState(0);
   /** Carried from the reel editor so Publish opens Compose ready to go. */
@@ -103,8 +106,8 @@ export function DashboardScreen({
 
   function handleSwitch(organization: Organization) {
     onSessionChange(setActiveOrganization(session, organization));
-    // Every screen is scoped to the workspace, so send them back to a neutral one.
-    setTab('channels');
+    // Every screen is scoped to the workspace, so send them back to the start.
+    setTab('home');
   }
 
   return (
@@ -190,6 +193,17 @@ export function DashboardScreen({
               Dismiss
             </button>
           </div>
+        )}
+        {tab === 'home' && (
+          <HomeScreen
+            key={session.organization.id}
+            session={session}
+            onGo={(next) => {
+              setEditingPostId(undefined);
+              setOpenDesignId(undefined);
+              setTab(next);
+            }}
+          />
         )}
         {tab === 'compose' && (
           <ComposeScreen

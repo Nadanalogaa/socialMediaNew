@@ -739,6 +739,21 @@ export const api = {
   adminImpersonate: (id: string) => request<Session>(`/admin/organizations/${id}/impersonate`, { method: 'POST' }),
   adminPayments: () => request<{ payments: AdminPayment[] }>('/admin/payments'),
 
+  // --- Home ---
+  getHome: () =>
+    request<{
+      attention: {
+        failed: { id: string; caption: string; status: string; updatedAt: string }[];
+        expiring: { id: string; displayName: string; provider: string; status: string; tokenExpiresAt: string | null }[];
+        pending: { id: string; caption: string; updatedAt: string; scheduledAt: string | null }[];
+      };
+      runway: { scheduledCount: number; daysCovered: number; lastScheduled: string | null; next: { id: string; caption: string; scheduledAt: string }[] };
+      recap: { thisWeek: { published: number; engagement: number }; lastWeek: { published: number; engagement: number } };
+      heatmap: { date: string; count: number }[];
+      topPosts: { postId: string; caption: string; publishedAt: string | null; engagement: number; permalink: string | null }[];
+      bestTimes: BestTimesReport;
+    }>('/analytics/home'),
+
   // --- Report ---
   getReport: (days: number) => request<ReportPayload>(`/analytics/report?days=${days}`),
 

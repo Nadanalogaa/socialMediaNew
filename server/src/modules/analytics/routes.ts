@@ -4,6 +4,7 @@ import { asyncHandler, requireAuth, validate, withOrganization } from '../../htt
 import { enqueue, metricsQueue } from '../../queue/index.js';
 import { fetchAudienceSizes } from '../../queue/processors/metrics.js';
 import * as analytics from './service.js';
+import { getHome } from './home.js';
 import { getBrand } from '../organizations/service.js';
 
 const rangeSchema = z.object({ days: z.coerce.number().int().min(7).max(90).default(30) });
@@ -28,6 +29,14 @@ analyticsRouter.get(
     ]);
 
     res.json({ summary, timeseries, channels, topPosts, days });
+  }),
+);
+
+/** The home screen, in one round trip. */
+analyticsRouter.get(
+  '/home',
+  asyncHandler(async (req, res) => {
+    res.json(await getHome(req.tenant!.organizationId));
   }),
 );
 
