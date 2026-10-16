@@ -74,53 +74,55 @@ export function DashboardScreen({ session, onSignOut, onSessionChange }: Props) 
   return (
     <div className="flex min-h-full flex-col bg-slate-50">
       <header className="sticky top-0 z-10 border-b border-slate-200 bg-white">
-        <div className="mx-auto flex w-full max-w-[1700px] items-center justify-between px-5 py-3">
-          <div className="flex min-w-0 items-center gap-2">
-            <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-brand-600 text-sm font-bold text-white">
+        {/* Everything on one line: the nav used to take a second row that the
+            editor needed more than the navigation did. */}
+        <div className="mx-auto flex w-full max-w-[1700px] items-center gap-3 px-4 py-2">
+          <div className="flex min-w-0 shrink-0 items-center gap-2">
+            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-brand-600 text-xs font-bold text-white">
               SB
             </div>
             <OrganizationSwitcher session={session} onSwitch={handleSwitch} />
           </div>
+
+          <nav className="hidden min-w-0 flex-1 overflow-x-auto lg:block">
+            <ul className="flex gap-0.5">
+              {TABS.map((item) => (
+                <li key={item.key}>
+                  <button
+                    onClick={() => {
+                      setTab(item.key);
+                      if (item.key !== 'library') setOpenDesignId(undefined);
+                    }}
+                    aria-current={tab === item.key ? 'page' : undefined}
+                    className={`flex items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-sm transition ${
+                      tab === item.key
+                        ? 'bg-brand-50 font-medium text-brand-700'
+                        : 'text-slate-600 hover:bg-slate-100'
+                    }`}
+                  >
+                    <span aria-hidden className="text-xs">
+                      {item.icon}
+                    </span>
+                    {item.label}
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </nav>
+
           <button
             onClick={onSignOut}
-            className="hidden shrink-0 rounded-lg border border-slate-300 px-3 py-1.5 text-sm text-slate-700 transition hover:bg-slate-100 lg:block"
+            className="ml-auto hidden shrink-0 rounded-lg border border-slate-300 px-2.5 py-1.5 text-sm text-slate-700 transition hover:bg-slate-100 lg:block"
           >
             Sign out
           </button>
-          <span className="text-sm font-medium text-slate-500 lg:hidden">
+          <span className="ml-auto text-sm font-medium text-slate-500 lg:hidden">
             {TABS.find((item) => item.key === tab)?.label}
           </span>
         </div>
-
-        {/* Desktop tabs. On a phone the bottom bar replaces these. */}
-        <nav className="mx-auto hidden w-full max-w-[1700px] overflow-x-auto px-5 lg:block">
-          <ul className="flex gap-1 pb-2">
-            {TABS.map((item) => (
-              <li key={item.key}>
-                <button
-                  onClick={() => {
-                    setTab(item.key);
-                    // A tab click is a fresh start, not a reopen.
-                    if (item.key !== 'library') setOpenDesignId(undefined);
-                  }}
-                  aria-current={tab === item.key ? 'page' : undefined}
-                  className={`flex items-center gap-1.5 whitespace-nowrap rounded-lg px-3 py-1.5 text-sm transition ${
-                    tab === item.key
-                      ? 'bg-brand-50 font-medium text-brand-700'
-                      : 'text-slate-600 hover:bg-slate-100'
-                  }`}
-                >
-                  <span aria-hidden>{item.icon}</span>
-                  {item.label}
-                  {!item.ready && <span className="text-xs text-slate-400">·</span>}
-                </button>
-              </li>
-            ))}
-          </ul>
-        </nav>
       </header>
 
-      <main className="mx-auto w-full max-w-[1700px] flex-1 px-4 py-5 pb-24 sm:px-5 lg:pb-6">
+      <main className="mx-auto w-full max-w-[1700px] flex-1 px-4 py-3 pb-24 lg:pb-4">
         {tab === 'compose' && (
           <ComposeScreen
             key={session.organization.id}

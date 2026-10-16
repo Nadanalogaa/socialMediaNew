@@ -32,7 +32,6 @@ import { startPreviewLoop } from '../lib/audio';
 import { LayerProperties } from '../components/LayerProperties';
 import { SoundPanel } from '../components/SoundPanel';
 import { MobileSheet, type SheetHeight } from '../components/MobileSheet';
-import { SceneFilmstrip } from '../components/SceneFilmstrip';
 import { Alert, Button, Card, Spinner } from '../components/ui';
 import { useIsMobile } from '../lib/useMediaQuery';
 import { useHistory } from '../lib/useHistory';
@@ -192,7 +191,16 @@ function ReelEditor({
   );
   /** Desktop right column. Stacking these meant scrolling past three cards to
    *  reach the one that changes what is selected. */
-  const [sidePanel, setSidePanel] = useState<'style' | 'media' | 'scene'>('style');
+  const [sidePanel, setSidePanel] = useState<'style' | 'media' | 'scene' | 'details'>('style');
+  /** Fills the window with the editor, hiding the app's own navigation. */
+  const [fullscreen, setFullscreen] = useState(false);
+
+  useEffect(() => {
+    if (!fullscreen) return;
+    const onKeyDown = (event: KeyboardEvent) => event.key === 'Escape' && setFullscreen(false);
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [fullscreen]);
   const [sheetHeight, setSheetHeight] = useState<SheetHeight>('peek');
   /** While true, dragging pans the photo inside its frame instead of moving it. */
   const [repositioning, setRepositioning] = useState(false);
@@ -673,7 +681,13 @@ function ReelEditor({
   const duration = projectDuration(project);
 
   return (
-    <div className="space-y-4">
+    <div
+      className={
+        fullscreen
+          ? 'fixed inset-0 z-50 flex flex-col gap-2 overflow-hidden bg-slate-50 p-3'
+          : 'space-y-3'
+      }
+    >
       {/* One compact row on a phone: the chrome was taking the whole screen
           and leaving nothing for the preview. Description and tags move into
           the sheet's Details tab. */}
@@ -692,6 +706,36 @@ function ReelEditor({
           onChange={(e) => setProject({ ...project, name: e.target.value }, 'name')}
           className="min-w-0 flex-1 rounded-lg border border-transparent px-2 py-1 text-base font-semibold text-slate-900 hover:border-slate-300 focus:border-brand-500 focus:outline-none lg:text-lg"
         />
+
+        {/* Scene selection belongs beside the title: it is the context, and
+            a separate strip of thumbnails cost the preview a whole row. */}
+        <div className="hidden shrink-0 items-center gap-1 lg:flex">
+          {project.scenes.map((item, index) => (
+            <button
+              key={item.id}
+              onClick={() => {
+                setSceneIndex(index);
+                setSelectedLayerId(null);
+              }}
+              title={`Scene ${index + 1} · ${item.durationSeconds.toFixed(1)}s`}
+              className={`h-8 w-8 rounded-lg text-sm transition ${
+                index === sceneIndex
+                  ? 'bg-brand-600 font-medium text-white'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              {index + 1}
+            </button>
+          ))}
+          <button
+            onClick={addScene}
+            title="Add a scene"
+            aria-label="Add a scene"
+            className="h-8 w-8 rounded-lg border border-dashed border-slate-300 text-slate-500 transition hover:border-brand-400 hover:text-brand-600"
+          >
+            +
+          </button>
+        </div>
 
         <span className="hidden shrink-0 text-sm text-slate-500 sm:inline">
           {duration.toFixed(1)}s
@@ -735,46 +779,24 @@ function ReelEditor({
           <Button onClick={() => void handleCreate()} disabled={recording}>
             {recording ? `Recording ${Math.round(progress * 100)}%` : '● Create reel'}
           </Button>
+          <button
+            onClick={() => setFullscreen((on) => !on)}
+            title={fullscreen ? 'Leave full screen' : 'Full screen'}
+            aria-label={fullscreen ? 'Leave full screen' : 'Full screen'}
+            className="rounded-lg border border-slate-300 px-3 text-slate-700 transition hover:bg-slate-100"
+          >
+            {fullscreen ? '⤡' : '⤢'}
+          </button>
         </div>
       </div>
-
-      {!isMobile && (
-        <SceneFilmstrip
-          project={project}
-          images={images}
-          activeIndex={sceneIndex}
-          onSelect={(index) => {
-            setSceneIndex(index);
-            setSelectedLayerId(null);
-          }}
-          onAdd={addScene}
-        />
-      )}
-
-      {/* On a wide screen there is room for these inline. */}
-      <div className="hidden gap-2 sm:grid-cols-2 lg:grid">
-        <input
-          value={shortDescription}
-          onChange={(e) => setShortDescription(e.target.value)}
-          placeholder="Short description — shown on the library card"
-          className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm outline-none focus:border-brand-500"
-        />
-        <input
-          value={tagText}
-          onChange={(e) => setTagText(e.target.value)}
-          placeholder="Tags, separated by spaces — diwali offer chennai"
-          className="rounded-lg border border-slate-300 px-3 py-1.5 text-sm outline-none focus:border-brand-500"
-        />
-      </div>
-
-      {error && <Alert>{error}</Alert>}
-      {notice && <Alert tone="success">{notice}</Alert>}
 
       <div
         className={
           isMobile
             ? 'flex flex-col gap-3'
-            : 'grid gap-4 lg:h-[calc(100dvh-17rem)] lg:grid-cols-[minmax(0,1fr)_360px]'
+            : fullscreen
+              ? 'grid min-h-0 flex-1 gap-3 lg:grid-cols-[minmax(0,1fr)_360px]'
+              : 'grid gap-3 lg:h-[calc(100dvh-11rem)] lg:grid-cols-[minmax(0,1fr)_360px]'
         }
         /* Keeps the preview clear of the panel below it, so nothing shows
            through from behind. */
@@ -917,6 +939,7 @@ function ReelEditor({
                 ['style', selectedLayer ? 'Selected' : 'Style'],
                 ['media', 'Photos & sound'],
                 ['scene', 'Scene'],
+                ['details', 'Details'],
               ] as const
             ).map(([key, label]) => (
               <button
@@ -1023,6 +1046,30 @@ function ReelEditor({
           </Card>
 
           <div className="min-h-0 flex-1 space-y-3 overflow-y-auto pr-1">
+          <Card className={`p-3 ${sidePanel === 'details' ? '' : 'hidden'}`}>
+            <h3 className="mb-2 text-sm font-medium text-slate-900">Details</h3>
+            <label className="block">
+              <span className="mb-1 block text-xs font-medium text-slate-600">
+                Short description
+              </span>
+              <input
+                value={shortDescription}
+                onChange={(e) => setShortDescription(e.target.value)}
+                placeholder="Shown on the library card"
+                className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm outline-none focus:border-brand-500"
+              />
+            </label>
+            <label className="mt-2 block">
+              <span className="mb-1 block text-xs font-medium text-slate-600">Tags</span>
+              <input
+                value={tagText}
+                onChange={(e) => setTagText(e.target.value)}
+                placeholder="diwali offer chennai"
+                className="w-full rounded-lg border border-slate-300 px-2 py-1.5 text-sm outline-none focus:border-brand-500"
+              />
+            </label>
+          </Card>
+
           <Card className={`p-3 ${sidePanel === 'scene' ? '' : 'hidden'}`}>
             <h3 className="mb-2 text-sm font-medium text-slate-900">
               Scene {sceneIndex + 1} of {project.scenes.length}
