@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { z } from 'zod';
-import { organizationSettingsSchema } from '@socialboost/shared';
+import { brandKitSchema, organizationSettingsSchema } from '@socialboost/shared';
 import { asyncHandler, requireAuth, validate, withOrganization } from '../../http/middleware.js';
 import * as organizationsService from './service.js';
 
@@ -57,5 +57,22 @@ organizationsRouter.patch(
   validate(organizationSettingsSchema),
   asyncHandler(async (req, res) => {
     res.json(await organizationsService.updateSettings(req.tenant!.organizationId, req.body));
+  }),
+);
+
+organizationsRouter.get(
+  '/current/brand',
+  withOrganization,
+  asyncHandler(async (req, res) => {
+    res.json(await organizationsService.getBrand(req.tenant!.organizationId));
+  }),
+);
+
+organizationsRouter.patch(
+  '/current/brand',
+  withOrganization,
+  validate(brandKitSchema),
+  asyncHandler(async (req, res) => {
+    res.json(await organizationsService.updateBrand(req.tenant!.organizationId, req.body));
   }),
 );

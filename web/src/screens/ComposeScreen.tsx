@@ -3,6 +3,7 @@ import {
   ApiError,
   api,
   uploadToCloudinary,
+  type BrandKit,
   type Connection,
   type HashtagGroup,
   type MediaAsset,
@@ -10,6 +11,7 @@ import {
   type SlotSuggestion,
 } from '../lib/api';
 import { daysUntil, formatDateTime, toDateInput, toLocalInput } from '../lib/dates';
+import { applyBrandPlaceholders } from '../lib/brand';
 import { Alert, Button, Card, Spinner, providerLabel } from '../components/ui';
 
 const IG_CAPTION_LIMIT = 2200;
@@ -26,19 +28,23 @@ const PUBLISHABLE = ['facebook_page', 'instagram_business'];
 export function ComposeScreen({
   onPublished,
   initialAsset,
+  initialCaption,
   editingPostId,
   onViewPosts,
 }: {
   onPublished: () => void;
   /** Pre-loaded when arriving from the reel editor's Publish button. */
   initialAsset?: MediaAsset | null;
+  /** Pre-filled when arriving from an idea. */
+  initialCaption?: string;
   /** Set when opened from Posts → Edit. */
   editingPostId?: string;
   onViewPosts?: () => void;
 }) {
   const [connections, setConnections] = useState<Connection[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [caption, setCaption] = useState('');
+  const [caption, setCaption] = useState(initialCaption ?? '');
+  const [brand, setBrand] = useState<BrandKit | null>(null);
   const [hashtagText, setHashtagText] = useState('');
   const [firstComment, setFirstComment] = useState('');
   const [showFirstComment, setShowFirstComment] = useState(false);
@@ -79,6 +85,7 @@ export function ComposeScreen({
       })
       .catch(() => setError('Could not load your connected channels.'));
     api.listHashtagGroups().then(({ groups }) => setGroups(groups)).catch(() => {});
+    api.getBrand().then(setBrand).catch(() => {});
     api.nextSlots(4).then(({ slots }) => setSlots(slots)).catch(() => {});
   }, [editingPostId]);
 
@@ -344,7 +351,29 @@ export function ComposeScreen({
 
       <Card>
         <label className="block">
-          <span className="mb-1 block text-sm font-medium text-slate-900">Caption</span>
+          <span className="mb-1 flex items-center justify-between text-sm font-medium text-slate-900">
+            Caption
+            <span className="flex gap-2 text-xs font-normal">
+              {brand?.signature && !caption.includes(brand.signature) && (
+                <button
+                  type="button"
+                  onClick={() => setCaption((c) => `${c.trimEnd()}\n\n${brand.signature}`.trim())}
+                  className="text-brand-600 hover:underline"
+                >
+                  + Add signature
+                </button>
+              )}
+              {brand && /\{(name|phone|website|email|address|tagline)\}/i.test(caption) && (
+                <button
+                  type="button"
+                  onClick={() => setCaption((c) => applyBrandPlaceholders(c, brand))}
+                  className="text-brand-600 hover:underline"
+                >
+                  Fill {'{placeholders}'}
+                </button>
+              )}
+            </span>
+          </span>
           <textarea
             value={caption}
             onChange={(e) => setCaption(e.target.value)}
@@ -364,6 +393,16 @@ export function ComposeScreen({
           />
         </label>
         <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs">
+          {brand && brand.defaultHashtags.length > 0 && (
+            <button
+              type="button"
+              onClick={() => insertGroup({ id: 'brand', name: 'Brand', tags: brand.defaultHashtags })}
+              title={brand.defaultHashtags.map((t) => `#${t}`).join(' ')}
+              className="rounded-full border border-brand-300 bg-brand-50 px-2.5 py-0.5 text-brand-700 hover:bg-brand-100"
+            >
+              + Brand tags
+            </button>
+          )}
           {groups.map((group) => (
             <span key={group.id} className="inline-flex items-center overflow-hidden rounded-full border border-slate-300">
               <button

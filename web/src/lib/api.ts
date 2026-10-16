@@ -245,6 +245,35 @@ export interface OrganizationSettings {
   postingSlots: PostingSlot[];
 }
 
+export interface BrandKit {
+  name: string;
+  tagline: string | null;
+  website: string | null;
+  phone: string | null;
+  email: string | null;
+  address: string | null;
+  logoUrl: string | null;
+  primaryColor: string | null;
+  secondaryColor: string | null;
+  fontFamily: string | null;
+  signature: string | null;
+  defaultHashtags: string[];
+  description: string | null;
+  toneOfVoice: string | null;
+  targetAudience: string | null;
+  industry: string | null;
+}
+
+export interface Idea {
+  id: string;
+  title: string;
+  notes: string | null;
+  url: string | null;
+  status: 'open' | 'done';
+  createdAt: string;
+  media: { id: string; kind: 'image' | 'video'; url: string; thumbnailUrl: string | null } | null;
+}
+
 export interface SlotSuggestion {
   at: string;
   label: string;
@@ -533,6 +562,23 @@ export const api = {
 
   deleteHashtagGroup: (id: string) =>
     request<void>(`/posts/hashtag-groups/${id}`, { method: 'DELETE' }),
+
+  // --- Brand kit ---
+  getBrand: () => request<BrandKit>('/organizations/current/brand'),
+
+  updateBrand: (input: Partial<BrandKit>) =>
+    request<BrandKit>('/organizations/current/brand', { method: 'PATCH', body: JSON.stringify(input) }),
+
+  // --- Ideas ---
+  listIdeas: () => request<{ ideas: Idea[] }>('/ideas'),
+
+  createIdea: (input: { title: string; notes?: string; url?: string; mediaAssetId?: string | null }) =>
+    request<{ id: string }>('/ideas', { method: 'POST', body: JSON.stringify(input) }),
+
+  updateIdea: (id: string, input: Partial<{ title: string; notes: string | null; url: string | null; mediaAssetId: string | null; status: 'open' | 'done' }>) =>
+    request<{ id: string }>(`/ideas/${id}`, { method: 'PATCH', body: JSON.stringify(input) }),
+
+  deleteIdea: (id: string) => request<void>(`/ideas/${id}`, { method: 'DELETE' }),
 
   // --- Organisation settings ---
   getSettings: () => request<OrganizationSettings>('/organizations/current/settings'),

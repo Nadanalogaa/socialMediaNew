@@ -199,6 +199,32 @@ function TemplateEditor({
     void getFeatures().then((features) => setAiAvailable(features.ai));
   }, []);
 
+  // A new poster starts with the brand kit's colour and contact line, where
+  // the template has those fields and the user has not typed anything yet.
+  useEffect(() => {
+    if (saved) return;
+    api
+      .getBrand()
+      .then((brand) => {
+        const fill: Record<string, string> = {};
+        const keys = new Set(template.fields.map((f) => f.key));
+        if (keys.has('brandColor') && brand.primaryColor) fill.brandColor = brand.primaryColor;
+        const contact = [brand.phone, brand.website].filter(Boolean).join(' · ');
+        if (keys.has('contact') && contact) fill.contact = contact;
+        if (Object.keys(fill).length === 0) return;
+        setValues((prev) => {
+          const next = { ...prev };
+          for (const [key, value] of Object.entries(fill)) {
+            const field = template.fields.find((f) => f.key === key);
+            if (!prev[key] || prev[key] === field?.defaultValue) next[key] = value;
+          }
+          return next;
+        });
+      })
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [template.slug]);
+
   const spec: CreativeSpec = useMemo(() => ({ template, values, ratio }), [template, values, ratio]);
   const missing = findMissingFields(spec);
 

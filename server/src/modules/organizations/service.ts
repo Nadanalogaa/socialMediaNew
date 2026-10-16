@@ -140,3 +140,41 @@ export async function updateSettings(
     .where(eq(organizations.id, organizationId));
   return getSettings(organizationId);
 }
+
+// --- Brand kit ---------------------------------------------------------------
+
+export async function getBrand(organizationId: string): Promise<typeof brandProfiles.$inferSelect> {
+  const [row] = await db
+    .select()
+    .from(brandProfiles)
+    .where(eq(brandProfiles.organizationId, organizationId))
+    .limit(1);
+  if (row) return row;
+  // Organisations created before the kit existed get one on first read.
+  const [created] = await db
+    .insert(brandProfiles)
+    .values({ organizationId, name: 'My business' })
+    .onConflictDoNothing()
+    .returning();
+  return created ?? (await getBrand(organizationId));
+}
+
+export async function updateBrand(
+  organizationId: string,
+  input: Record<string, unknown> & { defaultHashtags?: string[] },
+) {
+  await getBrand(organizationId);
+  const values: Record<string, unknown> = { updatedAt: new Date() };
+  for (const [key, value] of Object.entries(input)) {
+    if (value === undefined) continue;
+    values[key] = typeof value === 'string' ? value.trim() || null : value;
+  }
+  if (input.defaultHashtags) {
+    values.defaultHashtags = [
+      ...new Set(input.defaultHashtags.map((t) => t.replace(/^#/, '').trim()).filter(Boolean)),
+    ];
+  }
+  if (typeof values.name === 'string' && !values.name) delete values.name;
+  await db.update(brandProfiles).set(values).where(eq(brandProfiles.organizationId, organizationId));
+  return getBrand(organizationId);
+}

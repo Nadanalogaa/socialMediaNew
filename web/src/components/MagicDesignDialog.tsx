@@ -10,7 +10,8 @@ import {
   type ProjectAudio,
   type ReelProject,
 } from '@socialboost/shared';
-import { api, uploadAudio, uploadToCloudinary, type MediaAsset, type SavedBrief } from '../lib/api';
+import { api, uploadAudio, uploadToCloudinary, type BrandKit, type MediaAsset, type SavedBrief } from '../lib/api';
+import { applyBrandPlaceholders, brandFooter } from '../lib/brand';
 import { Alert, Button, Spinner } from './ui';
 
 const EXAMPLE = `Logo: top right
@@ -80,13 +81,17 @@ export function MagicDesignDialog({
   onClose,
   onCreate,
   initial,
+  presetBrief,
 }: {
   onClose: () => void;
   onCreate: (project: ReelProject, magic: MagicBrief, audio?: ProjectAudio) => void;
   /** The brief this reel was built from, so it reopens ready to edit. */
   initial?: MagicBrief;
+  /** Text to start from (an idea), without being in edit mode. */
+  presetBrief?: string;
 }) {
-  const [brief, setBrief] = useState(initial?.brief ?? '');
+  const [brief, setBrief] = useState(initial?.brief ?? presetBrief ?? '');
+  const [brand, setBrand] = useState<BrandKit | null>(null);
   const [brandColor, setBrandColor] = useState(initial?.brandColor ?? '#4f46e5');
   const [accentColor, setAccentColor] = useState(initial?.accentColor ?? '#0f172a');
   const [library, setLibrary] = useState<MediaAsset[] | null>(null);
@@ -120,6 +125,18 @@ export function MagicDesignDialog({
       .listBriefs()
       .then(({ briefs }) => setHistory(briefs))
       .catch(() => setHistory([]));
+    // A new reel starts from the brand kit: its colours, logo and font.
+    api
+      .getBrand()
+      .then((kit) => {
+        setBrand(kit);
+        if (initial) return;
+        if (kit.primaryColor) setBrandColor(kit.primaryColor);
+        if (kit.secondaryColor) setAccentColor(kit.secondaryColor);
+        if (kit.logoUrl) setLogo((current) => current ?? kit.logoUrl ?? undefined);
+      })
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   function loadFromHistory(saved: SavedBrief) {
@@ -184,8 +201,10 @@ export function MagicDesignDialog({
   }, [onClose]);
 
   // Parsed as the user types, so the scene split is visible before committing.
-  const scenes = useMemo(() => (brief.trim() ? parseBrief(brief) : []), [brief]);
-  const directives = useMemo(() => parseBriefDirectives(brief), [brief]);
+  // {phone}, {website} and friends are filled from the brand kit first.
+  const expanded = useMemo(() => applyBrandPlaceholders(brief, brand), [brief, brand]);
+  const scenes = useMemo(() => (expanded.trim() ? parseBrief(expanded) : []), [expanded]);
+  const directives = useMemo(() => parseBriefDirectives(expanded), [expanded]);
   const totalSeconds = scenes.reduce((total, scene) => total + sceneDurationFor(scene), 0);
 
   async function handleAudioFile(file: File) {
@@ -282,8 +301,7 @@ export function MagicDesignDialog({
       }
     }
 
-    onCreate(
-      buildProjectFromBrief(scenes, {
+    const built = buildProjectFromBrief(scenes, {
         // Photos chosen for a scene win; "add a photo" draws on the library.
         scenePhotos: scenes.map((_, index) => scenePhotos[index]),
         photoLayout: scenes.map((_, index) => photoLayout[index]),
@@ -294,7 +312,17 @@ export function MagicDesignDialog({
         directives,
         brandColor,
         accentColor,
-      }),
+      });
+    if (brand?.fontFamily) {
+      for (const scene of built.scenes) {
+        for (const layer of scene.layers) {
+          if (layer.type === 'text' && !layer.style.fontFamily) layer.style.fontFamily = brand.fontFamily;
+        }
+      }
+    }
+
+    onCreate(
+      built,
       {
         id,
         brief,
@@ -425,6 +453,15 @@ export function MagicDesignDialog({
 
         <div className="mt-1 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
           <span>
+            {brand && (brand.phone || brand.website) && !/^\s*footer\s*:/im.test(brief) && (
+              <button
+                type="button"
+                onClick={() => setBrief((b) => `Footer: ${brandFooter(brand)}\n${b}`)}
+                className="mr-2 font-medium text-brand-600 hover:underline"
+              >
+                + Add your contact footer
+              </button>
+            )}
             Start a line with <strong>Scene 1</strong> — a name after it, like{' '}
             <strong>Scene 1 - Opening</strong>, is used as the scene's title. Write{' '}
             <strong>add a photo</strong> on its own line where you want a picture. Lines starting

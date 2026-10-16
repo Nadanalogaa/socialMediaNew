@@ -170,6 +170,37 @@ export const organizationSettingsSchema = z.object({
 });
 export type OrganizationSettingsInput = z.infer<typeof organizationSettingsSchema>;
 
+const optionalText = (max: number) => z.string().max(max).nullable().optional();
+
+export const brandKitSchema = z.object({
+  name: z.string().min(1).max(120).optional(),
+  tagline: optionalText(200),
+  website: optionalText(300),
+  phone: optionalText(40),
+  email: optionalText(200),
+  address: optionalText(500),
+  logoUrl: optionalText(1000),
+  primaryColor: optionalText(32),
+  secondaryColor: optionalText(32),
+  fontFamily: optionalText(200),
+  signature: optionalText(500),
+  defaultHashtags: z.array(z.string().min(1).max(80)).max(30).optional(),
+  description: optionalText(2000),
+  toneOfVoice: optionalText(500),
+  targetAudience: optionalText(500),
+  industry: optionalText(120),
+});
+export type BrandKitInput = z.infer<typeof brandKitSchema>;
+
+export const ideaSchema = z.object({
+  title: z.string().min(1).max(300),
+  notes: optionalText(5000),
+  url: optionalText(1000),
+  mediaAssetId: z.string().uuid().nullable().optional(),
+  status: z.enum(['open', 'done']).optional(),
+});
+export type IdeaInput = z.infer<typeof ideaSchema>;
+
 export const dateRangeSchema = z.object({
   from: z.coerce.date(),
   to: z.coerce.date(),

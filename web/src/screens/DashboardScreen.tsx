@@ -9,6 +9,8 @@ import { ReelsScreen } from './ReelsScreen';
 import { AnalyticsScreen } from './AnalyticsScreen';
 import { LibraryScreen } from './LibraryScreen';
 import { PostsScreen } from './PostsScreen';
+import { IdeasScreen } from './IdeasScreen';
+import { BrandScreen } from './BrandScreen';
 import { Badge, Card } from '../components/ui';
 
 /**
@@ -28,22 +30,26 @@ interface Props {
 type TabKey =
   | 'compose'
   | 'posts'
+  | 'ideas'
   | 'analytics'
   | 'channels'
   | 'creatives'
   | 'reels'
   | 'library'
+  | 'brand'
   | 'whatsapp'
   | 'ads';
 
 const TABS: { key: TabKey; label: string; icon: string; ready: boolean }[] = [
   { key: 'compose', label: 'Compose', icon: '✎', ready: true },
   { key: 'posts', label: 'Posts', icon: '☰', ready: true },
+  { key: 'ideas', label: 'Ideas', icon: '💡', ready: true },
   { key: 'analytics', label: 'Analytics', icon: '◳', ready: true },
   { key: 'channels', label: 'Channels', icon: '⚯', ready: true },
   { key: 'creatives', label: 'Posters', icon: '▣', ready: true },
   { key: 'reels', label: 'Reels', icon: '▶', ready: true },
   { key: 'library', label: 'My designs', icon: '❑', ready: true },
+  { key: 'brand', label: 'Brand kit', icon: '◆', ready: true },
   { key: 'whatsapp', label: 'WhatsApp', icon: '✆', ready: false },
   { key: 'ads', label: 'Ads', icon: '◎', ready: false },
 ];
@@ -66,6 +72,9 @@ export function DashboardScreen({ session, onSignOut, onSessionChange }: Props) 
   const [openDesignId, setOpenDesignId] = useState<string | undefined>();
   /** Set when editing a post from the Posts screen. */
   const [editingPostId, setEditingPostId] = useState<string | undefined>();
+  /** Carried from an idea into the composer or Magic Design. */
+  const [pendingCaption, setPendingCaption] = useState<string | undefined>();
+  const [pendingBrief, setPendingBrief] = useState<string | undefined>();
 
   function handleSwitch(organization: Organization) {
     onSessionChange(setActiveOrganization(session, organization));
@@ -95,6 +104,8 @@ export function DashboardScreen({ session, onSignOut, onSessionChange }: Props) 
                       setTab(item.key);
                       if (item.key !== 'library') setOpenDesignId(undefined);
                       if (item.key === 'compose') setEditingPostId(undefined);
+                      setPendingCaption(undefined);
+                      setPendingBrief(undefined);
                     }}
                     aria-current={tab === item.key ? 'page' : undefined}
                     className={`flex items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-sm transition ${
@@ -128,8 +139,9 @@ export function DashboardScreen({ session, onSignOut, onSessionChange }: Props) 
       <main className="mx-auto w-full max-w-[1700px] flex-1 px-4 py-3 pb-24 lg:pb-4">
         {tab === 'compose' && (
           <ComposeScreen
-            key={`${session.organization.id}:${editingPostId ?? 'new'}`}
+            key={`${session.organization.id}:${editingPostId ?? 'new'}:${pendingCaption ?? ''}`}
             initialAsset={pendingAsset}
+            initialCaption={pendingCaption}
             editingPostId={editingPostId}
             onPublished={() => setPostsKey((k) => k + 1)}
             onViewPosts={() => {
@@ -152,6 +164,23 @@ export function DashboardScreen({ session, onSignOut, onSessionChange }: Props) 
             }}
           />
         )}
+        {tab === 'ideas' && (
+          <IdeasScreen
+            key={session.organization.id}
+            onMakePost={(idea) => {
+              setEditingPostId(undefined);
+              setPendingCaption([idea.title, idea.notes, idea.url].filter(Boolean).join('\n\n'));
+              setPendingAsset(idea.media ? { ...idea.media, width: null, height: null } : null);
+              setTab('compose');
+            }}
+            onMakeReel={(idea) => {
+              setOpenDesignId(undefined);
+              setPendingBrief(`Scene 1 - ${idea.title}\n${idea.title}\n${idea.notes ?? ''}`.trim());
+              setTab('reels');
+            }}
+          />
+        )}
+        {tab === 'brand' && <BrandScreen key={session.organization.id} />}
         {tab === 'channels' && <ConnectionsScreen key={session.organization.id} />}
         {tab === 'creatives' && (
           <CreativesScreen
@@ -161,8 +190,9 @@ export function DashboardScreen({ session, onSignOut, onSessionChange }: Props) 
         )}
         {tab === 'reels' && (
           <ReelsScreen
-            key={`${session.organization.id}:${openDesignId ?? 'new'}`}
+            key={`${session.organization.id}:${openDesignId ?? 'new'}:${pendingBrief ?? ''}`}
             openDesignId={openDesignId}
+            initialBrief={pendingBrief}
             onPublish={(asset) => {
               setPendingAsset(asset);
               setTab('compose');
@@ -208,6 +238,8 @@ export function DashboardScreen({ session, onSignOut, onSessionChange }: Props) 
           setTab(key as TabKey);
           if (key !== 'library') setOpenDesignId(undefined);
           if (key === 'compose') setEditingPostId(undefined);
+          setPendingCaption(undefined);
+          setPendingBrief(undefined);
         }}
         onSignOut={onSignOut}
       />

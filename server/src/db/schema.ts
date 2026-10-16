@@ -151,9 +151,37 @@ export const brandProfiles = pgTable(
     logoUrl: text('logo_url'),
     primaryColor: text('primary_color'),
     secondaryColor: text('secondary_color'),
+    /** The brand kit: applied by Magic Design, the poster editor and the composer. */
+    fontFamily: text('font_family'),
+    tagline: text('tagline'),
+    phone: text('phone'),
+    email: text('email'),
+    address: text('address'),
+    /** Appended to a caption on request: "📞 95668 66588 · www.nadanaloga.com". */
+    signature: text('signature'),
+    defaultHashtags: jsonb('default_hashtags').$type<string[]>().notNull().default([]),
     ...timestamps,
   },
   (t) => [uniqueIndex('brand_profiles_org_idx').on(t.organizationId)],
+);
+
+/** Things to post about later: a line, a link, a photo. */
+export const ideas = pgTable(
+  'ideas',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'cascade' }),
+    title: text('title').notNull(),
+    notes: text('notes'),
+    url: text('url'),
+    mediaAssetId: uuid('media_asset_id').references(() => mediaAssets.id, { onDelete: 'set null' }),
+    status: text('status').$type<'open' | 'done'>().notNull().default('open'),
+    createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
+    ...timestamps,
+  },
+  (t) => [index('ideas_org_idx').on(t.organizationId, t.status, t.createdAt)],
 );
 
 // --- Channel connections --------------------------------------------------
