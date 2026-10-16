@@ -277,10 +277,30 @@ export type WaCampaignInput = z.infer<typeof waCampaignSchema>;
 // --- Billing --------------------------------------------------------------
 
 export const startSubscriptionSchema = z.object({
-  planCode: z.string().min(1).max(40),
+  planCode: z.enum(['starter', 'growth', 'agency']),
   interval: z.enum(['monthly', 'yearly']).default('monthly'),
 });
 export type StartSubscriptionInput = z.infer<typeof startSubscriptionSchema>;
+
+/** What Razorpay Checkout hands back on success. */
+export const verifyPaymentSchema = z.object({
+  razorpay_order_id: z.string().min(1).max(100),
+  razorpay_payment_id: z.string().min(1).max(100),
+  razorpay_signature: z.string().min(1).max(200),
+});
+export type VerifyPaymentInput = z.infer<typeof verifyPaymentSchema>;
+
+// --- Platform admin -------------------------------------------------------
+
+export const adminOrganizationPatchSchema = z.object({
+  /** Grants a plan by hand (comped, or paid outside Razorpay). 'free' clears it. */
+  planCode: z.enum(['free', 'starter', 'growth', 'agency']).optional(),
+  /** Days to extend the trial by, from today. */
+  extendTrialDays: z.number().int().min(1).max(365).optional(),
+  suspended: z.boolean().optional(),
+  note: z.string().max(500).optional(),
+});
+export type AdminOrganizationPatch = z.infer<typeof adminOrganizationPatchSchema>;
 
 // --- Common ---------------------------------------------------------------
 

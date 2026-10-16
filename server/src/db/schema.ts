@@ -52,6 +52,15 @@ export const organizations = pgTable(
     name: text('name').notNull(),
     slug: text('slug').notNull(),
     planCode: text('plan_code').notNull().default('free'),
+    /**
+     * Where the plan came from: 'subscription' (paid, ends with the period),
+     * 'manual' (granted by a platform admin, no end) or 'free'. A trial is
+     * neither: it is the Growth plan until trialEndsAt.
+     */
+    planSource: text('plan_source').$type<'free' | 'subscription' | 'manual'>().notNull().default('free'),
+    trialEndsAt: timestamp('trial_ends_at', { withTimezone: true }),
+    /** A suspended workspace cannot be used until an admin lifts it. */
+    suspendedAt: timestamp('suspended_at', { withTimezone: true }),
     /** Set once Razorpay has a customer record for this org. */
     razorpayCustomerId: text('razorpay_customer_id'),
     /** IANA zone every scheduling time is read and shown in. */
@@ -109,6 +118,8 @@ export const users = pgTable(
     /** scrypt hash; format is `scrypt$N$r$p$salt$hash`. Never a plaintext column. */
     passwordHash: text('password_hash').notNull(),
     name: text('name').notNull(),
+    /** Runs the platform itself: sees every workspace, grants plans, helps customers. */
+    isPlatformAdmin: boolean('is_platform_admin').notNull().default(false),
     emailVerifiedAt: timestamp('email_verified_at', { withTimezone: true }),
     lastLoginAt: timestamp('last_login_at', { withTimezone: true }),
     ...timestamps,
@@ -697,6 +708,30 @@ export const subscriptions = pgTable(
  * Append-only usage log. Quota enforcement, invoicing and the usage dashboard
  * all aggregate from here, so they can never disagree with each other.
  */
+/** One Razorpay order per checkout; paid ones activate a subscription period. */
+export const billingOrders = pgTable(
+  'billing_orders',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'cascade' }),
+    razorpayOrderId: text('razorpay_order_id').notNull(),
+    razorpayPaymentId: text('razorpay_payment_id'),
+    planCode: text('plan_code').notNull(),
+    interval: text('interval').$type<'monthly' | 'yearly'>().notNull(),
+    amountInPaise: integer('amount_in_paise').notNull(),
+    status: text('status').$type<'created' | 'paid' | 'failed'>().notNull().default('created'),
+    createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
+    paidAt: timestamp('paid_at', { withTimezone: true }),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex('billing_orders_razorpay_idx').on(t.razorpayOrderId),
+    index('billing_orders_org_idx').on(t.organizationId, t.createdAt),
+  ],
+);
+
 export const usageEvents = pgTable(
   'usage_events',
   {

@@ -6,11 +6,12 @@
  * sees and the number that blocks them can never drift apart.
  */
 
-import { and, count, eq, gte, sql } from 'drizzle-orm';
-import { PLANS, USAGE_LIMIT_KEY, type PlanLimits, type UsageKind } from '@socialboost/shared';
+import { and, count, eq, gte, isNull, sql } from 'drizzle-orm';
+import { USAGE_LIMIT_KEY, type PlanLimits, type UsageKind } from '@socialboost/shared';
 import { db } from '../../db/client.js';
-import { connections, organizations, usageEvents } from '../../db/schema.js';
+import { connections, invitations, memberships, usageEvents } from '../../db/schema.js';
 import { quotaExceeded } from '../../lib/errors.js';
+import { resolvePlan } from '../billing/service.js';
 
 /** Start of the current calendar month, in UTC. */
 function currentPeriodStart(): Date {
@@ -19,13 +20,29 @@ function currentPeriodStart(): Date {
 }
 
 export async function getPlanLimits(organizationId: string): Promise<PlanLimits> {
-  const [org] = await db
-    .select({ planCode: organizations.planCode })
-    .from(organizations)
-    .where(eq(organizations.id, organizationId))
-    .limit(1);
+  const { plan } = await resolvePlan(organizationId);
+  return plan.limits;
+}
 
-  return (PLANS[org?.planCode ?? 'free'] ?? PLANS.free!).limits;
+/** Members plus open invitations count against the plan's seats. */
+export async function assertCanAddSeat(organizationId: string): Promise<void> {
+  const limits = await getPlanLimits(organizationId);
+  if (limits.seats === -1) return;
+  const [members] = await db
+    .select({ total: count() })
+    .from(memberships)
+    .where(eq(memberships.organizationId, organizationId));
+  const [open] = await db
+    .select({ total: count() })
+    .from(invitations)
+    .where(and(eq(invitations.organizationId, organizationId), isNull(invitations.acceptedAt)));
+  const taken = (members?.total ?? 0) + (open?.total ?? 0);
+  if (taken >= limits.seats) {
+    throw quotaExceeded(
+      `Your plan includes ${limits.seats} ${limits.seats === 1 ? 'person' : 'people'}. Upgrade to invite more.`,
+      { seats: limits.seats, taken },
+    );
+  }
 }
 
 /** Total quantity consumed for one usage kind this billing period. */
@@ -103,6 +120,14 @@ export async function assertCanAddConnections(
 /** Everything the usage screen needs, in one round trip. */
 export async function getUsageSummary(organizationId: string) {
   const limits = await getPlanLimits(organizationId);
+  const [channels] = await db
+    .select({ total: count() })
+    .from(connections)
+    .where(eq(connections.organizationId, organizationId));
+  const [seats] = await db
+    .select({ total: count() })
+    .from(memberships)
+    .where(eq(memberships.organizationId, organizationId));
   const kinds: UsageKind[] = ['ai_text', 'ai_image', 'ai_video', 'post_publish', 'wa_message'];
   const entries = await Promise.all(
     kinds.map(async (kind) => {
@@ -113,5 +138,12 @@ export async function getUsageSummary(organizationId: string) {
       ] as const;
     }),
   );
-  return { limits, usage: Object.fromEntries(entries) };
+  return {
+    limits,
+    usage: {
+      ...Object.fromEntries(entries),
+      connections: { used: channels?.total ?? 0, limit: limits.connections },
+      seats: { used: seats?.total ?? 0, limit: limits.seats },
+    } as Record<string, { used: number; limit: number }>,
+  };
 }

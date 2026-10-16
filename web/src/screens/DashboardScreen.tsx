@@ -12,6 +12,8 @@ import { PostsScreen } from './PostsScreen';
 import { IdeasScreen } from './IdeasScreen';
 import { BrandScreen } from './BrandScreen';
 import { TeamScreen } from './TeamScreen';
+import { BillingScreen } from './BillingScreen';
+import { AdminScreen } from './AdminScreen';
 import { Badge, Card } from '../components/ui';
 
 /**
@@ -29,6 +31,10 @@ interface Props {
   /** A one-line message from the shell, e.g. the result of an invitation. */
   notice?: string | null;
   onDismissNotice?: () => void;
+  /** Platform admins stepping into a customer's workspace. */
+  onImpersonate?: (session: Session) => void;
+  impersonating?: boolean;
+  onStopImpersonating?: () => void;
 }
 
 type TabKey =
@@ -42,6 +48,8 @@ type TabKey =
   | 'library'
   | 'brand'
   | 'team'
+  | 'billing'
+  | 'admin'
   | 'whatsapp'
   | 'ads';
 
@@ -56,6 +64,7 @@ const TABS: { key: TabKey; label: string; icon: string; ready: boolean }[] = [
   { key: 'library', label: 'My designs', icon: '❑', ready: true },
   { key: 'brand', label: 'Brand kit', icon: '◆', ready: true },
   { key: 'team', label: 'Team', icon: '👥', ready: true },
+  { key: 'billing', label: 'Plan', icon: '◈', ready: true },
   { key: 'whatsapp', label: 'WhatsApp', icon: '✆', ready: false },
   { key: 'ads', label: 'Ads', icon: '◎', ready: false },
 ];
@@ -68,7 +77,17 @@ const COMING_SOON: Record<string, string> = {
   ads: 'Meta and Google campaigns. Unlocks once the ads API applications are approved.',
 };
 
-export function DashboardScreen({ session, onSignOut, onSessionChange, notice, onDismissNotice }: Props) {
+export function DashboardScreen({
+  session,
+  onSignOut,
+  onSessionChange,
+  notice,
+  onDismissNotice,
+  onImpersonate,
+  impersonating,
+  onStopImpersonating,
+}: Props) {
+  const isPlatformAdmin = Boolean(session.user.isPlatformAdmin);
   const [tab, setTab] = useState<TabKey>('compose');
   // Bumping this forces the posts list to refetch after a publish.
   const [postsKey, setPostsKey] = useState(0);
@@ -130,9 +149,20 @@ export function DashboardScreen({ session, onSignOut, onSessionChange, notice, o
             </ul>
           </nav>
 
+          {isPlatformAdmin && (
+            <button
+              onClick={() => setTab('admin')}
+              aria-current={tab === 'admin' ? 'page' : undefined}
+              className={`ml-auto hidden shrink-0 rounded-lg px-2.5 py-1.5 text-sm lg:block ${
+                tab === 'admin' ? 'bg-amber-100 font-medium text-amber-900' : 'text-amber-800 hover:bg-amber-50'
+              }`}
+            >
+              ⚙ Admin
+            </button>
+          )}
           <button
             onClick={onSignOut}
-            className="ml-auto hidden shrink-0 rounded-lg border border-slate-300 px-2.5 py-1.5 text-sm text-slate-700 transition hover:bg-slate-100 lg:block"
+            className={`${isPlatformAdmin ? '' : 'ml-auto '}hidden shrink-0 rounded-lg border border-slate-300 px-2.5 py-1.5 text-sm text-slate-700 transition hover:bg-slate-100 lg:block`}
           >
             Sign out
           </button>
@@ -143,6 +173,16 @@ export function DashboardScreen({ session, onSignOut, onSessionChange, notice, o
       </header>
 
       <main className="mx-auto w-full max-w-[1700px] flex-1 px-4 py-3 pb-24 lg:pb-4">
+        {impersonating && (
+          <div className="mb-3 flex items-center justify-between rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-900">
+            <span>
+              Viewing <strong>{session.organization.name}</strong> as {session.user.name} (support session, ends in 15 min).
+            </span>
+            <button onClick={onStopImpersonating} className="ml-3 font-medium hover:underline">
+              Back to admin
+            </button>
+          </div>
+        )}
         {notice && (
           <div className="mb-3 flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
             <span>{notice}</span>
@@ -198,6 +238,8 @@ export function DashboardScreen({ session, onSignOut, onSessionChange, notice, o
         )}
         {tab === 'brand' && <BrandScreen key={session.organization.id} />}
         {tab === 'team' && <TeamScreen key={session.organization.id} session={session} />}
+        {tab === 'billing' && <BillingScreen key={session.organization.id} session={session} />}
+        {tab === 'admin' && isPlatformAdmin && onImpersonate && <AdminScreen onImpersonate={onImpersonate} />}
         {tab === 'channels' && <ConnectionsScreen key={session.organization.id} />}
         {tab === 'creatives' && (
           <CreativesScreen

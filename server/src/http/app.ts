@@ -11,6 +11,10 @@ import { connectionsRouter } from '../modules/connections/routes.js';
 import { googleCallbackRouter } from '../modules/connections/google-callback.js';
 import { creativesRouter } from '../modules/creatives/routes.js';
 import { ideasRouter } from '../modules/ideas/routes.js';
+import { billingRouter } from '../modules/billing/routes.js';
+import { adminRouter } from '../modules/admin/routes.js';
+import * as billing from '../modules/billing/service.js';
+import { verifyWebhookSignature } from '../integrations/razorpay.js';
 import { mediaRouter } from '../modules/media/routes.js';
 import { organizationsRouter } from '../modules/organizations/routes.js';
 import { postsRouter } from '../modules/posts/routes.js';
@@ -54,6 +58,30 @@ export function createApp(): Express {
   app.use(cors({ origin: corsOrigin(), credentials: true }));
   app.use(pinoHttp({ logger }));
 
+  // Razorpay signs the raw body, so this route reads it before the JSON
+  // parser gets a chance to re-encode it.
+  app.post('/api/webhooks/razorpay', express.raw({ type: '*/*', limit: '1mb' }), (req, res) => {
+    const signature = String(req.header('x-razorpay-signature') ?? '');
+    const raw = req.body as Buffer;
+    if (!verifyWebhookSignature(raw, signature)) {
+      logger.warn('Rejected a Razorpay webhook with a bad signature');
+      return res.status(400).json({ received: false });
+    }
+    let event: { event: string; payload: Record<string, unknown> };
+    try {
+      event = JSON.parse(raw.toString('utf8'));
+    } catch {
+      return res.status(400).json({ received: false });
+    }
+    billing
+      .handleWebhook(event)
+      .then(() => res.json({ received: true }))
+      .catch((error) => {
+        logger.error({ err: error }, 'Razorpay webhook failed');
+        res.status(500).json({ received: false });
+      });
+  });
+
   // Media never passes through this process — uploads go straight to Cloudinary
   // with a signed request — so a small JSON limit is all the API needs.
   app.use(express.json({ limit: '1mb' }));
@@ -84,6 +112,8 @@ export function createApp(): Express {
   app.use('/api/analytics', analyticsRouter);
   app.use('/api/creatives', creativesRouter);
   app.use('/api/ideas', ideasRouter);
+  app.use('/api/billing', billingRouter);
+  app.use('/api/admin', adminRouter);
   app.use('/api/media', mediaRouter);
   app.use('/api/posts', postsRouter);
   // Unauthenticated by necessity: Meta calls these directly and proves

@@ -157,22 +157,32 @@ export interface Plan {
   name: string;
   /** Paise, so ₹1,499 is 149900. Avoids float rounding on money. */
   priceInPaise: number;
-  interval: 'monthly' | 'yearly';
+  /** Paise per year; ten months for the price of twelve. */
+  yearlyPriceInPaise: number;
+  /** One line under the name on the plan card. */
+  tagline: string;
+  /** Bullet points on the plan card, in order. */
+  highlights: string[];
   limits: PlanLimits;
 }
 
-/** Priced for Indian SMBs; Razorpay is the merchant. */
+/** Every new workspace tries Growth for this long before dropping to Free. */
+export const TRIAL_DAYS = 14;
+
+/** Prepaid, per workspace per month, for Indian SMBs; Razorpay is the merchant. */
 export const PLANS: Record<string, Plan> = {
   free: {
     code: 'free',
     name: 'Free',
     priceInPaise: 0,
-    interval: 'monthly',
+    yearlyPriceInPaise: 0,
+    tagline: 'Try it with one page.',
+    highlights: ['2 channels', '15 posts a month', '1 person', 'Reels & posters: 5 exports a month'],
     limits: {
-      connections: 1,
-      postsPerMonth: 10,
-      aiTextPerMonth: 25,
-      aiImagePerMonth: 5,
+      connections: 2,
+      postsPerMonth: 15,
+      aiTextPerMonth: 20,
+      aiImagePerMonth: 0,
       aiVideoPerMonth: 0,
       waMessagesPerMonth: 0,
       seats: 1,
@@ -181,13 +191,15 @@ export const PLANS: Record<string, Plan> = {
   starter: {
     code: 'starter',
     name: 'Starter',
-    priceInPaise: 79900,
-    interval: 'monthly',
+    priceInPaise: 49900,
+    yearlyPriceInPaise: 499000,
+    tagline: 'For one business, posted properly.',
+    highlights: ['5 channels', 'Unlimited posts', '2 people', 'Unlimited reels, posters & Magic Design', 'Calendar, queue, first comment'],
     limits: {
-      connections: 3,
-      postsPerMonth: 100,
-      aiTextPerMonth: 300,
-      aiImagePerMonth: 60,
+      connections: 5,
+      postsPerMonth: -1,
+      aiTextPerMonth: 200,
+      aiImagePerMonth: 50,
       aiVideoPerMonth: 5,
       waMessagesPerMonth: 1000,
       seats: 2,
@@ -196,34 +208,49 @@ export const PLANS: Record<string, Plan> = {
   growth: {
     code: 'growth',
     name: 'Growth',
-    priceInPaise: 249900,
-    interval: 'monthly',
+    priceInPaise: 149900,
+    yearlyPriceInPaise: 1499000,
+    tagline: 'For a team, or a few brands.',
+    highlights: ['15 channels', 'Unlimited posts', '5 people', 'Approvals & client reports', 'Everything in Starter'],
     limits: {
-      connections: 10,
-      postsPerMonth: 500,
-      aiTextPerMonth: 1500,
-      aiImagePerMonth: 300,
-      aiVideoPerMonth: 30,
+      connections: 15,
+      postsPerMonth: -1,
+      aiTextPerMonth: 1000,
+      aiImagePerMonth: 200,
+      aiVideoPerMonth: 20,
       waMessagesPerMonth: 10000,
       seats: 5,
     },
   },
-  scale: {
-    code: 'scale',
-    name: 'Scale',
-    priceInPaise: 699900,
-    interval: 'monthly',
+  agency: {
+    code: 'agency',
+    name: 'Agency',
+    priceInPaise: 399900,
+    yearlyPriceInPaise: 3999000,
+    tagline: 'For agencies with many clients.',
+    highlights: ['50 channels', 'Unlimited posts', '15 people', 'Client workspaces & approvals', 'Everything in Growth'],
     limits: {
-      connections: -1,
+      connections: 50,
       postsPerMonth: -1,
-      aiTextPerMonth: 6000,
-      aiImagePerMonth: 1200,
-      aiVideoPerMonth: 120,
+      aiTextPerMonth: 5000,
+      aiImagePerMonth: 1000,
+      aiVideoPerMonth: 100,
       waMessagesPerMonth: 100000,
-      seats: 20,
+      seats: 15,
     },
   },
 };
+
+/** The paid plans, cheapest first — the order the cards are shown in. */
+export const PLAN_ORDER = ['free', 'starter', 'growth', 'agency'] as const;
+
+/** Earlier plan codes still stored on some workspaces. */
+export const LEGACY_PLAN_CODES: Record<string, string> = { scale: 'agency' };
+
+export function findPlan(code: string | null | undefined): Plan {
+  const resolved = code ? (LEGACY_PLAN_CODES[code] ?? code) : 'free';
+  return PLANS[resolved] ?? PLANS.free!;
+}
 
 /** Maps a usage kind to the plan limit that governs it, or null if unmetered. */
 export const USAGE_LIMIT_KEY: Record<UsageKind, keyof PlanLimits | null> = {

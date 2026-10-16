@@ -13,6 +13,8 @@ import type { Role } from '@socialboost/shared';
 import { db } from '../../db/client.js';
 import { brandProfiles, invitations, memberships, organizations, users } from '../../db/schema.js';
 import { badRequest, conflict, forbidden, notFound } from '../../lib/errors.js';
+import { assertCanAddSeat } from '../usage/service.js';
+import { trialEnd } from '../billing/service.js';
 
 export interface OrganizationSummary {
   id: string;
@@ -59,7 +61,7 @@ export async function create(userId: string, name: string): Promise<Organization
   return db.transaction(async (tx) => {
     const [organization] = await tx
       .insert(organizations)
-      .values({ name: trimmed, slug: slugify(trimmed) })
+      .values({ name: trimmed, slug: slugify(trimmed), trialEndsAt: trialEnd() })
       .returning();
 
     if (!organization) throw new Error('Failed to create organization');
@@ -206,6 +208,7 @@ export async function createInvitation(
   input: { email: string; role: Role },
 ) {
   const email = input.email.trim().toLowerCase();
+  await assertCanAddSeat(organizationId);
   const [already] = await db
     .select({ userId: users.id })
     .from(users)

@@ -25,6 +25,22 @@ function pendingInviteToken(): string | null {
 export default function App() {
   const [session, setSession] = useState<Session | null>(() => loadSession());
   const [inviteToken, setInviteToken] = useState<string | null>(() => pendingInviteToken());
+  /** The admin's own session, kept while they look at a customer's workspace. */
+  const [adminSession, setAdminSession] = useState<Session | null>(null);
+
+  function impersonate(target: Session) {
+    if (!session) return;
+    setAdminSession(session);
+    saveSession(target);
+    setSession(target);
+  }
+
+  function stopImpersonating() {
+    if (!adminSession) return;
+    saveSession(adminSession);
+    setSession(adminSession);
+    setAdminSession(null);
+  }
   const [inviteNotice, setInviteNotice] = useState<string | null>(null);
 
   // Once signed in, an invitation is accepted and the workspace switched.
@@ -68,6 +84,9 @@ export default function App() {
       onSessionChange={setSession}
       notice={inviteNotice}
       onDismissNotice={() => setInviteNotice(null)}
+      onImpersonate={impersonate}
+      impersonating={adminSession !== null}
+      onStopImpersonating={stopImpersonating}
     />
   );
 }

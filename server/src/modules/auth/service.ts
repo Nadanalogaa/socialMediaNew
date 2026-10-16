@@ -21,13 +21,14 @@ import { generateOpaqueToken, hashPassword, verifyPassword } from '../../lib/cry
 import { conflict, unauthorized } from '../../lib/errors.js';
 import { signAccessToken } from '../../lib/jwt.js';
 import { listForUser } from '../organizations/service.js';
+import { trialEnd } from '../billing/service.js';
 
 const REFRESH_TOKEN_TTL_DAYS = 30;
 
 export interface AuthResult {
   accessToken: string;
   refreshToken: string;
-  user: { id: string; email: string; name: string };
+  user: { id: string; email: string; name: string; isPlatformAdmin: boolean };
   /** The workspace to open on sign-in. */
   organization: { id: string; name: string; slug: string; role: string };
   /** Every workspace the user can switch between. */
@@ -68,7 +69,7 @@ export async function register(input: RegisterInput, userAgent?: string): Promis
 
     const [organization] = await tx
       .insert(organizations)
-      .values({ name: input.organizationName.trim(), slug: slugify(input.organizationName) })
+      .values({ name: input.organizationName.trim(), slug: slugify(input.organizationName), trialEndsAt: trialEnd() })
       .returning();
 
     if (!user || !organization) throw new Error('Failed to create account');
@@ -179,7 +180,7 @@ export async function logout(token: string): Promise<void> {
 }
 
 async function issueSession(
-  user: { id: string; email: string; name: string },
+  user: { id: string; email: string; name: string; isPlatformAdmin?: boolean },
   organization: { id: string; name: string; slug: string; role: string },
   userAgent?: string,
 ): Promise<AuthResult> {
@@ -200,7 +201,7 @@ async function issueSession(
   return {
     accessToken,
     refreshToken,
-    user: { id: user.id, email: user.email, name: user.name },
+    user: { id: user.id, email: user.email, name: user.name, isPlatformAdmin: Boolean(user.isPlatformAdmin) },
     organization,
     organizations: allOrganizations.length > 0 ? allOrganizations : [organization as never],
   };

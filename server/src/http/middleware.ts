@@ -8,7 +8,7 @@ import { and, eq } from 'drizzle-orm';
 import { ZodError, type ZodSchema } from 'zod';
 import type { Role } from '@socialboost/shared';
 import { db } from '../db/client.js';
-import { memberships, organizations } from '../db/schema.js';
+import { memberships, organizations, users } from '../db/schema.js';
 import { AppError, forbidden, unauthorized } from '../lib/errors.js';
 import { GraphApiError } from '../integrations/meta.js';
 import { verifyAccessToken } from '../lib/jwt.js';
@@ -54,7 +54,7 @@ export async function withOrganization(req: Request, _res: Response, next: NextF
   }
 
   const [row] = await db
-    .select({ role: memberships.role, planCode: organizations.planCode })
+    .select({ role: memberships.role, planCode: organizations.planCode, suspendedAt: organizations.suspendedAt })
     .from(memberships)
     .innerJoin(organizations, eq(organizations.id, memberships.organizationId))
     .where(
@@ -68,8 +68,23 @@ export async function withOrganization(req: Request, _res: Response, next: NextF
   // Same response whether the org is missing or simply not theirs, so the
   // endpoint cannot be used to probe which organization ids exist.
   if (!row) return next(forbidden('You are not a member of this organization'));
+  if (row.suspendedAt && req.method !== 'GET') {
+    return next(new AppError(402, 'suspended', 'This workspace is suspended. Please contact support.'));
+  }
 
   req.tenant = { organizationId, role: row.role, planCode: row.planCode };
+  next();
+}
+
+/** Platform admins run the service itself; the flag lives on the user row. */
+export async function requirePlatformAdmin(req: Request, _res: Response, next: NextFunction) {
+  if (!req.auth) return next(unauthorized());
+  const [user] = await db
+    .select({ isPlatformAdmin: users.isPlatformAdmin })
+    .from(users)
+    .where(eq(users.id, req.auth.userId))
+    .limit(1);
+  if (!user?.isPlatformAdmin) return next(forbidden('Platform admins only'));
   next();
 }
 

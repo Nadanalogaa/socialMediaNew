@@ -21,7 +21,7 @@ export interface Organization {
 export interface Session {
   accessToken: string;
   refreshToken: string;
-  user: { id: string; email: string; name: string };
+  user: { id: string; email: string; name: string; isPlatformAdmin?: boolean };
   /** The workspace currently in view; every request is scoped to it. */
   organization: Organization;
   /** Every workspace this user can switch between. */
@@ -273,6 +273,75 @@ export interface InvitationPreview {
   inviter: string;
   accepted: boolean;
   expired: boolean;
+}
+
+export interface BillingOrder {
+  id: string;
+  planCode: string;
+  interval: 'monthly' | 'yearly';
+  amountInPaise: number;
+  status: 'created' | 'paid' | 'failed';
+  razorpayPaymentId: string | null;
+  paidAt: string | null;
+  createdAt: string;
+}
+
+export interface BillingInfo {
+  plan: { code: string; name: string; priceInPaise: number; yearlyPriceInPaise: number; tagline: string; highlights: string[]; limits: Record<string, number> };
+  source: 'subscription' | 'manual' | 'trial' | 'free';
+  endsAt: string | null;
+  trialEndsAt: string | null;
+  suspended: boolean;
+  usage: Record<string, { used: number; limit: number }>;
+  orders: BillingOrder[];
+  paymentsEnabled: boolean;
+  razorpayKeyId: string | null;
+}
+
+export interface AdminOverview {
+  organizations: number;
+  newOrganizations30d: number;
+  users: number;
+  activeSubscriptions: number;
+  trialing: number;
+  mrrInPaise: number;
+  revenue30dInPaise: number;
+  postsPublished30d: number;
+  postsFailed7d: number;
+  tokensExpiring7d: number;
+  queue: Record<string, number> | null;
+}
+
+export interface AdminOrganization {
+  id: string;
+  name: string;
+  slug: string;
+  planCode: string;
+  planSource: string;
+  trialEndsAt: string | null;
+  suspendedAt: string | null;
+  createdAt: string;
+  members: number;
+  channels: number;
+  posts30d: number;
+  lastActivity: string | null;
+  ownerEmail: string | null;
+  periodEnd: string | null;
+  effectivePlan: { code: string; source: string };
+}
+
+export interface AdminPayment {
+  id: string;
+  organizationId: string;
+  organizationName: string;
+  planCode: string;
+  interval: string;
+  amountInPaise: number;
+  status: string;
+  razorpayOrderId: string;
+  razorpayPaymentId: string | null;
+  paidAt: string | null;
+  createdAt: string;
 }
 
 export interface ReportPayload extends AnalyticsPayload {
@@ -639,6 +708,36 @@ export const api = {
     request<InvitationPreview>(`/organizations/invitations/${encodeURIComponent(token)}`),
   acceptInvitation: (token: string) =>
     request<Organization>(`/organizations/invitations/${encodeURIComponent(token)}/accept`, { method: 'POST' }),
+
+  // --- Billing ---
+  getBilling: () => request<BillingInfo>('/billing'),
+  startCheckout: (planCode: string, interval: 'monthly' | 'yearly') =>
+    request<{ orderId: string; amountInPaise: number; currency: string; keyId: string; planName: string }>(
+      '/billing/checkout',
+      { method: 'POST', body: JSON.stringify({ planCode, interval }) },
+    ),
+  verifyPayment: (input: { razorpay_order_id: string; razorpay_payment_id: string; razorpay_signature: string }) =>
+    request<BillingInfo>('/billing/verify', { method: 'POST', body: JSON.stringify(input) }),
+
+  // --- Platform admin ---
+  adminOverview: () => request<AdminOverview>('/admin/overview'),
+  adminOrganizations: (q = '') =>
+    request<{ organizations: AdminOrganization[] }>(`/admin/organizations${q ? `?q=${encodeURIComponent(q)}` : ''}`),
+  adminOrganization: (id: string) =>
+    request<{
+      organization: { id: string; name: string; slug: string; planCode: string; planSource: string; trialEndsAt: string | null; suspendedAt: string | null; createdAt: string };
+      plan: { plan: { code: string; name: string }; source: string; endsAt: string | null };
+      usage: { limits: Record<string, number>; usage: Record<string, { used: number; limit: number }> };
+      members: { userId: string; name: string; email: string; role: string; lastLoginAt: string | null }[];
+      channels: { id: string; provider: string; displayName: string; status: string; tokenExpiresAt: string | null; lastError: string | null }[];
+      recentPosts: { id: string; caption: string; status: string; createdAt: string; publishedAt: string | null }[];
+      orders: BillingOrder[];
+      audit: { id: string; action: string; createdAt: string; metadata: Record<string, unknown> | null }[];
+    }>(`/admin/organizations/${id}`),
+  adminPatchOrganization: (id: string, input: { planCode?: string; extendTrialDays?: number; suspended?: boolean; note?: string }) =>
+    request<{ plan: { plan: { code: string }; source: string } }>(`/admin/organizations/${id}`, { method: 'PATCH', body: JSON.stringify(input) }),
+  adminImpersonate: (id: string) => request<Session>(`/admin/organizations/${id}/impersonate`, { method: 'POST' }),
+  adminPayments: () => request<{ payments: AdminPayment[] }>('/admin/payments'),
 
   // --- Report ---
   getReport: (days: number) => request<ReportPayload>(`/analytics/report?days=${days}`),
