@@ -3,22 +3,23 @@ import {
   buildProjectFromBrief,
   parseBrief,
   sceneDurationFor,
+  type MagicBrief,
   type ProjectAudio,
   type ReelProject,
 } from '@socialboost/shared';
 import { api, uploadAudio, uploadToCloudinary, type MediaAsset } from '../lib/api';
 import { Alert, Button, Spinner } from './ui';
 
-const EXAMPLE = `Scene 1
+const EXAMPLE = `Scene 1 - Opening
 Welcome to Our World of Fine Arts
 NADANALOGA ✨
 And add a photo
 
-Scene 2
+Scene 2 - What we teach
 Discover Your Passion. Develop Your Talent.
 Dance • Music • Art • Creativity
 
-Scene 3
+Scene 3 - Join us
 Learn. Create. Perform. Grow.
 Join Nadanaloga Fine Arts Academy
 Contact: 095668 66588
@@ -34,16 +35,21 @@ Website: www.nadanaloga.com`;
 export function MagicDesignDialog({
   onClose,
   onCreate,
+  initial,
 }: {
   onClose: () => void;
-  onCreate: (project: ReelProject, audio?: ProjectAudio) => void;
+  onCreate: (project: ReelProject, magic: MagicBrief, audio?: ProjectAudio) => void;
+  /** The brief this reel was built from, so it reopens ready to edit. */
+  initial?: MagicBrief;
 }) {
-  const [brief, setBrief] = useState('');
-  const [brandColor, setBrandColor] = useState('#4f46e5');
-  const [accentColor, setAccentColor] = useState('#0f172a');
+  const [brief, setBrief] = useState(initial?.brief ?? '');
+  const [brandColor, setBrandColor] = useState(initial?.brandColor ?? '#4f46e5');
+  const [accentColor, setAccentColor] = useState(initial?.accentColor ?? '#0f172a');
   const [library, setLibrary] = useState<MediaAsset[] | null>(null);
   /** A photo picked for one scene, keyed by its position in the brief. */
-  const [scenePhotos, setScenePhotos] = useState<Record<number, string>>({});
+  const [scenePhotos, setScenePhotos] = useState<Record<number, string>>(
+    initial?.scenePhotos ?? {},
+  );
   /** Which scene the picker below is choosing for. */
   const [pickingFor, setPickingFor] = useState<number | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -120,6 +126,7 @@ export function MagicDesignDialog({
         brandColor,
         accentColor,
       }),
+      { brief, scenePhotos, brandColor, accentColor },
       audio,
     );
   }
@@ -140,8 +147,9 @@ export function MagicDesignDialog({
           <div>
             <h2 className="text-lg font-semibold text-slate-900">✨ Magic Design</h2>
             <p className="mt-0.5 text-sm text-slate-600">
-              Write what each scene should say. The reel is built for you, and you can change
-              anything afterwards.
+              {initial
+                ? 'Edit the brief and the reel is rebuilt. Hand-made changes to scenes are replaced.'
+                : 'Write what each scene should say. The reel is built for you, and you can change anything afterwards.'}
             </p>
           </div>
           <button
@@ -356,7 +364,11 @@ export function MagicDesignDialog({
             Cancel
           </Button>
           <Button onClick={handleCreate} disabled={busy || scenes.length === 0}>
-            {busy ? 'Building…' : `Create ${scenes.length || ''} scene reel`}
+            {busy
+              ? 'Building…'
+              : initial
+                ? `Rebuild ${scenes.length} scene reel`
+                : `Create ${scenes.length || ''} scene reel`}
           </Button>
         </div>
 

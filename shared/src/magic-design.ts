@@ -144,6 +144,68 @@ export interface MagicDesignOptions {
   name?: string;
 }
 
+const CANVAS_W = 1080;
+const CANVAS_H = 1920;
+/** Horizontal margin each side, as a percentage of width. */
+const TEXT_MARGIN_PCT = 8;
+
+interface TextBlock {
+  name: string;
+  text: string;
+  fontSizePct: number;
+  weight: number;
+  lineHeight: number;
+  color: string;
+  animation: ProjectLayer['animation'];
+  delaySeconds: number;
+  heightPct: number;
+}
+
+/**
+ * Estimates how many lines a text needs at a font size.
+ *
+ * There is no canvas here to measure with, so this uses an average glyph
+ * width for a bold sans. It errs slightly wide, which produces a little
+ * breathing room rather than a collision.
+ */
+function estimateLines(text: string, fontSizePct: number, weight: number): number {
+  const fontPx = (fontSizePct / 100) * CANVAS_H;
+  const glyphWidth = fontPx * (weight >= 700 ? 0.6 : 0.54);
+  const boxWidth = CANVAS_W * (1 - (TEXT_MARGIN_PCT * 2) / 100);
+
+  return text.split('\n').reduce((lines, paragraph) => {
+    const words = paragraph.split(/\s+/).filter(Boolean);
+    if (words.length === 0) return lines + 1;
+    // Greedy wrap on word widths, as the renderer does.
+    let count = 1;
+    let width = 0;
+    for (const word of words) {
+      const wordWidth = (word.length + 1) * glyphWidth;
+      if (width + wordWidth > boxWidth && width > 0) {
+        count++;
+        width = wordWidth;
+      } else {
+        width += wordWidth;
+      }
+    }
+    return lines + count;
+  }, 0);
+}
+
+/** Shrinks a block's type until it fits its line budget, then sizes it. */
+function fitBlock(spec: Omit<TextBlock, 'heightPct'> & { minFontSizePct: number; maxLines: number }): TextBlock {
+  let fontSizePct = spec.fontSizePct;
+  let lines = estimateLines(spec.text, fontSizePct, spec.weight);
+
+  while (lines > spec.maxLines && fontSizePct > spec.minFontSizePct) {
+    fontSizePct = Math.max(spec.minFontSizePct, fontSizePct - 0.4);
+    lines = estimateLines(spec.text, fontSizePct, spec.weight);
+  }
+
+  const { minFontSizePct: _min, maxLines: _max, ...rest } = spec;
+  return { ...rest, fontSizePct, heightPct: lines * fontSizePct * spec.lineHeight + 0.5 };
+}
+
 /** Builds a complete, editable reel from a parsed brief. */
 export function buildProjectFromBrief(
   scenes: ParsedScene[],
@@ -200,72 +262,109 @@ function buildScene(
     });
   }
 
-  const hasBody = scene.body.length > 0;
-  const hasContact = scene.contact.length > 0;
-
-  // Headline sits high when there is more beneath it, centred when alone.
-  const headlineY = hasBody || hasContact ? 32 : 40;
-  // Long headlines need smaller type to stay on screen.
-  const headlineSize = scene.headline.length > 42 ? 6.4 : scene.headline.length > 24 ? 7.6 : 9;
+  /*
+   * Text is laid out as a flow, not at fixed positions.
+   *
+   * Fixed boxes overlapped the moment a headline wrapped to three lines or a
+   * body had more than two. Each block's height is estimated from its text,
+   * the blocks are stacked with gaps, and the whole group is centred — so a
+   * wordy scene lengthens its stack and a short one sits in the middle.
+   */
+  const blocks: TextBlock[] = [];
 
   if (scene.headline) {
-    layers.push({
-      id: newId('layer'),
-      type: 'text',
-      name: scene.headline.slice(0, 24),
-      content: scene.headline,
-      box: { x: 8, y: headlineY, w: 84, h: 22 },
-      style: {
-        fontSizePct: headlineSize,
-        fontWeight: 800,
-        color: '#ffffff',
-        align: 'center',
+    blocks.push(
+      fitBlock({
+        name: scene.headline.slice(0, 24),
+        text: scene.headline,
+        fontSizePct: scene.headline.length > 42 ? 6.4 : scene.headline.length > 24 ? 7.6 : 9,
+        minFontSizePct: 4.6,
+        maxLines: 3,
+        weight: 800,
         lineHeight: 1.15,
-        shadow: { color: 'rgba(0,0,0,0.45)', blur: 24, offsetY: 2 },
-      },
-      animation: 'letter-rise',
-      delaySeconds: 0.15,
-    });
-  }
-
-  if (hasBody) {
-    layers.push({
-      id: newId('layer'),
-      type: 'text',
-      name: 'Details',
-      content: scene.body.join('\n'),
-      box: { x: 10, y: 57, w: 80, h: 18 },
-      style: {
-        fontSizePct: 4,
-        fontWeight: 500,
-        color: '#e2e8f0',
-        align: 'center',
-        lineHeight: 1.45,
-        shadow: { color: 'rgba(0,0,0,0.4)', blur: 16, offsetY: 1 },
-      },
-      animation: 'fade-in',
-      delaySeconds: 0.6,
-    });
-  }
-
-  if (hasContact) {
-    layers.push({
-      id: newId('layer'),
-      type: 'text',
-      name: 'Contact',
-      content: scene.contact.join('\n'),
-      box: { x: 8, y: 78, w: 84, h: 14 },
-      style: {
-        fontSizePct: 3.4,
-        fontWeight: 700,
         color: '#ffffff',
-        align: 'center',
+        animation: 'letter-rise',
+        delaySeconds: 0.15,
+      }),
+    );
+  }
+
+  if (scene.body.length > 0) {
+    blocks.push(
+      fitBlock({
+        name: 'Details',
+        text: scene.body.join('\n'),
+        fontSizePct: 4,
+        minFontSizePct: 2.8,
+        maxLines: 6,
+        weight: 500,
+        lineHeight: 1.45,
+        color: '#e2e8f0',
+        animation: 'fade-in',
+        delaySeconds: 0.6,
+      }),
+    );
+  }
+
+  if (scene.contact.length > 0) {
+    blocks.push(
+      fitBlock({
+        name: 'Contact',
+        text: scene.contact.join('\n'),
+        fontSizePct: 3.4,
+        minFontSizePct: 2.6,
+        maxLines: 4,
+        weight: 700,
         lineHeight: 1.4,
-        shadow: { color: 'rgba(0,0,0,0.5)', blur: 14, offsetY: 1 },
+        color: '#ffffff',
+        animation: 'rise',
+        delaySeconds: 0.95,
+      }),
+    );
+  }
+
+  const GAP = 3;
+  const SAFE_TOP = 12;
+  const SAFE_BOTTOM = 92;
+  const available = SAFE_BOTTOM - SAFE_TOP;
+
+  let totalHeight =
+    blocks.reduce((sum, block) => sum + block.heightPct, 0) + GAP * Math.max(0, blocks.length - 1);
+
+  // An extreme brief can outgrow the safe band even at minimum sizes; scale
+  // the whole stack down rather than let the last block sit under the
+  // platform's own buttons.
+  if (totalHeight > available) {
+    const scale = available / totalHeight;
+    for (const block of blocks) {
+      block.fontSizePct *= scale;
+      block.heightPct *= scale;
+    }
+    totalHeight = available;
+  }
+
+  // Centred within the band where nothing else is drawn over it.
+  let cursorY = SAFE_TOP + (available - totalHeight) / 2;
+
+  for (const block of blocks) {
+    layers.push({
+      id: newId('layer'),
+      type: 'text',
+      name: block.name,
+      content: block.text,
+      box: { x: TEXT_MARGIN_PCT, y: cursorY, w: 100 - TEXT_MARGIN_PCT * 2, h: block.heightPct },
+      style: {
+        fontSizePct: block.fontSizePct,
+        fontWeight: block.weight,
+        color: block.color,
+        align: 'center',
+        lineHeight: block.lineHeight,
+        shadow: { color: 'rgba(0,0,0,0.45)', blur: 22, offsetY: 2 },
       },
-      animation: 'rise',
-      delaySeconds: 0.95,
+      animation: block.animation,
+      delaySeconds: block.delaySeconds,
     });
+    cursorY += block.heightPct + GAP;
   }
 
   return {

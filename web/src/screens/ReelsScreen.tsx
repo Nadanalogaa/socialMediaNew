@@ -88,9 +88,9 @@ export function ReelsScreen({
         {magicFromPicker && (
           <MagicDesignDialog
             onClose={() => setMagicFromPicker(false)}
-            onCreate={(built, audio) => {
+            onCreate={(built, magic, audio) => {
               setDesignId(undefined);
-              setProject(audio ? { ...built, audio } : built);
+              setProject({ ...built, magic, ...(audio ? { audio } : {}) });
               setMagicFromPicker(false);
             }}
           />
@@ -760,10 +760,10 @@ function ReelEditor({
 
         <button
           onClick={() => setMagicOpen(true)}
-          title="Write a brief and build the whole reel"
+          title={project.magic ? 'Edit the brief this reel was built from' : 'Write a brief and build the whole reel'}
           className="min-h-11 shrink-0 rounded-lg border border-brand-300 bg-brand-50 px-3 text-sm font-medium text-brand-700 transition hover:bg-brand-100 lg:min-h-0 lg:py-1.5"
         >
-          ✨<span className="ml-1 hidden sm:inline">Magic Design</span>
+          ✨<span className="ml-1 hidden sm:inline">{project.magic ? 'Edit brief' : 'Magic Design'}</span>
         </button>
 
         {/* Scene selection belongs beside the title: it is the context, and
@@ -1303,9 +1303,13 @@ function ReelEditor({
 
       {magicOpen && (
         <MagicDesignDialog
+          initial={project.magic}
           onClose={() => setMagicOpen(false)}
-          onCreate={(built, audio) => {
-            setProject({ ...built, name: project.name, audio: audio ?? project.audio }, undefined);
+          onCreate={(built, magic, audio) => {
+            setProject(
+              { ...built, name: project.name, audio: audio ?? project.audio, magic },
+              undefined,
+            );
             setSceneIndex(0);
             setSelectedLayerId(null);
             setMagicOpen(false);

@@ -60,11 +60,25 @@ export interface ProjectAudio {
   fadeOut: boolean;
 }
 
+/**
+ * The brief a reel was built from, kept so it can be reopened and edited.
+ *
+ * Without this the text that produced a reel was gone the moment the dialog
+ * closed, and changing one word meant retyping all of it.
+ */
+export interface MagicBrief {
+  brief: string;
+  scenePhotos: Record<number, string>;
+  brandColor: string;
+  accentColor: string;
+}
+
 export interface ReelProject {
   name: string;
   ratio: AspectRatioKey;
   scenes: ProjectScene[];
   audio?: ProjectAudio;
+  magic?: MagicBrief;
 }
 
 export function projectDuration(project: ReelProject): number {
