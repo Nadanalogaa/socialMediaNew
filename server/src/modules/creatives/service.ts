@@ -137,7 +137,8 @@ export interface SaveBriefInput {
   id?: string;
   name: string;
   brief: string;
-  scenePhotos: Record<string, string>;
+  scenePhotos: Record<string, string | string[]>;
+  options?: Record<string, unknown>;
   brandColor: string;
   accentColor: string;
 }
@@ -149,6 +150,7 @@ export async function saveBrief(organizationId: string, userId: string, input: S
     name: input.name.trim().slice(0, 120) || 'Untitled brief',
     brief: input.brief,
     scenePhotos: input.scenePhotos,
+    options: input.options ?? {},
     brandColor: input.brandColor,
     accentColor: input.accentColor,
     updatedAt: new Date(),

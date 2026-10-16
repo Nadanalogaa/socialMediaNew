@@ -36,6 +36,13 @@
       "when": 1792127805030,
       "tag": "0004_magic_briefs",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1792129876743,
+      "tag": "0005_magic_brief_options",
+      "breakpoints": true
     }
   ]
 }

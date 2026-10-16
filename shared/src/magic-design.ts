@@ -34,9 +34,32 @@ export interface BriefLine {
   style: LineStyle;
 }
 
+export type LogoPosition =
+  | 'top-left'
+  | 'top-center'
+  | 'top-right'
+  | 'bottom-left'
+  | 'bottom-center'
+  | 'bottom-right';
+
+/**
+ * Lines that shape every scene rather than one: "Logo: top right",
+ * "QR: https://…", "Footer: www.nadanaloga.com". Written above the first
+ * scene they apply throughout; QR and Footer inside a scene apply there only.
+ */
+export interface BriefDirectives {
+  logoPosition?: LogoPosition;
+  qr?: string;
+  footer: string[];
+}
+
 export interface ParsedScene {
   /** From a heading like "Scene 1 - Opening Scene". */
   label?: string;
+  /** A QR code for this scene alone. */
+  qr?: string;
+  /** Small lines along the bottom of this scene alone. */
+  footer: string[];
   /** The line that carries the message. */
   headline: string;
   /** Supporting lines, shown smaller beneath it. */
@@ -167,6 +190,53 @@ const BARE_PHONE = /^\s*(\+?\d[\d\s\-().]{6,}\d)\s*$/;
 const BARE_URL = /^\s*(https?:\/\/\S+|www\.\S+|[a-z0-9-]+(\.[a-z0-9-]+)*\.(com|in|org|net|co|io|app|edu)(\/\S*)?)\s*$/i;
 const BARE_EMAIL = /^\s*[^\s@]+@[^\s@]+\.[a-z]{2,}\s*$/i;
 
+const DIRECTIVE = /^\s*(logo|qr\s*code|qr|footer|every\s+scene|all\s+scenes)\s*[:\-–]\s*(.*)$/i;
+
+type Directive =
+  | { kind: 'logo'; position?: LogoPosition }
+  | { kind: 'qr'; text: string }
+  | { kind: 'footer'; text: string };
+
+function readDirective(line: string): Directive | null {
+  const match = DIRECTIVE.exec(line);
+  if (!match) return null;
+  const name = match[1]!.toLowerCase().replace(/\s+/g, ' ');
+  const rest = readLineInstructions(match[2]!.trim()).text;
+
+  if (name === 'logo') return { kind: 'logo', position: readLogoPosition(rest) };
+  if (name.startsWith('qr')) return rest ? { kind: 'qr', text: rest } : null;
+  return rest ? { kind: 'footer', text: rest } : null;
+}
+
+function readLogoPosition(text: string): LogoPosition | undefined {
+  const words = text.toLowerCase();
+  const vertical = /bottom|below|foot/.test(words) ? 'bottom' : /top|above|head/.test(words) ? 'top' : undefined;
+  const horizontal = /left/.test(words) ? 'left' : /right/.test(words) ? 'right' : /cent|middle/.test(words) ? 'center' : undefined;
+  if (!vertical && !horizontal) return undefined;
+  return `${vertical ?? 'top'}-${horizontal ?? 'right'}` as LogoPosition;
+}
+
+/** Reads the lines that apply to the whole reel. */
+export function parseBriefDirectives(brief: string): BriefDirectives {
+  const directives: BriefDirectives = { footer: [] };
+  const lines = brief.split('\n');
+  const firstHeading = lines.findIndex((line) => SCENE_MARKER.test(line));
+
+  lines.forEach((line, index) => {
+    const directive = readDirective(line);
+    if (!directive) return;
+    // A logo is the same on every scene wherever it is written; QR and
+    // footer lines are global only when they sit above the first scene.
+    const global = directive.kind === 'logo' || firstHeading === -1 || index < firstHeading;
+    if (!global) return;
+    if (directive.kind === 'logo') directives.logoPosition = directive.position ?? directives.logoPosition;
+    else if (directive.kind === 'qr') directives.qr = directive.text;
+    else directives.footer.push(directive.text);
+  });
+
+  return directives;
+}
+
 function isContactLine(line: string): boolean {
   return CONTACT_LINE.test(line) || BARE_PHONE.test(line) || BARE_URL.test(line) || BARE_EMAIL.test(line);
 }
@@ -176,8 +246,16 @@ export function parseBrief(brief: string): ParsedScene[] {
   const lines = brief.split('\n');
   const blocks: { lines: string[]; label?: string }[] = [];
   let current: string[] | null = null;
+  const firstHeading = lines.findIndex((line) => SCENE_MARKER.test(line));
 
-  for (const line of lines) {
+  for (const [index, line] of lines.entries()) {
+    const directive = readDirective(line);
+    if (
+      directive &&
+      (directive.kind === 'logo' || firstHeading === -1 || index < firstHeading)
+    ) {
+      continue;
+    }
     const heading = SCENE_MARKER.exec(line);
     if (heading) {
       current = [];
@@ -233,10 +311,21 @@ function toScene(block: string[], label?: string): ParsedScene {
   const contact: BriefLine[] = [];
   let headline: BriefLine | undefined;
   let wantsPhoto = false;
+  let qr: string | undefined;
+  const footer: string[] = [];
 
   for (const raw of block) {
     if (PHOTO_REQUEST.test(raw)) {
       wantsPhoto = true;
+      continue;
+    }
+    const directive = readDirective(raw);
+    if (directive?.kind === 'qr') {
+      qr = directive.text;
+      continue;
+    }
+    if (directive?.kind === 'footer') {
+      footer.push(directive.text);
       continue;
     }
     const line = readLineInstructions(raw);
@@ -257,6 +346,8 @@ function toScene(block: string[], label?: string): ParsedScene {
 
   return {
     label,
+    qr,
+    footer,
     headline: headline?.text ?? '',
     body: body.map((line) => line.text),
     contact: contact.map((line) => line.text),
@@ -279,14 +370,24 @@ export function sceneDurationFor(scene: ParsedScene): number {
   return Math.min(6, Math.max(2.5, 1.8 + words * 0.28));
 }
 
+export type ScenePhotoLayout = 'background' | 'blocks';
+
 export interface MagicDesignOptions {
   /**
-   * A photo chosen for a specific scene, by index. Takes precedence over the
-   * pool, so "this picture on scene 2" is honoured exactly.
+   * Photos chosen for a specific scene, by index. One can be the backdrop;
+   * several are laid out as equal tiles between the headline and the text.
    */
-  scenePhotos?: (string | undefined)[];
-  /** Photos to draw on when a scene has none of its own. */
+  scenePhotos?: (string[] | undefined)[];
+  /** Backdrop or tiles, per scene. Several photos are always tiles. */
+  photoLayout?: (ScenePhotoLayout | undefined)[];
+  /** Photos to draw on when a scene asked for one but none was chosen. */
   photos: string[];
+  /** Shown on every scene. */
+  logo?: string;
+  logoPosition?: LogoPosition;
+  /** QR images already rendered, keyed by the text they encode. */
+  qrImages?: Record<string, string>;
+  directives?: BriefDirectives;
   brandColor: string;
   accentColor: string;
   ratio?: AspectRatioKey;
@@ -439,26 +540,68 @@ export function buildProjectFromBrief(
     name: options.name?.trim() || 'Magic design',
     ratio: options.ratio ?? 'story',
     scenes: scenes.map((scene, index) =>
-      buildScene(scene, index, options.scenePhotos?.[index], photos, brandColor, accentColor),
+      buildScene(scene, index, options, photos, brandColor, accentColor),
     ),
   };
+}
+
+/** Tile geometry for a row of equal photos, as percentages of the canvas. */
+function tileGrid(count: number): { cols: number; rows: number; tileH: number } {
+  if (count <= 1) return { cols: 1, rows: 1, tileH: 30 };
+  if (count === 2) return { cols: 2, rows: 1, tileH: 26 };
+  if (count === 3) return { cols: 3, rows: 1, tileH: 20 };
+  if (count === 4) return { cols: 2, rows: 2, tileH: 20 };
+  return { cols: 3, rows: 2, tileH: 16 };
+}
+
+const TILE_GAP_W = 2;
+const TILE_GAP_H = 1.2;
+const MAX_TILES = 6;
+
+interface PhotoBlock {
+  kind: 'photos';
+  urls: string[];
+  heightPct: number;
+  gapBefore?: number;
+}
+
+type FlowBlock = (TextBlock & { kind: 'text' }) | PhotoBlock;
+
+function photoBlock(urls: string[]): PhotoBlock {
+  const shown = urls.slice(0, MAX_TILES);
+  const { rows, tileH } = tileGrid(shown.length);
+  return { kind: 'photos', urls: shown, heightPct: rows * tileH + (rows - 1) * TILE_GAP_H };
 }
 
 function buildScene(
   scene: ParsedScene,
   index: number,
-  chosenPhoto: string | undefined,
+  options: MagicDesignOptions,
   photos: string[],
   brandColor: string,
   accentColor: string,
 ): ProjectScene {
   const layers: ProjectLayer[] = [];
+  const chosen = (options.scenePhotos?.[index] ?? []).filter(Boolean);
+  const layout: ScenePhotoLayout =
+    chosen.length > 1 ? 'blocks' : (options.photoLayout?.[index] ?? 'background');
+
   // A scene shows a photo only when the author chose one for it, or wrote
   // "add a photo" and left the choice to the library. A scene with neither
   // gets a plain colour: nothing the author did not ask for.
   const fallback = photos.length > 0 ? photos[index % photos.length] : undefined;
-  const photo = chosenPhoto ?? (scene.wantsPhoto ? fallback : undefined);
-  const usePhoto = Boolean(photo);
+  const backdrop =
+    layout === 'background' ? (chosen[0] ?? (scene.wantsPhoto ? fallback : undefined)) : undefined;
+  const tiles = layout === 'blocks' ? chosen : [];
+  const usePhoto = Boolean(backdrop);
+  const photo = backdrop;
+
+  const directives = options.directives ?? { footer: [] };
+  const qrText = scene.qr ?? directives.qr;
+  const qrImage = qrText ? options.qrImages?.[qrText] : undefined;
+  const footer = scene.footer.length > 0 ? scene.footer : directives.footer;
+  const logoPosition = options.logoPosition ?? directives.logoPosition ?? 'top-right';
+  const logoAtBottom = Boolean(options.logo) && logoPosition.startsWith('bottom');
 
   layers.push({
     id: newId('layer'),
@@ -493,13 +636,14 @@ function buildScene(
    * the blocks are stacked with gaps, and the whole group is centred — so a
    * wordy scene lengthens its stack and a short one sits in the middle.
    */
-  const blocks: TextBlock[] = [];
+  const blocks: FlowBlock[] = [];
   const { lines } = scene;
+  const text = (block: TextBlock): FlowBlock => ({ ...block, kind: 'text' });
 
   if (lines.headline) {
     const headline = lines.headline.text;
     blocks.push(
-      blockFor(headline.slice(0, 24), [lines.headline], {
+      text(blockFor(headline.slice(0, 24), [lines.headline], {
         fontSizePct: headline.length > 42 ? 6.4 : headline.length > 24 ? 7.6 : 9,
         minFontSizePct: 4.6,
         maxLines: 2,
@@ -508,9 +652,12 @@ function buildScene(
         color: '#ffffff',
         animation: 'letter-rise',
         delaySeconds: 0.15,
-      }),
+      })),
     );
   }
+
+  // Tiles sit under the headline and above the supporting text.
+  if (tiles.length > 0) blocks.push(photoBlock(tiles));
 
   const BODY: RoleSpec = {
     fontSizePct: 4,
@@ -538,19 +685,20 @@ function buildScene(
   // Lines within a role sit close together; roles are set further apart.
   const INNER_GAP = 1.2;
   groupLines(lines.body).forEach((group, i) => {
-    blocks.push(blockFor('Details', group, BODY, i === 0 ? undefined : INNER_GAP));
+    blocks.push(text(blockFor('Details', group, BODY, i === 0 ? undefined : INNER_GAP)));
   });
   groupLines(lines.contact).forEach((group, i) => {
-    blocks.push(blockFor('Contact', group, CONTACT, i === 0 ? undefined : INNER_GAP));
+    blocks.push(text(blockFor('Contact', group, CONTACT, i === 0 ? undefined : INNER_GAP)));
   });
 
   const GAP = 3;
   const SAFE_TOP = 12;
-  const SAFE_BOTTOM = 92;
+  // The band shrinks for whatever sits along the bottom edge.
+  const SAFE_BOTTOM = qrImage ? 79 : footer.length > 0 || logoAtBottom ? 88 : 92;
   const available = SAFE_BOTTOM - SAFE_TOP;
 
   let gapScale = 1;
-  const gapAbove = (block: TextBlock, i: number) =>
+  const gapAbove = (block: FlowBlock, i: number) =>
     i === 0 ? 0 : (block.gapBefore ?? GAP) * gapScale;
   let totalHeight = blocks.reduce((sum, block, i) => sum + block.heightPct + gapAbove(block, i), 0);
 
@@ -560,7 +708,7 @@ function buildScene(
   if (totalHeight > available) {
     const scale = available / totalHeight;
     for (const block of blocks) {
-      block.fontSizePct *= scale;
+      if (block.kind === 'text') block.fontSizePct *= scale;
       block.heightPct *= scale;
     }
     gapScale = scale;
@@ -572,6 +720,33 @@ function buildScene(
 
   blocks.forEach((block, i) => {
     cursorY += gapAbove(block, i);
+    if (block.kind === 'photos') {
+      const { cols, rows, tileH: naturalH } = tileGrid(block.urls.length);
+      const tileH = (block.heightPct - (rows - 1) * TILE_GAP_H) / rows;
+      const tileW = (100 - TEXT_MARGIN_PCT * 2 - TILE_GAP_W * (cols - 1)) / cols;
+      block.urls.forEach((url, n) => {
+        const col = n % cols;
+        const row = Math.floor(n / cols);
+        layers.push({
+          id: newId('layer'),
+          type: 'image',
+          name: `Photo ${n + 1}`,
+          content: url,
+          box: {
+            x: TEXT_MARGIN_PCT + col * (tileW + TILE_GAP_W),
+            y: cursorY + row * (tileH + TILE_GAP_H),
+            w: tileW,
+            h: tileH,
+          },
+          style: { fit: 'cover', focusX: 50, focusY: 50, borderRadiusPct: 10 },
+          animation: 'pop',
+          delaySeconds: 0.3 + n * 0.1,
+        });
+      });
+      void naturalH;
+      cursorY += block.heightPct;
+      return;
+    }
     layers.push({
       id: newId('layer'),
       type: 'text',
@@ -593,6 +768,75 @@ function buildScene(
     });
     cursorY += block.heightPct;
   });
+
+  if (options.logo) {
+    const LOGO_W = 22;
+    const LOGO_H = 8;
+    const [vertical, horizontal] = logoPosition.split('-') as ['top' | 'bottom', 'left' | 'center' | 'right'];
+    layers.push({
+      id: newId('layer'),
+      type: 'image',
+      name: 'Logo',
+      content: options.logo,
+      box: {
+        x: horizontal === 'left' ? 4 : horizontal === 'right' ? 100 - 4 - LOGO_W : 50 - LOGO_W / 2,
+        y: vertical === 'top' ? 3 : 97 - LOGO_H,
+        w: LOGO_W,
+        h: LOGO_H,
+      },
+      style: { fit: 'contain', focusX: 50, focusY: 50 },
+      animation: 'fade-in',
+      delaySeconds: 0,
+    });
+  }
+
+  if (qrImage) {
+    // Square on the canvas: 16% of the width is 9% of a 9:16 height.
+    layers.push({
+      id: newId('layer'),
+      type: 'image',
+      name: 'QR code',
+      content: qrImage,
+      box: { x: 100 - TEXT_MARGIN_PCT - 16, y: 82, w: 16, h: 9 },
+      style: { fit: 'contain', focusX: 50, focusY: 50, borderRadiusPct: 8 },
+      animation: 'pop',
+      delaySeconds: 1.1,
+    });
+    if (footer.length === 0 && qrText) {
+      layers.push({
+        id: newId('layer'),
+        type: 'text',
+        name: 'Scan',
+        content: 'Scan to open',
+        box: { x: 100 - TEXT_MARGIN_PCT - 16, y: 91.5, w: 16, h: 3 },
+        style: { fontSizePct: 1.6, fontWeight: 600, color: '#e2e8f0', align: 'center' },
+        animation: 'fade-in',
+        delaySeconds: 1.3,
+      });
+    }
+  }
+
+  if (footer.length > 0) {
+    // Set to the left of the QR when both are present, otherwise centred.
+    const width = qrImage ? 100 - TEXT_MARGIN_PCT * 2 - 18 : 100 - TEXT_MARGIN_PCT * 2;
+    layers.push({
+      id: newId('layer'),
+      type: 'text',
+      name: 'Footer',
+      content: footer.join('\n'),
+      box: { x: TEXT_MARGIN_PCT, y: 100 - 3 - 2.6 * footer.length, w: width, h: 2.6 * footer.length + 0.5 },
+      style: {
+        fontSizePct: 1.9,
+        fontWeight: 600,
+        color: '#e2e8f0',
+        align: qrImage ? 'left' : 'center',
+        lineHeight: 1.35,
+        shadow: { color: 'rgba(0,0,0,0.45)', blur: 16, offsetY: 2 },
+      },
+      animation: 'fade-in',
+      delaySeconds: 1.0,
+    });
+  }
 
   return {
     id: newId('scene'),

@@ -1,8 +1,11 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import QRCode from 'qrcode';
 import {
   buildProjectFromBrief,
   parseBrief,
+  parseBriefDirectives,
   sceneDurationFor,
+  type LogoPosition,
   type MagicBrief,
   type ProjectAudio,
   type ReelProject,
@@ -10,7 +13,10 @@ import {
 import { api, uploadAudio, uploadToCloudinary, type MediaAsset, type SavedBrief } from '../lib/api';
 import { Alert, Button, Spinner } from './ui';
 
-const EXAMPLE = `Scene 1 - Opening
+const EXAMPLE = `Logo: top right
+Footer: www.nadanaloga.com · 95668 66588
+
+Scene 1 - Opening
 Welcome to Our World of Fine Arts
 NADANALOGA ✨
 And add a photo
@@ -33,7 +39,35 @@ const INSTRUCTION_GROUPS: { title: string; words: string }[] = [
   { title: 'Font', words: 'serif · rounded · condensed · mono' },
   { title: 'Motion', words: 'fade · rise · pop · typewriter · letters · wave · still' },
   { title: 'Where', words: 'title · body · contact (if a line lands in the wrong place)' },
+  {
+    title: 'Every scene',
+    words:
+      'Above Scene 1: Logo: top right · QR: https://… · Footer: your text. Written inside a scene, QR: and Footer: apply to that scene only.',
+  },
 ];
+
+const LOGO_POSITIONS: { value: LogoPosition; label: string }[] = [
+  { value: 'top-right', label: 'Top right' },
+  { value: 'top-left', label: 'Top left' },
+  { value: 'top-center', label: 'Top centre' },
+  { value: 'bottom-right', label: 'Bottom right' },
+  { value: 'bottom-left', label: 'Bottom left' },
+  { value: 'bottom-center', label: 'Bottom centre' },
+];
+
+type PhotoLayout = 'background' | 'blocks';
+
+/** Older briefs stored one URL per scene; everything is a list now. */
+function toPhotoLists(
+  photos: Record<string | number, string | string[]> | undefined,
+): Record<number, string[]> {
+  const out: Record<number, string[]> = {};
+  for (const [key, value] of Object.entries(photos ?? {})) {
+    const list = Array.isArray(value) ? value : value ? [value] : [];
+    if (list.length > 0) out[Number(key)] = list;
+  }
+  return out;
+}
 
 /**
  * Builds a whole reel from a written brief.
@@ -56,12 +90,18 @@ export function MagicDesignDialog({
   const [brandColor, setBrandColor] = useState(initial?.brandColor ?? '#4f46e5');
   const [accentColor, setAccentColor] = useState(initial?.accentColor ?? '#0f172a');
   const [library, setLibrary] = useState<MediaAsset[] | null>(null);
-  /** A photo picked for one scene, keyed by its position in the brief. */
-  const [scenePhotos, setScenePhotos] = useState<Record<number, string>>(
-    initial?.scenePhotos ?? {},
+  /** Photos picked per scene, keyed by position in the brief. */
+  const [scenePhotos, setScenePhotos] = useState<Record<number, string[]>>(() =>
+    toPhotoLists(initial?.scenePhotos),
   );
-  /** Which scene the picker below is choosing for. */
-  const [pickingFor, setPickingFor] = useState<number | null>(null);
+  /** Backdrop or tiles, for scenes with a single photo. */
+  const [photoLayout, setPhotoLayout] = useState<Record<number, PhotoLayout>>(
+    initial?.photoLayout ?? {},
+  );
+  const [logo, setLogo] = useState<string | undefined>(initial?.logo);
+  const [logoPosition, setLogoPosition] = useState<string>(initial?.logoPosition ?? '');
+  /** Which scene — or the logo — the picker below is choosing for. */
+  const [pickingFor, setPickingFor] = useState<number | 'logo' | null>(null);
   const [uploading, setUploading] = useState(false);
   const photoInput = useRef<HTMLInputElement>(null);
   const [audio, setAudio] = useState<ProjectAudio | undefined>();
@@ -86,11 +126,38 @@ export function MagicDesignDialog({
     setBrief(saved.brief);
     setBrandColor(saved.brandColor);
     setAccentColor(saved.accentColor);
-    setScenePhotos(
-      Object.fromEntries(Object.entries(saved.scenePhotos).map(([k, v]) => [Number(k), v])),
+    setScenePhotos(toPhotoLists(saved.scenePhotos));
+    setPhotoLayout(
+      Object.fromEntries(
+        Object.entries(saved.options?.photoLayout ?? {}).map(([k, v]) => [Number(k), v]),
+      ),
     );
+    setLogo(saved.options?.logo);
+    setLogoPosition(saved.options?.logoPosition ?? '');
     setBriefId(saved.id);
     setShowHistory(false);
+  }
+
+  function togglePhoto(sceneIndex: number, url: string) {
+    setScenePhotos((prev) => {
+      const current = prev[sceneIndex] ?? [];
+      const next = current.includes(url)
+        ? current.filter((item) => item !== url)
+        : [...current, url].slice(0, 6);
+      const copy = { ...prev };
+      if (next.length === 0) delete copy[sceneIndex];
+      else copy[sceneIndex] = next;
+      return copy;
+    });
+  }
+
+  function choosePicked(url: string) {
+    if (pickingFor === 'logo') {
+      setLogo(url);
+      setPickingFor(null);
+    } else if (pickingFor !== null) {
+      togglePhoto(pickingFor, url);
+    }
   }
 
   async function removeFromHistory(id: string) {
@@ -118,6 +185,7 @@ export function MagicDesignDialog({
 
   // Parsed as the user types, so the scene split is visible before committing.
   const scenes = useMemo(() => (brief.trim() ? parseBrief(brief) : []), [brief]);
+  const directives = useMemo(() => parseBriefDirectives(brief), [brief]);
   const totalSeconds = scenes.reduce((total, scene) => total + sceneDurationFor(scene), 0);
 
   async function handleAudioFile(file: File) {
@@ -137,7 +205,7 @@ export function MagicDesignDialog({
     }
   }
 
-  async function handlePhotoFile(file: File, sceneIndex: number) {
+  async function handlePhotoFile(file: File, target: number | 'logo') {
     setUploading(true);
     setError(null);
     try {
@@ -150,8 +218,12 @@ export function MagicDesignDialog({
         height: uploaded.height,
       });
       setLibrary((prev) => [asset, ...(prev ?? [])]);
-      setScenePhotos((prev) => ({ ...prev, [sceneIndex]: asset.url }));
-      setPickingFor(null);
+      if (target === 'logo') {
+        setLogo(asset.url);
+        setPickingFor(null);
+      } else {
+        togglePhoto(target, asset.url);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not upload that photo.');
     } finally {
@@ -166,14 +238,24 @@ export function MagicDesignDialog({
     // Remembered before the reel is built, so the brief is never lost even
     // if the reel is closed unsaved. A failure here must not block creating.
     let id = briefId;
+    const options = {
+      photoLayout: Object.fromEntries(
+        Object.entries(photoLayout).map(([k, v]) => [String(k), v]),
+      ) as Record<string, PhotoLayout>,
+      ...(logo ? { logo } : {}),
+      ...(logoPosition ? { logoPosition } : {}),
+    };
     try {
       const saved = await api.saveBrief({
         id,
         name: scenes[0]?.headline || brief.split('\n')[0]!.slice(0, 80),
         brief,
         scenePhotos: Object.fromEntries(
-          Object.entries(scenePhotos).filter(([, url]) => url).map(([k, v]) => [String(k), v]),
+          Object.entries(scenePhotos)
+            .filter(([, urls]) => urls.length > 0)
+            .map(([k, v]) => [String(k), v]),
         ),
+        options,
         brandColor,
         accentColor,
       });
@@ -182,15 +264,47 @@ export function MagicDesignDialog({
       // History is a convenience; the reel still gets built.
     }
 
+    // QR codes are drawn here, once per distinct text, and carried as images.
+    const qrTexts = new Set<string>();
+    if (directives.qr) qrTexts.add(directives.qr);
+    for (const scene of scenes) if (scene.qr) qrTexts.add(scene.qr);
+    const qrImages: Record<string, string> = {};
+    for (const text of qrTexts) {
+      try {
+        qrImages[text] = await QRCode.toDataURL(text, {
+          margin: 1,
+          width: 512,
+          errorCorrectionLevel: 'M',
+          color: { dark: '#0f172a', light: '#ffffff' },
+        });
+      } catch {
+        // Too long to encode: the scene simply goes without.
+      }
+    }
+
     onCreate(
       buildProjectFromBrief(scenes, {
-        // A photo chosen for a scene wins; "add a photo" draws on the library.
+        // Photos chosen for a scene win; "add a photo" draws on the library.
         scenePhotos: scenes.map((_, index) => scenePhotos[index]),
+        photoLayout: scenes.map((_, index) => photoLayout[index]),
         photos: (library ?? []).map((asset) => asset.url),
+        logo,
+        logoPosition: (logoPosition || undefined) as LogoPosition | undefined,
+        qrImages,
+        directives,
         brandColor,
         accentColor,
       }),
-      { id, brief, scenePhotos, brandColor, accentColor },
+      {
+        id,
+        brief,
+        scenePhotos,
+        photoLayout,
+        logo,
+        logoPosition: logoPosition || undefined,
+        brandColor,
+        accentColor,
+      },
       audio,
     );
   }
@@ -274,8 +388,8 @@ export function MagicDesignDialog({
                       <span className="block truncate text-xs text-slate-500">
                         {new Date(entry.updatedAt).toLocaleString()} ·{' '}
                         {parseBrief(entry.brief).length} scenes
-                        {Object.keys(entry.scenePhotos).length > 0
-                          ? ` · ${Object.keys(entry.scenePhotos).length} photos`
+                        {Object.values(toPhotoLists(entry.scenePhotos)).flat().length > 0
+                          ? ` · ${Object.values(toPhotoLists(entry.scenePhotos)).flat().length} photos`
                           : ''}
                       </span>
                     </button>
@@ -314,8 +428,10 @@ export function MagicDesignDialog({
             Start a line with <strong>Scene 1</strong> — a name after it, like{' '}
             <strong>Scene 1 - Opening</strong>, is used as the scene's title. Write{' '}
             <strong>add a photo</strong> on its own line where you want a picture. Lines starting
-            with <strong>Contact:</strong> or <strong>Website:</strong> are set apart. Style any
-            line with brackets at its end, like <strong>[bold, big, yellow]</strong> —{' '}
+            with <strong>Contact:</strong> or <strong>Website:</strong> are set apart. Above
+            Scene 1, <strong>Logo:</strong>, <strong>QR: https://…</strong> and{' '}
+            <strong>Footer:</strong> go on every scene. Style any line with brackets at its
+            end, like <strong>[bold, big, yellow]</strong> —{' '}
             <button
               type="button"
               onClick={() => setShowInstructions((v) => !v)}
@@ -380,22 +496,43 @@ export function MagicDesignDialog({
                         {scene.contact.join(' · ')}
                       </span>
                     )}
+                    {(scene.qr || scene.footer.length > 0) && (
+                      <span className="mt-0.5 flex flex-wrap gap-1">
+                        {scene.qr && (
+                          <span className="rounded bg-slate-100 px-1 text-[10px] text-slate-600">
+                            QR · {scene.qr}
+                          </span>
+                        )}
+                        {scene.footer.map((line) => (
+                          <span
+                            key={line}
+                            className="rounded bg-slate-100 px-1 text-[10px] text-slate-600"
+                          >
+                            Footer · {line}
+                          </span>
+                        ))}
+                      </span>
+                    )}
                   </span>
 
-                  {/* A photo per scene, chosen or uploaded right here. */}
+                  {/* Photos per scene, chosen or uploaded right here. */}
                   <button
                     onClick={() => setPickingFor(pickingFor === index ? null : index)}
                     className={`shrink-0 overflow-hidden rounded-lg border-2 transition ${
                       pickingFor === index ? 'border-brand-500' : 'border-slate-200'
                     }`}
-                    title="Choose a photo for this scene"
+                    title="Choose photos for this scene"
                   >
-                    {scenePhotos[index] ? (
-                      <img
-                        src={scenePhotos[index]}
-                        alt=""
-                        className="h-12 w-12 object-cover"
-                      />
+                    {scenePhotos[index]?.length ? (
+                      scenePhotos[index].length === 1 ? (
+                        <img src={scenePhotos[index][0]} alt="" className="h-12 w-12 object-cover" />
+                      ) : (
+                        <span className="grid h-12 w-12 grid-cols-2 gap-px bg-slate-200">
+                          {scenePhotos[index].slice(0, 4).map((url, n) => (
+                            <img key={url + n} src={url} alt="" className="h-full w-full object-cover" />
+                          ))}
+                        </span>
+                      )
                     ) : (
                       <span className="flex h-12 w-12 flex-col items-center justify-center bg-slate-50 text-[10px] leading-tight text-slate-400">
                         <span className="text-base leading-none">＋</span>
@@ -409,9 +546,11 @@ export function MagicDesignDialog({
 
             {pickingFor !== null && (
               <div className="mt-2 rounded-lg border border-brand-200 bg-white p-2">
-                <div className="mb-1.5 flex items-center justify-between">
+                <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
                   <span className="text-xs font-medium text-slate-700">
-                    Photo for scene {pickingFor + 1}
+                    {pickingFor === 'logo'
+                      ? 'Logo — shown on every scene'
+                      : `Photos for scene ${pickingFor + 1} — tap to add or remove`}
                   </span>
                   <div className="flex gap-2">
                     <button
@@ -421,7 +560,7 @@ export function MagicDesignDialog({
                     >
                       {uploading ? 'Uploading…' : 'Upload new'}
                     </button>
-                    {scenePhotos[pickingFor] && (
+                    {pickingFor !== 'logo' && scenePhotos[pickingFor]?.length ? (
                       <button
                         onClick={() =>
                           setScenePhotos((prev) => {
@@ -432,11 +571,55 @@ export function MagicDesignDialog({
                         }
                         className="text-xs text-red-600 hover:underline"
                       >
+                        Remove all
+                      </button>
+                    ) : null}
+                    {pickingFor === 'logo' && logo && (
+                      <button
+                        onClick={() => {
+                          setLogo(undefined);
+                          setPickingFor(null);
+                        }}
+                        className="text-xs text-red-600 hover:underline"
+                      >
                         Remove
                       </button>
                     )}
+                    <button
+                      onClick={() => setPickingFor(null)}
+                      className="text-xs font-medium text-slate-600 hover:underline"
+                    >
+                      Done
+                    </button>
                   </div>
                 </div>
+
+                {pickingFor !== 'logo' && (scenePhotos[pickingFor]?.length ?? 0) > 0 && (
+                  <div className="mb-2 flex flex-wrap items-center gap-1.5 text-xs">
+                    {scenePhotos[pickingFor]!.length === 1 ? (
+                      (['background', 'blocks'] as const).map((mode) => (
+                        <button
+                          key={mode}
+                          onClick={() =>
+                            setPhotoLayout((prev) => ({ ...prev, [pickingFor]: mode }))
+                          }
+                          className={`rounded-full border px-2.5 py-0.5 ${
+                            (photoLayout[pickingFor] ?? 'background') === mode
+                              ? 'border-brand-500 bg-brand-50 text-brand-700'
+                              : 'border-slate-300 text-slate-600 hover:bg-slate-50'
+                          }`}
+                        >
+                          {mode === 'background' ? 'Full background' : 'Photo block with text'}
+                        </button>
+                      ))
+                    ) : (
+                      <span className="text-slate-500">
+                        {scenePhotos[pickingFor]!.length} photos — shown as equal blocks under the
+                        headline (up to 6).
+                      </span>
+                    )}
+                  </div>
+                )}
 
                 {library === null ? (
                   <Spinner className="h-4 w-4 text-slate-400" />
@@ -450,16 +633,22 @@ export function MagicDesignDialog({
                     {library.slice(0, 16).map((asset) => (
                       <li key={asset.id}>
                         <button
-                          onClick={() => {
-                            setScenePhotos((prev) => ({ ...prev, [pickingFor]: asset.url }));
-                            setPickingFor(null);
-                          }}
-                          className={`block w-full overflow-hidden rounded border-2 ${
-                            scenePhotos[pickingFor] === asset.url
+                          onClick={() => choosePicked(asset.url)}
+                          className={`relative block w-full overflow-hidden rounded border-2 ${
+                            (
+                              pickingFor === 'logo'
+                                ? logo === asset.url
+                                : scenePhotos[pickingFor]?.includes(asset.url)
+                            )
                               ? 'border-brand-500'
                               : 'border-transparent hover:border-slate-300'
                           }`}
                         >
+                          {pickingFor !== 'logo' && scenePhotos[pickingFor]?.includes(asset.url) && (
+                            <span className="absolute left-0.5 top-0.5 rounded bg-brand-600 px-1 text-[10px] font-medium text-white">
+                              {scenePhotos[pickingFor]!.indexOf(asset.url) + 1}
+                            </span>
+                          )}
                           <img
                             src={asset.thumbnailUrl ?? asset.url}
                             alt=""
@@ -501,8 +690,38 @@ export function MagicDesignDialog({
               Use audio you have the rights to. You can add or change it later.
             </p>
 
-            <div className="mt-2 flex items-center gap-2">
-              <label className="text-xs text-slate-600">Colours</label>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <label className="text-xs text-slate-600">Logo</label>
+              <button
+                onClick={() => setPickingFor(pickingFor === 'logo' ? null : 'logo')}
+                className={`overflow-hidden rounded-lg border-2 ${
+                  pickingFor === 'logo' ? 'border-brand-500' : 'border-slate-200'
+                }`}
+                title="A logo shown on every scene"
+              >
+                {logo ? (
+                  <img src={logo} alt="" className="h-9 w-16 bg-slate-100 object-contain" />
+                ) : (
+                  <span className="flex h-9 w-16 items-center justify-center bg-slate-50 text-[10px] text-slate-400">
+                    ＋ logo
+                  </span>
+                )}
+              </button>
+              {logo && (
+                <select
+                  value={logoPosition || directives.logoPosition || 'top-right'}
+                  onChange={(e) => setLogoPosition(e.target.value)}
+                  className="rounded-lg border border-slate-300 px-2 py-1 text-xs"
+                  title="Where the logo sits"
+                >
+                  {LOGO_POSITIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              )}
+              <label className="ml-2 text-xs text-slate-600">Colours</label>
               <input
                 type="color"
                 value={brandColor}

@@ -70,7 +70,12 @@ export interface MagicBrief {
   /** Its row in the brief history, once saved. */
   id?: string;
   brief: string;
-  scenePhotos: Record<number, string>;
+  /** Photos per scene. Older saves hold a single URL rather than a list. */
+  scenePhotos: Record<number, string[] | string>;
+  /** Backdrop or tiles, per scene, when one photo could be either. */
+  photoLayout?: Record<number, 'background' | 'blocks'>;
+  logo?: string;
+  logoPosition?: string;
   brandColor: string;
   accentColor: string;
 }

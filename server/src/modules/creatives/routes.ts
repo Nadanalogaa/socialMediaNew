@@ -147,7 +147,16 @@ const saveBriefSchema = z.object({
   id: z.string().uuid().optional(),
   name: z.string().max(200),
   brief: z.string().min(1).max(20000),
-  scenePhotos: z.record(z.string(), z.string().url()).default({}),
+  scenePhotos: z
+    .record(z.string(), z.union([z.string().url(), z.array(z.string().url()).max(8)]))
+    .default({}),
+  options: z
+    .object({
+      photoLayout: z.record(z.string(), z.enum(['background', 'blocks'])).optional(),
+      logo: z.string().url().optional(),
+      logoPosition: z.string().max(20).optional(),
+    })
+    .default({}),
   brandColor: z.string().max(32),
   accentColor: z.string().max(32),
 });

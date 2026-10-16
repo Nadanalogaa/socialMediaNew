@@ -314,28 +314,51 @@ function ReelEditor({
     const startedAt = performance.now();
     const total = projectDuration(project);
 
+    const drawPaused = () => {
+      // Past the entrance window so layers are shown settled, not mid-animation;
+      // effects use the real clock so they keep moving.
+      const running = (performance.now() - startedAt) / 1000;
+      drawProjectFrame(ctx, project, images, 0, canvasW, canvasH, {
+        scene,
+        sceneElapsed: Math.min(scene.durationSeconds, 1.2),
+        effectsElapsed: 1.2 + running,
+      });
+      const selected = scene.layers.find((layer) => layer.id === selectedLayerId);
+      if (selected) {
+        // Outlining the hit area, not the declared box, so what is shown as
+        // selected is exactly what responds to a click.
+        drawSelectionOutline(
+          ctx,
+          { box: layerHitBox(selected, ctx, canvasW, canvasH) },
+          canvasW,
+          canvasH,
+        );
+      }
+    };
+
+    if (!playing) {
+      // A still scene is drawn once, when something changes. Redrawing a full
+      // 1080×1920 frame sixty times a second while nothing moves is what
+      // made the editor sluggish; effects alone keep ticking, at a gentler
+      // rate, so their sliders can still be judged by eye.
+      drawPaused();
+      if (!scene.layers.some((layer) => layer.type === 'particles')) return;
+
+      let last = 0;
+      const tick = (now: number) => {
+        if (now - last >= 50) {
+          last = now;
+          drawPaused();
+        }
+        frameId = requestAnimationFrame(tick);
+      };
+      frameId = requestAnimationFrame(tick);
+      return () => cancelAnimationFrame(frameId);
+    }
+
     const loop = () => {
       const elapsed = (performance.now() - startedAt) / 1000;
-      if (playing) {
-        drawProjectFrame(ctx, project, images, elapsed % total, canvasW, canvasH);
-      } else {
-        // Past the entrance window so layers are shown settled, not mid-animation.
-        drawProjectFrame(ctx, project, images, 0, canvasW, canvasH, {
-          scene,
-          sceneElapsed: Math.min(scene.durationSeconds, 1.2),
-        });
-        const selected = scene.layers.find((layer) => layer.id === selectedLayerId);
-        if (selected) {
-          // Outlining the hit area, not the declared box, so what is shown as
-          // selected is exactly what responds to a click.
-          drawSelectionOutline(
-            ctx,
-            { box: layerHitBox(selected, ctx, canvasW, canvasH) },
-            canvasW,
-            canvasH,
-          );
-        }
-      }
+      drawProjectFrame(ctx, project, images, elapsed % total, canvasW, canvasH);
       frameId = requestAnimationFrame(loop);
     };
     loop();
@@ -1277,7 +1300,7 @@ function ReelEditor({
             {selectedLayer ? selectedLayer.name : 'Nothing selected'}
           </h3>
           {selectedLayer ? (
-            <div className="max-h-[52vh] overflow-y-auto pr-1">
+            <div>
             <LayerProperties
               layer={selectedLayer}
               onChange={(patch) => updateLayer(selectedLayer.id, patch)}

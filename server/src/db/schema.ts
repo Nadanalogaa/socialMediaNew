@@ -282,8 +282,13 @@ export const magicBriefs = pgTable(
       .references(() => organizations.id, { onDelete: 'cascade' }),
     name: text('name').notNull(),
     brief: text('brief').notNull(),
-    /** Photo per scene, keyed by scene position. */
-    scenePhotos: jsonb('scene_photos').$type<Record<string, string>>().notNull().default({}),
+    /** Photos per scene, keyed by scene position. */
+    scenePhotos: jsonb('scene_photos')
+      .$type<Record<string, string | string[]>>()
+      .notNull()
+      .default({}),
+    /** Logo, its position, and backdrop-or-tiles per scene. */
+    options: jsonb('options').$type<Record<string, unknown>>().notNull().default({}),
     brandColor: text('brand_color').notNull(),
     accentColor: text('accent_color').notNull(),
     createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),

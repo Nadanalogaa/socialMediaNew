@@ -214,7 +214,12 @@ export interface SavedBrief {
   id: string;
   name: string;
   brief: string;
-  scenePhotos: Record<string, string>;
+  scenePhotos: Record<string, string | string[]>;
+  options: {
+    photoLayout?: Record<string, 'background' | 'blocks'>;
+    logo?: string;
+    logoPosition?: string;
+  };
   brandColor: string;
   accentColor: string;
   updatedAt: string;
@@ -397,7 +402,8 @@ export const api = {
     id?: string;
     name: string;
     brief: string;
-    scenePhotos: Record<string, string>;
+    scenePhotos: Record<string, string[]>;
+    options: SavedBrief['options'];
     brandColor: string;
     accentColor: string;
   }) => request<SavedBrief>('/creatives/briefs', { method: 'POST', body: JSON.stringify(input) }),

@@ -1,0 +1,1 @@
+ALTER TABLE "magic_briefs" ADD COLUMN "options" jsonb DEFAULT '{}'::jsonb NOT NULL;

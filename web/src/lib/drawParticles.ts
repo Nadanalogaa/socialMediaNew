@@ -106,70 +106,142 @@ function drawSmoke(ctx: CanvasRenderingContext2D, size: number, color: string): 
   }
 }
 
-function drawOne(
+/**
+ * Pre-rendered particle sprites.
+ *
+ * Gradients, soft blurs and bezier shapes are expensive to build sixty
+ * times a second for a hundred particles — on a laptop it stuttered and on a
+ * phone it hung. Each distinct look (effect, colour, size step, softness) is
+ * drawn once to a small canvas and stamped with drawImage, which is cheap.
+ */
+const sprites = new Map<string, HTMLCanvasElement>();
+const SPRITE_CACHE_LIMIT = 400;
+
+function sizeStep(size: number): number {
+  // Coarser steps for big puffs, where a few pixels are invisible.
+  const step = size < 24 ? 2 : size < 80 ? 6 : 12;
+  return Math.max(step, Math.round(size / step) * step);
+}
+
+function paintShape(
   ctx: CanvasRenderingContext2D,
   effect: ParticleEffect,
-  particle: ParticleState,
+  size: number,
+  color: string,
+  streak: number,
 ): void {
-  ctx.save();
-  ctx.globalAlpha = particle.opacity;
-  ctx.translate(particle.x, particle.y);
-  ctx.rotate((particle.rotation * Math.PI) / 180);
-  ctx.fillStyle = particle.color;
-
-  // Distance softens what is far away, which sells the depth more than size
-  // alone does.
-  if (particle.depth !== undefined && particle.depth > 0.35) {
-    ctx.filter = `blur(${((particle.depth - 0.35) * 4).toFixed(1)}px)`;
-  }
-
+  ctx.fillStyle = color;
   switch (effect) {
     case 'confetti':
-      ctx.fillRect(-particle.size / 2, -particle.size / 4, particle.size, particle.size / 2);
+    case 'blast':
+      ctx.fillRect(-size / 2, -size / 4, size, size / 2);
       break;
     case 'petals':
-      drawPetal(ctx, particle.size);
+      drawPetal(ctx, size);
       break;
     case 'sparkles':
-      drawStar(ctx, particle.size);
+    case 'swirl':
+      drawStar(ctx, size);
       break;
     case 'hearts':
-      drawHeart(ctx, particle.size);
+      drawHeart(ctx, size);
       break;
     case 'bubbles':
-      drawBubble(ctx, particle.size, particle.color);
+      drawBubble(ctx, size, color);
       break;
     case 'embers':
     case 'bokeh':
     case 'dust':
-      drawGlow(ctx, particle.size, particle.color);
-      break;
-    case 'blast':
-      ctx.fillRect(-particle.size / 2, -particle.size / 4, particle.size, particle.size / 2);
+      drawGlow(ctx, size, color);
       break;
     case 'fireworks':
     case 'starfield':
-      drawStreak(ctx, particle.size, particle.streak ?? 1, particle.color);
-      break;
     case 'rain':
-      drawStreak(ctx, particle.size, particle.streak ?? 8, particle.color);
+      drawStreak(ctx, size, streak, color);
       break;
     case 'smoke':
-      drawSmoke(ctx, particle.size, particle.color);
-      break;
-    case 'swirl':
-      drawStar(ctx, particle.size);
+      drawSmoke(ctx, size, color);
       break;
     case 'snow':
     default:
       ctx.beginPath();
-      ctx.arc(0, 0, particle.size, 0, Math.PI * 2);
+      ctx.arc(0, 0, size, 0, Math.PI * 2);
       ctx.fill();
       break;
   }
+}
 
-  ctx.filter = 'none';
-  ctx.restore();
+function spriteFor(
+  effect: ParticleEffect,
+  color: string,
+  rawSize: number,
+  blur: number,
+  streak: number,
+): HTMLCanvasElement | null {
+  const size = sizeStep(rawSize);
+  const key = `${effect}|${color}|${size}|${blur}|${streak}`;
+  const cached = sprites.get(key);
+  if (cached) return cached;
+
+  // Room for the widest shape, the streak's length, and the blur's spill.
+  const halfW = Math.ceil(size * 1.5 + blur * 3 + 2);
+  const halfH = Math.ceil(Math.max(size * 1.5, streak * size + size) + blur * 3 + 2);
+  const canvas = document.createElement('canvas');
+  canvas.width = halfW * 2;
+  canvas.height = halfH * 2;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+
+  ctx.translate(halfW, halfH);
+  if (blur > 0) ctx.filter = `blur(${blur}px)`;
+  paintShape(ctx, effect, size, color, streak);
+
+  if (sprites.size >= SPRITE_CACHE_LIMIT) sprites.clear();
+  sprites.set(key, canvas);
+  return canvas;
+}
+
+function drawOne(
+  ctx: CanvasRenderingContext2D,
+  effect: ParticleEffect,
+  particle: ParticleState,
+  boxW: number,
+  boxH: number,
+): void {
+  // Distance softens what is far away, which sells the depth more than size
+  // alone does. Quantised so the sprite cache stays small.
+  const blur =
+    particle.depth !== undefined && particle.depth > 0.35
+      ? Math.min(3, Math.round((particle.depth - 0.35) * 4))
+      : 0;
+  const streak = Math.round(
+    particle.streak ?? (effect === 'rain' ? 8 : effect === 'fireworks' || effect === 'starfield' ? 1 : 0),
+  );
+
+  const sprite = spriteFor(effect, particle.color, particle.size, blur, streak);
+  if (!sprite) return;
+
+  // Nothing outside the box is visible, so it is not worth a draw call.
+  const reach = Math.max(sprite.width, sprite.height) / 2;
+  if (
+    particle.x < -reach ||
+    particle.y < -reach ||
+    particle.x > boxW + reach ||
+    particle.y > boxH + reach
+  ) {
+    return;
+  }
+
+  ctx.globalAlpha = particle.opacity;
+  if (particle.rotation) {
+    ctx.save();
+    ctx.translate(particle.x, particle.y);
+    ctx.rotate((particle.rotation * Math.PI) / 180);
+    ctx.drawImage(sprite, -sprite.width / 2, -sprite.height / 2);
+    ctx.restore();
+  } else {
+    ctx.drawImage(sprite, particle.x - sprite.width / 2, particle.y - sprite.height / 2);
+  }
 }
 
 /** Paints a whole effect for the given moment. */
@@ -209,7 +281,7 @@ export function drawParticles(
   }
 
   for (const particle of particles) {
-    drawOne(ctx, settings.effect, particle);
+    drawOne(ctx, settings.effect, particle, box.w, box.h);
   }
 
   ctx.restore();

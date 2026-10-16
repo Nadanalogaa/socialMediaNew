@@ -463,9 +463,15 @@ export function drawProjectFrame(
   elapsed: number,
   width: number,
   height: number,
-  forceScene?: { scene: ProjectScene; sceneElapsed: number },
+  forceScene?: {
+    scene: ProjectScene;
+    sceneElapsed: number;
+    /** A separate clock for effects, so a paused scene can still sparkle. */
+    effectsElapsed?: number;
+  },
 ): void {
   const { scene, sceneElapsed } = forceScene ?? sceneAt(project, elapsed);
+  const effectsElapsed = forceScene?.effectsElapsed ?? sceneElapsed;
 
   ctx.save();
   ctx.fillStyle = '#000000';
@@ -483,7 +489,15 @@ export function drawProjectFrame(
   }
 
   for (const layer of scene.layers) {
-    drawLayer(ctx, layer, images, sceneElapsed, scene.durationSeconds, width, height);
+    drawLayer(
+      ctx,
+      layer,
+      images,
+      layer.type === 'particles' ? effectsElapsed : sceneElapsed,
+      scene.durationSeconds,
+      width,
+      height,
+    );
   }
   ctx.restore();
 }
