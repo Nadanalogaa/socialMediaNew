@@ -6,3 +6,4 @@ export * from './video.js';
 export * from './video-templates.js';
 export * from './reel-project.js';
 export * from './particles.js';
+export * from './magic-design.js';

@@ -33,6 +33,7 @@ import { startPreviewLoop } from '../lib/audio';
 import { LayerProperties } from '../components/LayerProperties';
 import { SoundPanel } from '../components/SoundPanel';
 import { MobileSheet, type SheetHeight } from '../components/MobileSheet';
+import { MagicDesignDialog } from '../components/MagicDesignDialog';
 import { Alert, Button, Card, Spinner } from '../components/ui';
 import { useIsMobile } from '../lib/useMediaQuery';
 import { useHistory } from '../lib/useHistory';
@@ -48,6 +49,7 @@ export function ReelsScreen({
   const [project, setProject] = useState<ReelProject | null>(null);
   const [designId, setDesignId] = useState<string | undefined>(openDesignId);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [magicFromPicker, setMagicFromPicker] = useState(false);
 
   useEffect(() => {
     if (!openDesignId) return;
@@ -75,12 +77,25 @@ export function ReelsScreen({
   if (loadError) return <Alert>{loadError}</Alert>;
   if (!project) {
     return (
-      <ReelPicker
-        onPick={(next) => {
-          setDesignId(undefined);
-          setProject(next);
-        }}
-      />
+      <>
+        <ReelPicker
+          onPick={(next) => {
+            setDesignId(undefined);
+            setProject(next);
+          }}
+          onMagic={() => setMagicFromPicker(true)}
+        />
+        {magicFromPicker && (
+          <MagicDesignDialog
+            onClose={() => setMagicFromPicker(false)}
+            onCreate={(built, audio) => {
+              setDesignId(undefined);
+              setProject(audio ? { ...built, audio } : built);
+              setMagicFromPicker(false);
+            }}
+          />
+        )}
+      </>
     );
   }
   return (
@@ -94,7 +109,13 @@ export function ReelsScreen({
   );
 }
 
-function ReelPicker({ onPick }: { onPick: (project: ReelProject) => void }) {
+function ReelPicker({
+  onPick,
+  onMagic,
+}: {
+  onPick: (project: ReelProject) => void;
+  onMagic: () => void;
+}) {
   function start(template: VideoTemplateDefinition) {
     const values = Object.fromEntries(
       template.fields.filter((f) => f.defaultValue).map((f) => [f.key, f.defaultValue!]),
@@ -120,13 +141,20 @@ function ReelPicker({ onPick }: { onPick: (project: ReelProject) => void }) {
 
   return (
     <div className="space-y-5">
-      <div>
-        <h2 className="text-lg font-semibold text-slate-900">Make a reel</h2>
-        <p className="mt-0.5 text-sm text-slate-600">
-          Start from a layout and change anything — move text, swap photos, add a logo, pick
-          animations.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-semibold text-slate-900">Make a reel</h2>
+          <p className="mt-0.5 text-sm text-slate-600">
+            Start from a layout and change anything — move text, swap photos, add a logo, pick
+            animations.
+          </p>
+        </div>
+        <Button onClick={onMagic}>✨ Magic Design</Button>
       </div>
+
+      <p className="rounded-xl border border-brand-200 bg-brand-50 px-3 py-2 text-sm text-brand-900">
+        In a hurry? Write what each scene should say and Magic Design builds the whole reel.
+      </p>
 
       <ul className="grid grid-cols-2 gap-3 sm:grid-cols-4">
         {BUILT_IN_VIDEO_TEMPLATES.map((template) => (
@@ -195,6 +223,7 @@ function ReelEditor({
   const [sidePanel, setSidePanel] = useState<'style' | 'media' | 'scene' | 'details'>('style');
   /** Fills the window with the editor, hiding the app's own navigation. */
   const [fullscreen, setFullscreen] = useState(false);
+  const [magicOpen, setMagicOpen] = useState(false);
 
   useEffect(() => {
     if (!fullscreen) return;
@@ -728,6 +757,14 @@ function ReelEditor({
           onChange={(e) => setProject({ ...project, name: e.target.value }, 'name')}
           className="min-w-0 flex-1 rounded-lg border border-transparent px-2 py-1 text-base font-semibold text-slate-900 hover:border-slate-300 focus:border-brand-500 focus:outline-none lg:text-lg"
         />
+
+        <button
+          onClick={() => setMagicOpen(true)}
+          title="Write a brief and build the whole reel"
+          className="min-h-11 shrink-0 rounded-lg border border-brand-300 bg-brand-50 px-3 text-sm font-medium text-brand-700 transition hover:bg-brand-100 lg:min-h-0 lg:py-1.5"
+        >
+          ✨<span className="ml-1 hidden sm:inline">Magic Design</span>
+        </button>
 
         {/* Scene selection belongs beside the title: it is the context, and
             a separate strip of thumbnails cost the preview a whole row. */}
@@ -1263,6 +1300,19 @@ function ReelEditor({
           </div>
         </div>
       </div>
+
+      {magicOpen && (
+        <MagicDesignDialog
+          onClose={() => setMagicOpen(false)}
+          onCreate={(built, audio) => {
+            setProject({ ...built, name: project.name, audio: audio ?? project.audio }, undefined);
+            setSceneIndex(0);
+            setSelectedLayerId(null);
+            setMagicOpen(false);
+            setNotice('Reel built from your brief. Change anything you like, then create it.');
+          }}
+        />
+      )}
 
       {previewOpen && result && (
         <div
