@@ -15,9 +15,13 @@ Browser ──HTTPS──▶ Nginx Proxy Manager ──▶ socialboost-api:3001 
 
 ## 1. DNS
 
-At the domain registrar, add an **A record** for the subdomain (for example
-`social`) pointing at the VPS's IP — the same IP `dev.nadanaloga.com` uses.
+At the domain registrar, add an **A record** for the domain (and one for
+`www`) pointing at the VPS: **79.137.75.174** (the OVH server that runs
+`dev.nadanaloga.com`, Portainer at `:9443` and Nginx Proxy Manager at `:81`).
 Wait until `https://dnschecker.org` shows it resolving.
+
+(The Contabo server at 62.171.159.200 hosts `www.nadanaloga.com` and also has
+Portainer; this stack goes on the OVH one, beside the other project.)
 
 ## 2. Create the stack in Portainer
 
