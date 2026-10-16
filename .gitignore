@@ -36,3 +36,6 @@ coverage
 
 # Deployment env files (never commit)
 .env.production
+
+# Portainer stack variables, assembled locally; never committed.
+.env.portainer
