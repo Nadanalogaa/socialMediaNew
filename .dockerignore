@@ -2,9 +2,9 @@ node_modules
 **/node_modules
 **/dist
 legacy
-web/public
 .git
 .env
 .env.*
 !.env.example
 *.log
+deploy

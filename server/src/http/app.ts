@@ -1,3 +1,6 @@
+import { existsSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import cors from 'cors';
 import express, { type Express, type Request, type Response } from 'express';
 import helmet from 'helmet';
@@ -36,11 +39,17 @@ function corsOrigin() {
   };
 }
 
+/** The built web app, when this process also serves it (the Docker image). */
+const WEB_DIST = resolve(dirname(fileURLToPath(import.meta.url)), '../../../web/dist');
+
 export function createApp(): Express {
   const app = express();
 
   app.set('trust proxy', 1);
-  app.use(helmet());
+  // Hardening headers on the API only: helmet's defaults on the HTML would
+  // block the Facebook SDK (its content-security policy) and break the login
+  // popup (cross-origin-opener-policy severs window.opener).
+  app.use(['/api', '/auth'], helmet());
   app.use(cors({ origin: corsOrigin(), credentials: true }));
   app.use(pinoHttp({ logger }));
 
@@ -48,8 +57,8 @@ export function createApp(): Express {
   // with a signed request — so a small JSON limit is all the API needs.
   app.use(express.json({ limit: '1mb' }));
 
-  // Registered at both paths: locally the API is hit directly at /health,
-  // while on Vercel only /api/* is routed to the function.
+  // Registered at both paths: /health for the container check and tooling,
+  // /api/health through the proxy.
   const health = (_req: Request, res: Response) => {
     res.json({ status: 'ok', uptime: process.uptime() });
   };
@@ -81,8 +90,41 @@ export function createApp(): Express {
   // Serves the callback path still configured in Meta's app settings.
   app.use('/auth', legacyWebhooksRouter);
 
+  if (isProduction && existsSync(WEB_DIST)) serveWeb(app);
+
   app.use(notFoundHandler);
   app.use(errorHandler);
 
   return app;
+}
+
+/**
+ * Serves the web app from the same process, as the Docker image does.
+ *
+ * Hashed assets are immutable; everything else — index.html, the service
+ * worker, the manifest — must be revalidated so a deploy reaches browsers.
+ */
+function serveWeb(app: Express): void {
+  // The paths registered in Meta's app settings.
+  app.get('/privacy-policy.html', (_req, res) => res.sendFile(resolve(WEB_DIST, 'privacy.html')));
+  app.get('/terms-of-service.html', (_req, res) => res.sendFile(resolve(WEB_DIST, 'terms.html')));
+
+  app.use(
+    express.static(WEB_DIST, {
+      index: false,
+      setHeaders(res, filePath) {
+        res.setHeader('X-Content-Type-Options', 'nosniff');
+        res.setHeader(
+          'Cache-Control',
+          filePath.includes('/assets/') ? 'public, max-age=31536000, immutable' : 'no-cache',
+        );
+      },
+    }),
+  );
+
+  // Every other GET is a client-side route.
+  app.get(/^(?!\/api\/|\/auth\/).*/, (_req, res) => {
+    res.setHeader('Cache-Control', 'no-cache');
+    res.sendFile(resolve(WEB_DIST, 'index.html'));
+  });
 }

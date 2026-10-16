@@ -1,86 +1,122 @@
-# Deploying the worker to a VPS
+# Hosting on the Portainer VPS
 
-The worker is the one piece that cannot run on a serverless host: it is a
-long-lived process that consumes a queue. Everything else stays where it is —
-the frontend and API on Vercel, Postgres on Neon, Redis on Upstash.
+The whole platform runs on the same VPS as the other site, as one Portainer
+stack: the API (which also serves the web app), the worker, Postgres, Redis
+and a nightly backup. Nginx Proxy Manager puts it on a domain with HTTPS,
+exactly as it does for `dev.nadanaloga.com`.
 
-**What it handles:** reels and video posts (Instagram takes ~90 seconds to
-transcode), scheduled posts, and metrics refreshes. Photo posts publish inside
-the request and do not need this.
+Nothing else is needed — no Vercel, no Neon, no Upstash.
 
-## 1. Create the server
-
-Any provider will do. For Indian latency, **DigitalOcean Bangalore** or
-**Linode Mumbai**; the cheapest tier (1 GB RAM) is ample.
-
-Choose **Ubuntu 24.04** and add your SSH key during creation.
-
-## 2. Install Docker
-
-```bash
-ssh root@YOUR_SERVER_IP
-curl -fsSL https://get.docker.com | sh
+```
+Browser ──HTTPS──▶ Nginx Proxy Manager ──▶ socialboost-api:3001 ──▶ socialboost-db
+                                                   │                  socialboost-redis
+                                                   └─ socialboost-worker (reels, scheduled posts, metrics)
 ```
 
-## 3. Copy the project across
+## 1. DNS
 
-From your own machine, in the project directory:
+At the domain registrar, add an **A record** for the subdomain (for example
+`social`) pointing at the VPS's IP — the same IP `dev.nadanaloga.com` uses.
+Wait until `https://dnschecker.org` shows it resolving.
 
-```bash
-rsync -av --exclude node_modules --exclude .git --exclude legacy \
-  ./ root@YOUR_SERVER_IP:/opt/socialboost/
+## 2. Create the stack in Portainer
 
-# The credentials, kept out of git and copied separately.
-scp .env.production root@YOUR_SERVER_IP:/opt/socialboost/.env
+1. **Stacks → Add stack**, name `socialboost`.
+2. Build method **Repository**:
+   - Repository URL: `https://github.com/Nadanalogaa/socialMediaNew`
+   - Reference: `refs/heads/main`
+   - Compose path: `docker-compose.yml`
+3. **Environment variables → Advanced mode** and paste the contents of
+   [`stack.env.example`](stack.env.example) with the values filled in.
+   The secrets are in `.env.production` on your Mac. Keep `JWT_SECRET` and
+   `TOKEN_ENCRYPTION_KEY` **identical** to the current ones, or every saved
+   login and every connected Facebook/Instagram account stops working.
+   Leave `DATABASE_URL` and `REDIS_URL` out: the stack has its own.
+4. **Deploy the stack.** The first build takes 3–5 minutes (it compiles the
+   app). All five containers should turn green; `socialboost-api` becomes
+   healthy once its migrations have run.
+
+To ship a code change later: **Stacks → socialboost → Pull and redeploy**.
+(Or turn on *GitOps updates* with a 5-minute poll and it deploys itself on
+every push to `main`.)
+
+## 3. Copy the database from Neon
+
+Once, before switching the domain over. On the VPS (SSH, or Portainer's
+console on any container with Docker access — SSH is simpler):
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/Nadanalogaa/socialMediaNew/main/deploy/migrate-from-neon.sh -o migrate-from-neon.sh
+NEON_URL='<DATABASE_URL from .env.production>' POSTGRES_PASSWORD='<the one in the stack>' sh migrate-from-neon.sh
 ```
 
-## 4. Start it
+It prints the row counts at the end (expect 1 user, 7 connections). The
+script can be re-run safely.
 
-```bash
-ssh root@YOUR_SERVER_IP
-cd /opt/socialboost
-docker compose up -d --build
-docker compose logs -f worker      # expect "Worker started"
-```
+## 4. Put it on the domain
 
-The worker restarts automatically if it crashes or the server reboots.
+In **Nginx Proxy Manager → Hosts → Proxy Hosts → Add**:
 
-## 5. Portainer (optional)
+| Field | Value |
+|---|---|
+| Domain names | `social.nadanaloga.com` (your choice) |
+| Scheme / Forward host / port | `http` / `socialboost-api` / `3001` |
+| Websockets support | on |
+| Block common exploits | on |
+| SSL tab | Request a new certificate (Let's Encrypt), **Force SSL**, **HTTP/2**, **HSTS** |
 
-Browse to `https://YOUR_SERVER_IP:9443` and set an admin password within a few
-minutes of first start — Portainer locks itself if left unclaimed.
+Open the domain: the app should load, and `https://<domain>/api/health`
+should answer `{"status":"ok"}`.
 
-From there you can watch logs, restart the worker and see resource use without
-needing SSH.
+## 5. Tell Meta about the new address
 
-## Updating after a code change
+In <https://developers.facebook.com/apps/> → *SocialMedia* app, replace the
+old `social-media-new-omega.vercel.app` everywhere with the new domain:
 
-```bash
-rsync -av --exclude node_modules --exclude .git --exclude legacy \
-  ./ root@YOUR_SERVER_IP:/opt/socialboost/
-ssh root@YOUR_SERVER_IP 'cd /opt/socialboost && docker compose up -d --build'
-```
+- **App settings → Basic**: App domains; Privacy policy URL
+  (`https://<domain>/privacy-policy.html`); Terms of service URL
+  (`https://<domain>/terms-of-service.html`); User data deletion
+  (`https://<domain>/data-deletion.html`); Website → Site URL.
+- **Facebook Login for Business → Settings**: Valid OAuth redirect URIs,
+  Allowed domains for the JavaScript SDK, Deauthorize callback URL
+  (`https://<domain>/api/webhooks/meta/deauthorize`), Data deletion request URL.
+- **Webhooks** (if subscribed): callback URL.
 
-## Securing it
+Until this is done, Facebook login works only from the old address.
 
-The server holds your customers' access tokens, so treat it accordingly:
+## 6. Switch off Vercel
 
-```bash
-# Portainer and SSH only; nothing else needs to be reachable.
-ufw allow 22/tcp && ufw allow 9443/tcp && ufw --force enable
+Only after steps 1–5 are verified on the new domain:
 
-# Unattended security updates.
-apt update && apt install -y unattended-upgrades
-```
+- Vercel dashboard → the project → **Settings → Delete project**.
+- Neon: keep the project for a week as a fallback, then delete it.
+- Upstash: delete the Redis database.
 
-Disable password SSH login in `/etc/ssh/sshd_config` (`PasswordAuthentication no`)
-and rely on your key.
+The code no longer has any Vercel-specific files; the repository builds the
+same way everywhere.
 
-## Checking it is working
+## Day to day
 
-```bash
-docker compose logs --tail=50 worker
-```
+- **Logs**: Portainer → Containers → `socialboost-api` / `socialboost-worker`
+  → Logs. A reel being published shows `Publish job finished` in the worker.
+- **Backups**: a dump is written every night to the `socialboost-backups`
+  volume (30 kept). To restore one:
+  `docker exec -i socialboost-db psql -U socialboost socialboost < dump.sql`
+  (after `gunzip`).
+- **Updating secrets**: Stacks → socialboost → Environment variables → Update
+  the stack. Changing `TOKEN_ENCRYPTION_KEY` invalidates stored tokens.
+- **Resource use**: the stack idles at ~400 MB RAM. The video pipeline
+  renders in the browser, so the server does no transcoding.
 
-A queued reel should produce `Publish job finished` within a minute or two of
-being published from the app.
+## Keeping it safe
+
+The server holds customers' Facebook and Instagram tokens.
+
+- Only ports 22, 80, 443 and Portainer's 9443 should be open on the VPS firewall.
+- The database and Redis publish no ports; they are reachable only from
+  containers on `nadanaloga-main-network`.
+- The volume `socialboost-pgdata` belongs to this database alone. Never mount
+  it in another container (this is how the other site's database was
+  corrupted in September 2026).
+- Rotate the Meta app secret, Cloudinary and Gemini keys before onboarding
+  paying customers: the current values have been pasted in chats.

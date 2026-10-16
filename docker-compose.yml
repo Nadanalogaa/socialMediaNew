@@ -1,36 +1,151 @@
-# Worker deployment.
+# Portainer stack for the whole platform.
 #
-# Brings up the worker alongside Portainer, so the container can be watched and
-# restarted from a browser rather than over SSH.
+# Deploy: Portainer → Stacks → Add stack → Repository →
+#   URL https://github.com/Nadanalogaa/socialMediaNew, branch main,
+#   compose path docker-compose.yml → paste the variables from
+#   deploy/stack.env.example → Deploy. Redeploy with "Pull and redeploy".
 #
-# Copy .env.production to the server as .env before running:
-#   docker compose up -d --build
+# Only Nginx Proxy Manager reaches the API, over nadanaloga-main-network (the
+# network the other site already uses). Point a proxy host at
+# socialboost-api:3001 — see deploy/README.md.
 
 services:
-  worker:
-    build: .
-    container_name: socialboost-worker
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        VITE_META_APP_ID: ${VITE_META_APP_ID}
+        VITE_META_CONFIG_ID: ${VITE_META_CONFIG_ID}
+        VITE_META_INSTAGRAM_ENABLED: ${VITE_META_INSTAGRAM_ENABLED:-false}
+    image: socialboost-app:latest
+    # Rebuild from source on every deploy. Without this, Portainer reuses an
+    # existing image of the same name and the deploy silently ships old code.
+    pull_policy: build
+    container_name: socialboost-api
     restart: unless-stopped
-    env_file: .env
-    environment:
+    environment: &app_env
       NODE_ENV: production
-    logging:
+      PORT: 3001
+      APP_URL: ${APP_URL:?set APP_URL, e.g. https://social.nadanaloga.com}
+      # The database in this stack, unless DATABASE_URL points elsewhere.
+      DATABASE_URL: ${DATABASE_URL:-postgresql://socialboost:${POSTGRES_PASSWORD}@socialboost-db:5432/socialboost}
+      REDIS_URL: ${REDIS_URL:-redis://socialboost-redis:6379}
+      JWT_SECRET: ${JWT_SECRET:?set JWT_SECRET}
+      TOKEN_ENCRYPTION_KEY: ${TOKEN_ENCRYPTION_KEY:?set TOKEN_ENCRYPTION_KEY}
+      META_APP_ID: ${META_APP_ID}
+      META_APP_SECRET: ${META_APP_SECRET}
+      META_WEBHOOK_VERIFY_TOKEN: ${META_WEBHOOK_VERIFY_TOKEN}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+      GEMINI_API_KEY: ${GEMINI_API_KEY:-}
+      CLOUDINARY_CLOUD_NAME: ${CLOUDINARY_CLOUD_NAME}
+      CLOUDINARY_API_KEY: ${CLOUDINARY_API_KEY}
+      CLOUDINARY_API_SECRET: ${CLOUDINARY_API_SECRET}
+      RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID:-}
+      RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET:-}
+      RAZORPAY_WEBHOOK_SECRET: ${RAZORPAY_WEBHOOK_SECRET:-}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - nadanaloga-main-network
+    logging: &logging
       # Without a cap, logs will eventually fill the disk on a small VPS.
       driver: json-file
       options:
         max-size: "10m"
         max-file: "3"
 
-  portainer:
-    image: portainer/portainer-ce:latest
-    container_name: portainer
+  # Reels, video posts, scheduled posts and metrics refreshes: the long-lived
+  # process a serverless host could not provide.
+  worker:
+    image: socialboost-app:latest
+    pull_policy: never
+    container_name: socialboost-worker
     restart: unless-stopped
-    ports:
-      - "9443:9443"
+    command: ["node", "server/dist/worker.js"]
+    environment: *app_env
+    depends_on:
+      api:
+        condition: service_started
+    networks:
+      - nadanaloga-main-network
+    logging: *logging
+    healthcheck:
+      test: ["CMD", "node", "-e", "process.exit(0)"]
+      interval: 60s
+      timeout: 10s
+
+  db:
+    image: postgres:18-alpine
+    container_name: socialboost-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: socialboost
+      POSTGRES_USER: socialboost
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
     volumes:
-      # Lets Portainer manage the containers running beside it.
-      - /var/run/docker.sock:/var/run/docker.sock
-      - portainer_data:/data
+      # This volume belongs to this database alone. Never mount it elsewhere.
+      - socialboost-pgdata:/var/lib/postgresql
+    networks:
+      - nadanaloga-main-network
+    logging: *logging
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U socialboost -d socialboost"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: socialboost-redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "256mb", "--maxmemory-policy", "noeviction"]
+    volumes:
+      - socialboost-redis:/data
+    networks:
+      - nadanaloga-main-network
+    logging: *logging
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+
+  # Nightly dump of the database, 30 copies kept, on its own volume.
+  backup:
+    image: postgres:18-alpine
+    container_name: socialboost-db-backup
+    restart: unless-stopped
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - socialboost-backups:/backups
+    networks:
+      - nadanaloga-main-network
+    depends_on:
+      db:
+        condition: service_healthy
+    logging: *logging
+    command: >
+      sh -c 'while true; do
+        pg_dump -h socialboost-db -U socialboost socialboost | gzip > /backups/socialboost-$(date +%F).sql.gz &&
+        ls -1t /backups/*.sql.gz | tail -n +31 | xargs -r rm --;
+        sleep 86400;
+      done'
 
 volumes:
-  portainer_data:
+  socialboost-pgdata:
+    name: socialboost-pgdata
+  socialboost-redis:
+    name: socialboost-redis
+  socialboost-backups:
+    name: socialboost-backups
+
+networks:
+  nadanaloga-main-network:
+    external: true
