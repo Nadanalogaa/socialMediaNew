@@ -277,7 +277,7 @@ export async function listPosts(organizationId: string, options: ListPostsOption
   }));
 }
 
-const EDITABLE: string[] = ['draft', 'scheduled', 'failed', 'partially_failed'];
+const EDITABLE: string[] = ['draft', 'pending_approval', 'scheduled', 'failed', 'partially_failed'];
 
 /**
  * Edits a post that has not gone out.
@@ -361,6 +361,43 @@ export async function updatePost(organizationId: string, postId: string, input: 
     return dispatch(organizationId, postId, input.scheduledAt);
   }
 
+  return getPost(organizationId, postId);
+}
+
+// --- Approval -------------------------------------------------------------------
+
+/** A member hands a draft to whoever can publish it. */
+export async function submitForApproval(organizationId: string, postId: string, userId: string) {
+  const post = await getPost(organizationId, postId);
+  if (!['draft', 'failed', 'partially_failed'].includes(post.status)) {
+    throw conflict('Only a draft can be submitted for approval.');
+  }
+  await db
+    .update(posts)
+    .set({ status: 'pending_approval', submittedBy: userId, reviewNote: null, updatedAt: new Date() })
+    .where(eq(posts.id, postId));
+  return getPost(organizationId, postId);
+}
+
+/** Approval publishes now, or schedules if the post carries a future time. */
+export async function approve(organizationId: string, postId: string, userId: string) {
+  const post = await getPost(organizationId, postId);
+  if (post.status !== 'pending_approval') throw conflict('This post is not waiting for approval.');
+  await db
+    .update(posts)
+    .set({ reviewedBy: userId, reviewNote: null, updatedAt: new Date() })
+    .where(eq(posts.id, postId));
+  const when = post.scheduledAt && post.scheduledAt.getTime() > Date.now() ? post.scheduledAt : undefined;
+  return dispatch(organizationId, postId, when);
+}
+
+export async function reject(organizationId: string, postId: string, userId: string, note?: string) {
+  const post = await getPost(organizationId, postId);
+  if (post.status !== 'pending_approval') throw conflict('This post is not waiting for approval.');
+  await db
+    .update(posts)
+    .set({ status: 'draft', reviewedBy: userId, reviewNote: note?.trim() || null, updatedAt: new Date() })
+    .where(eq(posts.id, postId));
   return getPost(organizationId, postId);
 }
 

@@ -9,7 +9,7 @@
 const SESSION_KEY = 'socialboost.session';
 
 /** Endpoints that legitimately run without a session. */
-const PUBLIC_PATHS = ['/auth/login', '/auth/register', '/auth/refresh'];
+const PUBLIC_PATHS = ['/auth/login', '/auth/register', '/auth/refresh', '/organizations/invitations/'];
 
 export interface Organization {
   id: string;
@@ -220,6 +220,7 @@ export interface Post {
   status: string;
   scheduledAt: string | null;
   publishedAt: string | null;
+  reviewNote: string | null;
   firstComment: string | null;
   repeatEveryDays: number | null;
   repeatUntil: string | null;
@@ -243,6 +244,41 @@ export interface PostingSlot {
 export interface OrganizationSettings {
   timezone: string;
   postingSlots: PostingSlot[];
+  requireApproval: boolean;
+}
+
+export interface Member {
+  userId: string;
+  name: string;
+  email: string;
+  role: string;
+  joinedAt: string;
+}
+
+export interface Invitation {
+  id: string;
+  email: string;
+  role: string;
+  token: string;
+  link: string;
+  expiresAt: string;
+  acceptedAt: string | null;
+  createdAt: string;
+}
+
+export interface InvitationPreview {
+  organizationName: string;
+  role: string;
+  email: string;
+  inviter: string;
+  accepted: boolean;
+  expired: boolean;
+}
+
+export interface ReportPayload extends AnalyticsPayload {
+  audience: { connectionId: string; displayName: string; provider: string; followers: number | null }[];
+  brand: { name: string; logoUrl: string | null; primaryColor: string | null; website: string | null };
+  generatedAt: string;
 }
 
 export interface BrandKit {
@@ -549,6 +585,11 @@ export const api = {
 
   duplicatePost: (id: string) => request<Post>(`/posts/${id}/duplicate`, { method: 'POST' }),
 
+  submitPost: (id: string) => request<Post>(`/posts/${id}/submit`, { method: 'POST' }),
+  approvePost: (id: string) => request<Post>(`/posts/${id}/approve`, { method: 'POST' }),
+  rejectPost: (id: string, note?: string) =>
+    request<Post>(`/posts/${id}/reject`, { method: 'POST', body: JSON.stringify({ note }) }),
+
   deletePost: (id: string) => request<void>(`/posts/${id}`, { method: 'DELETE' }),
 
   nextSlots: (count = 5) => request<{ slots: SlotSuggestion[] }>(`/posts/next-slots?count=${count}`),
@@ -579,6 +620,28 @@ export const api = {
     request<{ id: string }>(`/ideas/${id}`, { method: 'PATCH', body: JSON.stringify(input) }),
 
   deleteIdea: (id: string) => request<void>(`/ideas/${id}`, { method: 'DELETE' }),
+
+  // --- Team ---
+  listMembers: () => request<{ members: Member[] }>('/organizations/current/members'),
+  setMemberRole: (userId: string, role: string) =>
+    request<{ members: Member[] }>(`/organizations/current/members/${userId}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ role }),
+    }),
+  removeMember: (userId: string) =>
+    request<{ members: Member[] }>(`/organizations/current/members/${userId}`, { method: 'DELETE' }),
+  listInvitations: () => request<{ invitations: Invitation[] }>('/organizations/current/invitations'),
+  createInvitation: (input: { email: string; role: string }) =>
+    request<Invitation>('/organizations/current/invitations', { method: 'POST', body: JSON.stringify(input) }),
+  deleteInvitation: (id: string) =>
+    request<void>(`/organizations/current/invitations/${id}`, { method: 'DELETE' }),
+  previewInvitation: (token: string) =>
+    request<InvitationPreview>(`/organizations/invitations/${encodeURIComponent(token)}`),
+  acceptInvitation: (token: string) =>
+    request<Organization>(`/organizations/invitations/${encodeURIComponent(token)}/accept`, { method: 'POST' }),
+
+  // --- Report ---
+  getReport: (days: number) => request<ReportPayload>(`/analytics/report?days=${days}`),
 
   // --- Organisation settings ---
   getSettings: () => request<OrganizationSettings>('/organizations/current/settings'),

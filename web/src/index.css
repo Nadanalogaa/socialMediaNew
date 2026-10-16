@@ -89,3 +89,27 @@ input[type='range']::-moz-range-thumb {
     height: 2.5rem;
   }
 }
+
+/* A client report prints on its own: everything else disappears. */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  #client-report,
+  #client-report * {
+    visibility: visible;
+  }
+  #client-report {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    margin: 0;
+    padding: 1.5cm;
+    background: white;
+    max-height: none;
+    overflow: visible;
+  }
+  .no-print {
+    display: none !important;
+  }
+}

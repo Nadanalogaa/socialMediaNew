@@ -11,6 +11,7 @@ import { LibraryScreen } from './LibraryScreen';
 import { PostsScreen } from './PostsScreen';
 import { IdeasScreen } from './IdeasScreen';
 import { BrandScreen } from './BrandScreen';
+import { TeamScreen } from './TeamScreen';
 import { Badge, Card } from '../components/ui';
 
 /**
@@ -25,6 +26,9 @@ interface Props {
   session: Session;
   onSignOut: () => void;
   onSessionChange: (session: Session) => void;
+  /** A one-line message from the shell, e.g. the result of an invitation. */
+  notice?: string | null;
+  onDismissNotice?: () => void;
 }
 
 type TabKey =
@@ -37,6 +41,7 @@ type TabKey =
   | 'reels'
   | 'library'
   | 'brand'
+  | 'team'
   | 'whatsapp'
   | 'ads';
 
@@ -50,6 +55,7 @@ const TABS: { key: TabKey; label: string; icon: string; ready: boolean }[] = [
   { key: 'reels', label: 'Reels', icon: '▶', ready: true },
   { key: 'library', label: 'My designs', icon: '❑', ready: true },
   { key: 'brand', label: 'Brand kit', icon: '◆', ready: true },
+  { key: 'team', label: 'Team', icon: '👥', ready: true },
   { key: 'whatsapp', label: 'WhatsApp', icon: '✆', ready: false },
   { key: 'ads', label: 'Ads', icon: '◎', ready: false },
 ];
@@ -62,7 +68,7 @@ const COMING_SOON: Record<string, string> = {
   ads: 'Meta and Google campaigns. Unlocks once the ads API applications are approved.',
 };
 
-export function DashboardScreen({ session, onSignOut, onSessionChange }: Props) {
+export function DashboardScreen({ session, onSignOut, onSessionChange, notice, onDismissNotice }: Props) {
   const [tab, setTab] = useState<TabKey>('compose');
   // Bumping this forces the posts list to refetch after a publish.
   const [postsKey, setPostsKey] = useState(0);
@@ -137,12 +143,21 @@ export function DashboardScreen({ session, onSignOut, onSessionChange }: Props) 
       </header>
 
       <main className="mx-auto w-full max-w-[1700px] flex-1 px-4 py-3 pb-24 lg:pb-4">
+        {notice && (
+          <div className="mb-3 flex items-center justify-between rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+            <span>{notice}</span>
+            <button onClick={onDismissNotice} className="ml-3 text-amber-700 hover:underline">
+              Dismiss
+            </button>
+          </div>
+        )}
         {tab === 'compose' && (
           <ComposeScreen
             key={`${session.organization.id}:${editingPostId ?? 'new'}:${pendingCaption ?? ''}`}
             initialAsset={pendingAsset}
             initialCaption={pendingCaption}
             editingPostId={editingPostId}
+            role={session.organization.role}
             onPublished={() => setPostsKey((k) => k + 1)}
             onViewPosts={() => {
               setPendingAsset(null);
@@ -154,6 +169,7 @@ export function DashboardScreen({ session, onSignOut, onSessionChange }: Props) 
         {tab === 'posts' && (
           <PostsScreen
             key={`${session.organization.id}:${postsKey}`}
+            role={session.organization.role}
             onEdit={(post) => {
               setEditingPostId(post.id);
               setTab('compose');
@@ -181,6 +197,7 @@ export function DashboardScreen({ session, onSignOut, onSessionChange }: Props) 
           />
         )}
         {tab === 'brand' && <BrandScreen key={session.organization.id} />}
+        {tab === 'team' && <TeamScreen key={session.organization.id} session={session} />}
         {tab === 'channels' && <ConnectionsScreen key={session.organization.id} />}
         {tab === 'creatives' && (
           <CreativesScreen

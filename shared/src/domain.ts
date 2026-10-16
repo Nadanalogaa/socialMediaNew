@@ -51,6 +51,8 @@ export type AspectRatioKey = keyof typeof ASPECT_RATIOS;
 
 export const POST_STATUSES = [
   'draft',
+  /** Submitted by a member; waits for an owner, admin or client to approve. */
+  'pending_approval',
   'scheduled',
   'publishing',
   'published',
@@ -106,8 +108,24 @@ export type WaMessageStatus = (typeof WA_MESSAGE_STATUSES)[number];
 
 // --- Billing & metering ---------------------------------------------------
 
-export const ROLES = ['owner', 'admin', 'member'] as const;
+/**
+ * owner/admin run the workspace and publish; a member drafts and, when
+ * approval is on, submits; a viewer (a client) only looks and approves.
+ */
+export const ROLES = ['owner', 'admin', 'member', 'viewer'] as const;
 export type Role = (typeof ROLES)[number];
+
+export const ROLE_LABELS: Record<Role, string> = {
+  owner: 'Owner',
+  admin: 'Admin',
+  member: 'Member',
+  viewer: 'Client (view & approve)',
+};
+
+/** Roles that may publish, schedule and approve. */
+export const PUBLISHING_ROLES: Role[] = ['owner', 'admin'];
+/** Roles that may create and edit posts. */
+export const EDITING_ROLES: Role[] = ['owner', 'admin', 'member'];
 
 /**
  * Every billable action. Usage is written as an append-only event so quota

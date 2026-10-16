@@ -167,6 +167,22 @@ export const postingSlotSchema = z.object({
 export const organizationSettingsSchema = z.object({
   timezone: z.string().min(1).max(64).optional(),
   postingSlots: z.array(postingSlotSchema).max(20).optional(),
+  /** Members' posts wait for an owner, admin or client to approve them. */
+  requireApproval: z.boolean().optional(),
+});
+
+export const inviteSchema = z.object({
+  email: z.string().email().max(254),
+  role: z.enum(['admin', 'member', 'viewer']),
+});
+export type InviteInput = z.infer<typeof inviteSchema>;
+
+export const memberRoleSchema = z.object({
+  role: z.enum(['admin', 'member', 'viewer']),
+});
+
+export const reviewSchema = z.object({
+  note: z.string().max(1000).optional(),
 });
 export type OrganizationSettingsInput = z.infer<typeof organizationSettingsSchema>;
 

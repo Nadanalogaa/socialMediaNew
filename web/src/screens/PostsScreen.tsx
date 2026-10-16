@@ -15,11 +15,12 @@ import {
 } from '../components/ui';
 
 type View = 'calendar' | 'list';
-type Filter = 'all' | 'draft' | 'scheduled' | 'published' | 'failed';
+type Filter = 'all' | 'draft' | 'pending' | 'scheduled' | 'published' | 'failed';
 
 const FILTERS: { key: Filter; label: string }[] = [
   { key: 'all', label: 'All' },
   { key: 'draft', label: 'Drafts' },
+  { key: 'pending', label: 'Needs approval' },
   { key: 'scheduled', label: 'Scheduled' },
   { key: 'published', label: 'Published' },
   { key: 'failed', label: 'Needs attention' },
@@ -28,6 +29,7 @@ const FILTERS: { key: Filter; label: string }[] = [
 function matches(post: Post, filter: Filter): boolean {
   if (filter === 'all') return true;
   if (filter === 'failed') return post.status === 'failed' || post.status === 'partially_failed';
+  if (filter === 'pending') return post.status === 'pending_approval';
   if (filter === 'scheduled') return post.status === 'scheduled' || post.status === 'publishing';
   return post.status === filter;
 }
@@ -39,7 +41,18 @@ function matches(post: Post, filter: Filter): boolean {
  * Facebook and be rejected by Instagram — a single overall status would hide
  * the reason the user needs.
  */
-export function PostsScreen({ onEdit, onCompose }: { onEdit: (post: Post) => void; onCompose: () => void }) {
+export function PostsScreen({
+  onEdit,
+  onCompose,
+  role = 'owner',
+}: {
+  onEdit: (post: Post) => void;
+  onCompose: () => void;
+  role?: string;
+}) {
+  const canApprove = role === 'owner' || role === 'admin' || role === 'viewer';
+  const canEdit = role !== 'viewer';
+  const [requireApproval, setRequireApproval] = useState(false);
   const [view, setView] = useState<View>(() => {
     try {
       return (localStorage.getItem('posts.view') as View) || 'calendar';
@@ -87,6 +100,7 @@ export function PostsScreen({ onEdit, onCompose }: { onEdit: (post: Post) => voi
 
   useEffect(() => {
     api.listConnections().then(({ connections }) => setConnections(connections)).catch(() => {});
+    api.getSettings().then((s) => setRequireApproval(s.requireApproval)).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -130,6 +144,15 @@ export function PostsScreen({ onEdit, onCompose }: { onEdit: (post: Post) => voi
     run(() => api.updatePost(post.id, { scheduledAt: null }), 'Moved back to drafts.');
   const handleDuplicate = (post: Post) =>
     run(() => api.duplicatePost(post.id), 'A copy was saved as a draft.');
+  const handleSubmit = (post: Post) =>
+    run(() => api.submitPost(post.id), 'Sent for approval.');
+  const handleApprove = (post: Post) =>
+    confirm('Approve this post? It publishes now, or at its scheduled time.') &&
+    run(() => api.approvePost(post.id), 'Approved.');
+  const handleReject = (post: Post) => {
+    const note = prompt('What should change? (sent back to the author)') ?? undefined;
+    return run(() => api.rejectPost(post.id, note), 'Sent back as a draft.');
+  };
   const handleDelete = (post: Post) =>
     confirm('Remove this post from your dashboard? Anything already published stays live.') &&
     run(() => api.deletePost(post.id), 'Removed.');
@@ -309,6 +332,12 @@ export function PostsScreen({ onEdit, onCompose }: { onEdit: (post: Post) => voi
                         }
                         onRescheduleCancel={() => setRescheduling(null)}
                         onEdit={() => onEdit(post)}
+                        canEdit={canEdit}
+                        mustSubmit={requireApproval && role === 'member'}
+                        canApprove={canApprove}
+                        onSubmit={() => void handleSubmit(post)}
+                        onApprove={() => void handleApprove(post)}
+                        onReject={() => void handleReject(post)}
                         onPublish={() => void handlePublish(post)}
                         onUnschedule={() => void handleUnschedule(post)}
                         onDuplicate={() => void handleDuplicate(post)}
@@ -342,6 +371,12 @@ export function PostsScreen({ onEdit, onCompose }: { onEdit: (post: Post) => voi
                 }
                 onRescheduleCancel={() => setRescheduling(null)}
                 onEdit={() => onEdit(post)}
+                canEdit={canEdit}
+                mustSubmit={requireApproval && role === 'member'}
+                canApprove={canApprove}
+                onSubmit={() => void handleSubmit(post)}
+                onApprove={() => void handleApprove(post)}
+                onReject={() => void handleReject(post)}
                 onPublish={() => void handlePublish(post)}
                 onUnschedule={() => void handleUnschedule(post)}
                 onDuplicate={() => void handleDuplicate(post)}
@@ -364,6 +399,12 @@ function PostCard({
   onRescheduleCommit,
   onRescheduleCancel,
   onEdit,
+  canEdit,
+  mustSubmit,
+  canApprove,
+  onSubmit,
+  onApprove,
+  onReject,
   onPublish,
   onUnschedule,
   onDuplicate,
@@ -377,12 +418,20 @@ function PostCard({
   onRescheduleCommit: () => void;
   onRescheduleCancel: () => void;
   onEdit: () => void;
+  canEdit: boolean;
+  /** A member in a workspace that requires approval: no publish, submit instead. */
+  mustSubmit: boolean;
+  canApprove: boolean;
+  onSubmit: () => void;
+  onApprove: () => void;
+  onReject: () => void;
   onPublish: () => void;
   onUnschedule: () => void;
   onDuplicate: () => void;
   onDelete: () => void;
 }) {
-  const editable = ['draft', 'scheduled', 'failed', 'partially_failed'].includes(post.status);
+  const editable = canEdit && ['draft', 'pending_approval', 'scheduled', 'failed', 'partially_failed'].includes(post.status);
+  const pending = post.status === 'pending_approval';
   const thumb = post.media[0];
   return (
     <Card className={highlighted ? 'ring-2 ring-brand-500' : ''}>
@@ -415,6 +464,9 @@ function PostCard({
           )}
           {post.firstComment && (
             <p className="mt-0.5 truncate text-xs text-slate-500">💬 First comment: {post.firstComment}</p>
+          )}
+          {post.reviewNote && post.status === 'draft' && (
+            <p className="mt-1 rounded bg-amber-50 px-2 py-1 text-xs text-amber-900">↩ Sent back: {post.reviewNote}</p>
           )}
         </div>
       </div>
@@ -457,17 +509,37 @@ function PostCard({
         </div>
       ) : (
         <div className="mt-2 flex flex-wrap gap-1.5 border-t border-slate-100 pt-2">
+          {pending && canApprove && (
+            <>
+              <Button className="!px-2.5 !py-1 !text-xs" onClick={onApprove}>
+                ✓ Approve
+              </Button>
+              <Button variant="secondary" className="!px-2.5 !py-1 !text-xs" onClick={onReject}>
+                ↩ Send back
+              </Button>
+            </>
+          )}
+          {pending && !canApprove && <span className="self-center text-xs text-slate-500">Waiting for approval</span>}
           {editable && (
             <>
               <Button variant="secondary" className="!px-2.5 !py-1 !text-xs" onClick={onEdit}>
                 Edit
               </Button>
-              <Button className="!px-2.5 !py-1 !text-xs" onClick={onPublish}>
-                Publish now
-              </Button>
-              <Button variant="secondary" className="!px-2.5 !py-1 !text-xs" onClick={onRescheduleOpen}>
-                {post.status === 'scheduled' ? 'Reschedule' : 'Schedule'}
-              </Button>
+              {!pending && mustSubmit && (
+                <Button className="!px-2.5 !py-1 !text-xs" onClick={onSubmit}>
+                  Submit for approval
+                </Button>
+              )}
+              {!pending && !mustSubmit && (
+                <>
+                  <Button className="!px-2.5 !py-1 !text-xs" onClick={onPublish}>
+                    Publish now
+                  </Button>
+                  <Button variant="secondary" className="!px-2.5 !py-1 !text-xs" onClick={onRescheduleOpen}>
+                    {post.status === 'scheduled' ? 'Reschedule' : 'Schedule'}
+                  </Button>
+                </>
+              )}
               {post.status === 'scheduled' && (
                 <Button variant="secondary" className="!px-2.5 !py-1 !text-xs" onClick={onUnschedule}>
                   Unschedule
@@ -475,12 +547,16 @@ function PostCard({
               )}
             </>
           )}
-          <Button variant="secondary" className="!px-2.5 !py-1 !text-xs" onClick={onDuplicate}>
-            Duplicate
-          </Button>
-          <Button variant="danger" className="!px-2.5 !py-1 !text-xs" onClick={onDelete}>
-            Remove
-          </Button>
+          {canEdit && (
+            <>
+              <Button variant="secondary" className="!px-2.5 !py-1 !text-xs" onClick={onDuplicate}>
+                Duplicate
+              </Button>
+              <Button variant="danger" className="!px-2.5 !py-1 !text-xs" onClick={onDelete}>
+                Remove
+              </Button>
+            </>
+          )}
         </div>
       )}
     </Card>

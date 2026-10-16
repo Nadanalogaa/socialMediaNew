@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { ApiError, api, type AnalyticsPayload } from '../lib/api';
 import { BarChart, ChartGrid, LineChart, StatTile } from '../components/charts';
 import { Alert, Button, Card, Spinner, providerLabel } from '../components/ui';
+import { ReportView } from '../components/ReportView';
 
 /** Compact figures: 12.4k reads faster than 12,431 in a stat tile. */
 function compact(value: number): string {
@@ -20,6 +21,7 @@ export function AnalyticsScreen() {
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [notice, setNotice] = useState<string | null>(null);
+  const [report, setReport] = useState(false);
 
   const load = useCallback(async (range: number) => {
     try {
@@ -88,8 +90,11 @@ export function AnalyticsScreen() {
           <Button variant="secondary" onClick={() => void handleRefresh()} disabled={refreshing}>
             {refreshing ? 'Queuing…' : 'Refresh figures'}
           </Button>
+          <Button onClick={() => setReport(true)}>📄 Client report</Button>
         </div>
       </div>
+
+      {report && <ReportView days={days} onClose={() => setReport(false)} />}
 
       {error && <Alert>{error}</Alert>}
       {notice && <Alert tone="info">{notice}</Alert>}

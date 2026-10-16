@@ -30,6 +30,7 @@ export function ComposeScreen({
   initialAsset,
   initialCaption,
   editingPostId,
+  role = 'owner',
   onViewPosts,
 }: {
   onPublished: () => void;
@@ -39,12 +40,16 @@ export function ComposeScreen({
   initialCaption?: string;
   /** Set when opened from Posts → Edit. */
   editingPostId?: string;
+  role?: string;
   onViewPosts?: () => void;
 }) {
   const [connections, setConnections] = useState<Connection[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [caption, setCaption] = useState(initialCaption ?? '');
   const [brand, setBrand] = useState<BrandKit | null>(null);
+  const [requireApproval, setRequireApproval] = useState(false);
+  /** A member in a workspace with approval on: can only draft and submit. */
+  const mustSubmit = requireApproval && role === 'member';
   const [hashtagText, setHashtagText] = useState('');
   const [firstComment, setFirstComment] = useState('');
   const [showFirstComment, setShowFirstComment] = useState(false);
@@ -54,7 +59,7 @@ export function ComposeScreen({
   const [asset, setAsset] = useState<MediaAsset | null>(initialAsset ?? null);
   const [groups, setGroups] = useState<HashtagGroup[]>([]);
   const [slots, setSlots] = useState<SlotSuggestion[]>([]);
-  const [outcome, setOutcome] = useState<{ kind: 'draft' | 'scheduled' | 'publishing' | 'updated'; channels: number } | null>(null);
+  const [outcome, setOutcome] = useState<{ kind: 'draft' | 'scheduled' | 'publishing' | 'updated' | 'submitted'; channels: number } | null>(null);
   const [uploadPercent, setUploadPercent] = useState<number | null>(null);
   const [scheduledAt, setScheduledAt] = useState('');
   const [repeatDays, setRepeatDays] = useState('');
@@ -86,6 +91,7 @@ export function ComposeScreen({
       .catch(() => setError('Could not load your connected channels.'));
     api.listHashtagGroups().then(({ groups }) => setGroups(groups)).catch(() => {});
     api.getBrand().then(setBrand).catch(() => {});
+    api.getSettings().then((s) => setRequireApproval(s.requireApproval)).catch(() => {});
     api.nextSlots(4).then(({ slots }) => setSlots(slots)).catch(() => {});
   }, [editingPostId]);
 
@@ -186,7 +192,7 @@ export function ComposeScreen({
       ...(overrides[connectionId]?.trim() ? { caption: overrides[connectionId]! } : {}),
     }));
 
-  async function handleSubmit(mode: 'draft' | 'now' | 'schedule') {
+  async function handleSubmit(mode: 'draft' | 'now' | 'schedule' | 'submit') {
     setError(null);
     if (!asset) return setError('Add a photo or video first.');
     if (selected.size === 0) return setError('Choose at least one channel.');
@@ -202,6 +208,36 @@ export function ComposeScreen({
 
     setBusy(true);
     try {
+      if (mode === 'submit') {
+        // Saved (or updated) as a draft, then handed over for approval. The
+        // time, if any, is kept so approval schedules rather than publishes.
+        const id = editing
+          ? (await api.updatePost(editing.id, {
+              caption,
+              hashtags,
+              mediaAssetIds: [asset.id],
+              targets: targets(),
+              firstComment: firstComment.trim() || null,
+              ...repeat,
+            })).id
+          : (await api.createPost({
+              caption,
+              hashtags,
+              mediaAssetIds: [asset.id],
+              targets: targets(),
+              // Kept on the draft so approval schedules it for this time.
+              scheduledAt: scheduledAt ? new Date(scheduledAt).toISOString() : undefined,
+              firstComment: firstComment.trim() || undefined,
+              repeatEveryDays: repeat.repeatEveryDays ?? undefined,
+              repeatUntil: repeat.repeatUntil ?? undefined,
+              asDraft: true,
+            })).id;
+        await api.submitPost(id);
+        setOutcome({ kind: 'submitted', channels: selected.size });
+        if (!editing) reset();
+        onPublished();
+        return;
+      }
       if (editing) {
         await api.updatePost(editing.id, {
           caption,
@@ -275,6 +311,8 @@ export function ComposeScreen({
               <p className="text-sm font-medium text-emerald-900">
                 {outcome.kind === 'draft'
                   ? 'Saved as a draft'
+                  : outcome.kind === 'submitted'
+                    ? 'Sent for approval'
                   : outcome.kind === 'updated'
                     ? 'Changes saved'
                     : outcome.kind === 'scheduled'
@@ -282,7 +320,9 @@ export function ComposeScreen({
                       : `Publishing to ${outcome.channels} channel${outcome.channels === 1 ? '' : 's'}`}
               </p>
               <p className="mt-0.5 text-sm text-emerald-800">
-                {outcome.kind === 'draft' || outcome.kind === 'updated'
+                {outcome.kind === 'submitted'
+                  ? 'An owner, admin or client will approve it. You can follow it in Posts.'
+                  : outcome.kind === 'draft' || outcome.kind === 'updated'
                   ? 'Nothing has been sent. Publish it from Posts when you are ready.'
                   : outcome.kind === 'scheduled'
                     ? 'It will go out automatically at the time you set.'
@@ -639,7 +679,11 @@ export function ComposeScreen({
         <Button variant="secondary" onClick={() => void handleSubmit('draft')} disabled={busy || !asset || selected.size === 0}>
           {editing ? (editing.status === 'scheduled' ? 'Save & unschedule' : 'Save changes') : 'Save as draft'}
         </Button>
-        {scheduledAt ? (
+        {mustSubmit ? (
+          <Button onClick={() => void handleSubmit('submit')} disabled={busy || !asset || selected.size === 0}>
+            {busy ? 'Sending…' : scheduledAt ? 'Submit for approval (scheduled)' : 'Submit for approval'}
+          </Button>
+        ) : scheduledAt ? (
           <Button onClick={() => void handleSubmit('schedule')} disabled={busy || !asset || selected.size === 0}>
             {busy ? (
               <span className="flex items-center gap-2">

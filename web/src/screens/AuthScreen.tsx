@@ -1,13 +1,29 @@
-import { useState, type FormEvent } from 'react';
-import { ApiError, api, saveSession, type Session } from '../lib/api';
+import { useEffect, useState, type FormEvent } from 'react';
+import { ApiError, api, saveSession, type InvitationPreview, type Session } from '../lib/api';
 
 interface Props {
   onAuthenticated: (session: Session) => void;
+  /** Set when the person arrived through an invitation link. */
+  inviteToken?: string | null;
 }
 
 /** Sign-in and sign-up share one screen; the toggle only changes two fields. */
-export function AuthScreen({ onAuthenticated }: Props) {
+export function AuthScreen({ onAuthenticated, inviteToken }: Props) {
   const [mode, setMode] = useState<'login' | 'register'>('login');
+  const [invite, setInvite] = useState<InvitationPreview | null>(null);
+
+  useEffect(() => {
+    if (!inviteToken) return;
+    api
+      .previewInvitation(inviteToken)
+      .then((preview) => {
+        setInvite(preview);
+        setEmail((current) => current || preview.email);
+        // Joining a workspace does not need a business of one's own.
+        setOrganizationName((current) => current || 'My workspace');
+      })
+      .catch(() => setInvite(null));
+  }, [inviteToken]);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
@@ -57,6 +73,22 @@ export function AuthScreen({ onAuthenticated }: Props) {
             {isRegister ? 'Start promoting across every channel.' : 'Welcome back.'}
           </p>
         </div>
+
+        {invite && (
+          <div
+            className={`mb-4 rounded-xl border px-4 py-3 text-sm ${
+              invite.expired || invite.accepted
+                ? 'border-amber-200 bg-amber-50 text-amber-900'
+                : 'border-emerald-200 bg-emerald-50 text-emerald-900'
+            }`}
+          >
+            {invite.expired
+              ? 'This invitation has expired. Ask for a new link.'
+              : invite.accepted
+                ? 'This invitation was already used. Just sign in.'
+                : `${invite.inviter} invited you to join ${invite.organizationName}. Sign in, or create an account, and you're in.`}
+          </div>
+        )}
 
         <form
           onSubmit={handleSubmit}

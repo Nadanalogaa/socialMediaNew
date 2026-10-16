@@ -74,6 +74,7 @@ export function statusTone(status: string): Tone {
     case 'failed':
       return 'danger';
     case 'partially_failed':
+    case 'pending_approval':
       return 'warning';
     case 'publishing':
     case 'scheduled':

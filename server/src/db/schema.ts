@@ -56,6 +56,8 @@ export const organizations = pgTable(
     razorpayCustomerId: text('razorpay_customer_id'),
     /** IANA zone every scheduling time is read and shown in. */
     timezone: text('timezone').notNull().default('Asia/Kolkata'),
+    /** Members' posts wait for approval before they can go out. */
+    requireApproval: boolean('require_approval').notNull().default(false),
     /**
      * The queue's posting times: "9:00 on weekdays, 19:30 every day". A post
      * added to the queue takes the next free one.
@@ -64,6 +66,32 @@ export const organizations = pgTable(
     ...timestamps,
   },
   (t) => [uniqueIndex('organizations_slug_idx').on(t.slug)],
+);
+
+/**
+ * An invitation is a link, not an email: the owner copies it into WhatsApp
+ * or a message. Accepting it with any signed-in account joins that account
+ * to the workspace at the invited role.
+ */
+export const invitations = pgTable(
+  'invitations',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    organizationId: uuid('organization_id')
+      .notNull()
+      .references(() => organizations.id, { onDelete: 'cascade' }),
+    email: text('email').notNull(),
+    role: text('role').$type<Role>().notNull().default('member'),
+    token: text('token').notNull(),
+    invitedBy: uuid('invited_by').references(() => users.id, { onDelete: 'set null' }),
+    acceptedAt: timestamp('accepted_at', { withTimezone: true }),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    ...timestamps,
+  },
+  (t) => [
+    uniqueIndex('invitations_token_idx').on(t.token),
+    index('invitations_org_idx').on(t.organizationId),
+  ],
 );
 
 export interface PostingSlot {
@@ -360,6 +388,10 @@ export const posts = pgTable(
     repeatUntil: timestamp('repeat_until', { withTimezone: true }),
     /** The post this one was recycled from. */
     parentPostId: uuid('parent_post_id'),
+    /** Why a submitted post was sent back, for the member who wrote it. */
+    reviewNote: text('review_note'),
+    submittedBy: uuid('submitted_by').references(() => users.id, { onDelete: 'set null' }),
+    reviewedBy: uuid('reviewed_by').references(() => users.id, { onDelete: 'set null' }),
     createdBy: uuid('created_by').references(() => users.id, { onDelete: 'set null' }),
     ...timestamps,
   },
