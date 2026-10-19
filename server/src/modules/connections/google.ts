@@ -34,6 +34,7 @@ export interface GoogleConnectResult {
   organizationId: string;
   accountEmail?: string;
   locationsFound: number;
+  sitesFound: number;
   businessProfileAvailable: boolean;
   message?: string;
 }
@@ -90,6 +91,25 @@ export async function completeGoogleConnection(
     });
   }
 
+  // Search Console properties: the queries the website ranks for.
+  let sitesFound = 0;
+  try {
+    const sites = await google.listSearchConsoleSites(tokens.accessToken);
+    for (const site of sites) {
+      await upsert({
+        organizationId,
+        provider: 'google_search_console',
+        externalId: site.siteUrl,
+        displayName: site.siteUrl.replace(/^sc-domain:/, '').replace(/\/$/, ''),
+        tokens,
+        metadata: { permissionLevel: site.permissionLevel },
+      });
+      sitesFound++;
+    }
+  } catch (error) {
+    logger.warn({ organizationId, err: error }, 'Search Console listing unavailable');
+  }
+
   // Stored even with no locations: YouTube uses the same grant.
   await upsert({
     organizationId,
@@ -105,6 +125,7 @@ export async function completeGoogleConnection(
     organizationId,
     accountEmail: identity.email,
     locationsFound: locations.length,
+    sitesFound,
     businessProfileAvailable,
     message,
   };
@@ -112,7 +133,7 @@ export async function completeGoogleConnection(
 
 async function upsert(input: {
   organizationId: string;
-  provider: 'google_business' | 'youtube_channel';
+  provider: 'google_business' | 'youtube_channel' | 'google_search_console';
   externalId: string;
   displayName: string;
   avatarUrl?: string;

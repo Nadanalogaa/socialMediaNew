@@ -20,8 +20,9 @@ googleCallbackRouter.get(
     const state = typeof req.query.state === 'string' ? req.query.state : '';
     const denied = typeof req.query.error === 'string' ? req.query.error : '';
 
+    // Back into the app's Channels screen, which reads these parameters.
     const back = (params: Record<string, string>) =>
-      res.redirect(`${env.APP_URL}/?${new URLSearchParams(params).toString()}`);
+      res.redirect(`${env.APP_URL}/app?tab=channels&${new URLSearchParams(params).toString()}`);
 
     if (denied) return back({ google: 'denied', reason: denied });
     if (!code || !state) return back({ google: 'error', reason: 'missing_code' });
@@ -31,6 +32,7 @@ googleCallbackRouter.get(
       return back({
         google: 'connected',
         locations: String(result.locationsFound),
+        sites: String(result.sitesFound),
         ...(result.businessProfileAvailable ? {} : { businessProfile: 'unavailable' }),
       });
     } catch (error) {

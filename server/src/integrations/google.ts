@@ -30,9 +30,43 @@ export const GOOGLE_SCOPES = [
   'email',
   'profile',
   'https://www.googleapis.com/auth/business.manage',
+  'https://www.googleapis.com/auth/webmasters.readonly',
   'https://www.googleapis.com/auth/youtube.upload',
   'https://www.googleapis.com/auth/youtube.readonly',
 ];
+
+/** One place every Google REST call goes through, so errors read the same. */
+async function googleRequest<T>(
+  url: string,
+  accessToken: string,
+  init: { method?: 'GET' | 'POST' | 'PUT' | 'DELETE'; body?: unknown } = {},
+): Promise<T> {
+  const response = await fetch(url, {
+    method: init.method ?? 'GET',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      ...(init.body !== undefined ? { 'Content-Type': 'application/json' } : {}),
+    },
+    body: init.body !== undefined ? JSON.stringify(init.body) : undefined,
+  });
+  if (response.status === 204) return undefined as T;
+  const text = await response.text();
+  let payload: unknown = {};
+  try {
+    payload = text ? JSON.parse(text) : {};
+  } catch {
+    payload = { raw: text };
+  }
+  if (!response.ok) {
+    const message =
+      (payload as { error?: { message?: string } }).error?.message ?? `Google request failed (${response.status})`;
+    if (response.status === 403 && /not been used|is disabled|accessNotConfigured|PERMISSION_DENIED/i.test(JSON.stringify(payload))) {
+      throw new AppError(403, 'google_api_not_enabled', `Google has not enabled this API for the project yet: ${message}`);
+    }
+    throw new AppError(response.status === 401 ? 401 : 400, 'google_request_failed', message);
+  }
+  return payload as T;
+}
 
 function requireConfig(): { clientId: string; clientSecret: string } {
   if (!env.GOOGLE_CLIENT_ID || !env.GOOGLE_CLIENT_SECRET) {
@@ -242,4 +276,191 @@ export async function listBusinessLocations(accessToken: string): Promise<Busine
   }
 
   return locations;
+}
+
+// --- Business Profile: details, reviews, posts, media ----------------------
+
+export interface LocationDetails {
+  title: string;
+  primaryCategory: string | null;
+  additionalCategories: number;
+  description: string;
+  phone: string | null;
+  website: string | null;
+  hasHours: boolean;
+  placeId: string | null;
+  mapsUri: string | null;
+  newReviewUri: string | null;
+}
+
+/** The parts of a listing that decide how complete it looks to Google. */
+export async function getLocationDetails(accessToken: string, locationName: string): Promise<LocationDetails> {
+  // Business Information takes the bare `locations/{id}` name.
+  const bare = locationName.replace(/^accounts\/[^/]+\//, '');
+  const url = new URL(`https://mybusinessbusinessinformation.googleapis.com/v1/${bare}`);
+  url.searchParams.set('readMask', 'name,title,categories,phoneNumbers,websiteUri,regularHours,profile,metadata');
+  const data = await googleRequest<{
+    title?: string;
+    categories?: { primaryCategory?: { displayName?: string }; additionalCategories?: unknown[] };
+    phoneNumbers?: { primaryPhone?: string };
+    websiteUri?: string;
+    regularHours?: { periods?: unknown[] };
+    profile?: { description?: string };
+    metadata?: { placeId?: string; mapsUri?: string; newReviewUri?: string };
+  }>(url.toString(), accessToken);
+  return {
+    title: data.title ?? 'Untitled',
+    primaryCategory: data.categories?.primaryCategory?.displayName ?? null,
+    additionalCategories: data.categories?.additionalCategories?.length ?? 0,
+    description: data.profile?.description ?? '',
+    phone: data.phoneNumbers?.primaryPhone ?? null,
+    website: data.websiteUri ?? null,
+    hasHours: (data.regularHours?.periods?.length ?? 0) > 0,
+    placeId: data.metadata?.placeId ?? null,
+    mapsUri: data.metadata?.mapsUri ?? null,
+    newReviewUri: data.metadata?.newReviewUri ?? null,
+  };
+}
+
+export interface GoogleReview {
+  name: string;
+  reviewer: string;
+  reviewerPhoto: string | null;
+  rating: number;
+  comment: string;
+  createdAt: string;
+  reply: { comment: string; updatedAt: string } | null;
+}
+
+const STARS: Record<string, number> = { ONE: 1, TWO: 2, THREE: 3, FOUR: 4, FIVE: 5 };
+
+export async function listReviews(
+  accessToken: string,
+  locationName: string,
+): Promise<{ reviews: GoogleReview[]; averageRating: number; total: number }> {
+  const url = new URL(`https://mybusiness.googleapis.com/v4/${locationName}/reviews`);
+  url.searchParams.set('pageSize', '50');
+  url.searchParams.set('orderBy', 'updateTime desc');
+  const data = await googleRequest<{
+    reviews?: {
+      name: string;
+      reviewer?: { displayName?: string; profilePhotoUrl?: string };
+      starRating?: string;
+      comment?: string;
+      createTime?: string;
+      reviewReply?: { comment?: string; updateTime?: string };
+    }[];
+    averageRating?: number;
+    totalReviewCount?: number;
+  }>(url.toString(), accessToken);
+  return {
+    reviews: (data.reviews ?? []).map((r) => ({
+      name: r.name,
+      reviewer: r.reviewer?.displayName ?? 'A Google user',
+      reviewerPhoto: r.reviewer?.profilePhotoUrl ?? null,
+      rating: STARS[r.starRating ?? ''] ?? 0,
+      comment: r.comment ?? '',
+      createdAt: r.createTime ?? new Date().toISOString(),
+      reply: r.reviewReply?.comment ? { comment: r.reviewReply.comment, updatedAt: r.reviewReply.updateTime ?? '' } : null,
+    })),
+    averageRating: data.averageRating ?? 0,
+    total: data.totalReviewCount ?? data.reviews?.length ?? 0,
+  };
+}
+
+export async function replyToReview(accessToken: string, reviewName: string, comment: string): Promise<void> {
+  await googleRequest(`https://mybusiness.googleapis.com/v4/${reviewName}/reply`, accessToken, {
+    method: 'PUT',
+    body: { comment },
+  });
+}
+
+export interface LocalPostInput {
+  summary: string;
+  imageUrl?: string;
+  /** A button on the post, with where it leads. */
+  callToAction?: { type: 'LEARN_MORE' | 'BOOK' | 'ORDER' | 'SHOP' | 'SIGN_UP' | 'CALL'; url?: string };
+}
+
+/** Publishes an update to the listing. Returns the post's resource name. */
+export async function createLocalPost(
+  accessToken: string,
+  locationName: string,
+  input: LocalPostInput,
+): Promise<{ name: string; searchUrl: string | null }> {
+  const body: Record<string, unknown> = {
+    languageCode: 'en',
+    summary: input.summary.slice(0, 1500),
+    topicType: 'STANDARD',
+    ...(input.imageUrl ? { media: [{ mediaFormat: 'PHOTO', sourceUrl: input.imageUrl }] } : {}),
+    ...(input.callToAction
+      ? { callToAction: { actionType: input.callToAction.type, ...(input.callToAction.url ? { url: input.callToAction.url } : {}) } }
+      : {}),
+  };
+  const data = await googleRequest<{ name: string; searchUrl?: string }>(
+    `https://mybusiness.googleapis.com/v4/${locationName}/localPosts`,
+    accessToken,
+    { method: 'POST', body },
+  );
+  return { name: data.name, searchUrl: data.searchUrl ?? null };
+}
+
+export async function latestLocalPostAt(accessToken: string, locationName: string): Promise<string | null> {
+  const url = new URL(`https://mybusiness.googleapis.com/v4/${locationName}/localPosts`);
+  url.searchParams.set('pageSize', '1');
+  const data = await googleRequest<{ localPosts?: { createTime?: string }[] }>(url.toString(), accessToken);
+  return data.localPosts?.[0]?.createTime ?? null;
+}
+
+export async function countMedia(accessToken: string, locationName: string): Promise<{ count: number; latestAt: string | null }> {
+  const url = new URL(`https://mybusiness.googleapis.com/v4/${locationName}/media`);
+  url.searchParams.set('pageSize', '100');
+  const data = await googleRequest<{ mediaItems?: { createTime?: string }[]; totalMediaItemCount?: number }>(url.toString(), accessToken);
+  const items = data.mediaItems ?? [];
+  const latest = items.map((m) => m.createTime ?? '').filter(Boolean).sort().pop() ?? null;
+  return { count: data.totalMediaItemCount ?? items.length, latestAt: latest };
+}
+
+// --- Search Console ----------------------------------------------------------
+
+export interface SearchConsoleSite {
+  siteUrl: string;
+  permissionLevel: string;
+}
+
+export async function listSearchConsoleSites(accessToken: string): Promise<SearchConsoleSite[]> {
+  const data = await googleRequest<{ siteEntry?: { siteUrl: string; permissionLevel: string }[] }>(
+    'https://www.googleapis.com/webmasters/v3/sites',
+    accessToken,
+  );
+  return (data.siteEntry ?? []).filter((s) => s.permissionLevel !== 'siteUnverifiedUser');
+}
+
+export interface QueryRow {
+  query: string;
+  clicks: number;
+  impressions: number;
+  ctr: number;
+  position: number;
+}
+
+export async function searchAnalytics(
+  accessToken: string,
+  siteUrl: string,
+  startDate: string,
+  endDate: string,
+  rowLimit = 25,
+): Promise<QueryRow[]> {
+  const data = await googleRequest<{ rows?: { keys: string[]; clicks: number; impressions: number; ctr: number; position: number }[] }>(
+    `https://www.googleapis.com/webmasters/v3/sites/${encodeURIComponent(siteUrl)}/searchAnalytics/query`,
+    accessToken,
+    { method: 'POST', body: { startDate, endDate, dimensions: ['query'], rowLimit } },
+  );
+  return (data.rows ?? []).map((r) => ({
+    query: r.keys[0] ?? '',
+    clicks: r.clicks,
+    impressions: r.impressions,
+    ctr: r.ctr,
+    position: Math.round(r.position * 10) / 10,
+  }));
 }

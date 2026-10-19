@@ -403,6 +403,53 @@ export interface InboxThread {
   error: string | null;
 }
 
+export interface GoogleReview {
+  name: string;
+  reviewer: string;
+  reviewerPhoto: string | null;
+  rating: number;
+  comment: string;
+  createdAt: string;
+  reply: { comment: string; updatedAt: string } | null;
+}
+
+export interface GoogleScoreItem {
+  key: string;
+  label: string;
+  points: number;
+  earned: number;
+  ok: boolean;
+  fix: string;
+}
+
+export interface GoogleLocationReport {
+  connectionId: string;
+  title: string;
+  address: string | null;
+  mapsUri: string | null;
+  reviewUri: string | null;
+  score: number;
+  items: GoogleScoreItem[];
+  reviews: { average: number; total: number; unanswered: number; recent: GoogleReview[] };
+  error: string | null;
+}
+
+export interface GoogleSiteReport {
+  connectionId: string;
+  site: string;
+  period: { from: string; to: string };
+  queries: { query: string; clicks: number; impressions: number; ctr: number; position: number; previousPosition: number | null; change: number | null }[];
+  totals: { clicks: number; impressions: number; previousClicks: number };
+  error: string | null;
+}
+
+export interface GoogleOverview {
+  configured: boolean;
+  connected: boolean;
+  locations: GoogleLocationReport[];
+  sites: GoogleSiteReport[];
+}
+
 export interface ReportPayload extends AnalyticsPayload {
   audience: { connectionId: string; displayName: string; provider: string; followers: number | null }[];
   brand: { name: string; logoUrl: string | null; primaryColor: string | null; website: string | null };
@@ -800,6 +847,13 @@ export const api = {
   adminUsers: (q = '') => request<{ users: AdminUser[] }>(`/admin/users${q ? `?q=${encodeURIComponent(q)}` : ''}`),
   adminSetPlatformAdmin: (id: string, isPlatformAdmin: boolean) =>
     request<{ id: string; isPlatformAdmin: boolean }>(`/admin/users/${id}`, { method: 'PATCH', body: JSON.stringify({ isPlatformAdmin }) }),
+
+  startGoogleConnection: () => request<{ authUrl: string }>('/connections/google/start', { method: 'POST' }),
+
+  // --- Google promotion ---
+  getGoogleOverview: () => request<GoogleOverview>('/google/overview'),
+  replyToReview: (input: { connectionId: string; reviewName: string; comment: string }) =>
+    request<{ ok: boolean }>('/google/reviews/reply', { method: 'POST', body: JSON.stringify(input) }),
 
   checkConnections: () => request<{ results: ConnectionHealth[] }>('/connections/check', { method: 'POST' }),
   checkConnection: (id: string) => request<ConnectionHealth>(`/connections/${id}/check`, { method: 'POST' }),

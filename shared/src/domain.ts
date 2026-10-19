@@ -13,6 +13,8 @@ export const PROVIDERS = [
   'google_ads',
   /** A Google Business Profile location: the listing on Search and Maps. */
   'google_business',
+  /** A Search Console property: the queries a website ranks for. */
+  'google_search_console',
 ] as const;
 export type Provider = (typeof PROVIDERS)[number];
 

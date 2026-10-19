@@ -18,6 +18,8 @@ import { logger } from '../../lib/logger.js';
 import { enqueue, publishQueue } from '../../queue/index.js';
 import * as meta from '../../integrations/meta.js';
 import { markConnectionError, resolveConnection } from '../connections/service.js';
+import { getGoogleAccessToken } from '../connections/google.js';
+import * as google from '../../integrations/google.js';
 import { recordUsage } from '../usage/service.js';
 
 export interface PublishOutcome {
@@ -84,7 +86,10 @@ export async function publishPost(
 
       const connection = await resolveConnection(organizationId, target.connectionId);
       const body = target.caption ?? post.caption;
-      const result = await publishToProvider(connection, body, hashtags, primaryMedia);
+      const result =
+        connection.provider === 'google_business'
+          ? await publishToGoogle(organizationId, connection, body, primaryMedia)
+          : await publishToProvider(connection, body, hashtags, primaryMedia);
 
       await db
         .update(postTargets)
@@ -262,6 +267,27 @@ async function publishToProvider(
     default:
       throw new Error(`${connection.provider} cannot be published to.`);
   }
+}
+
+/**
+ * A Business Profile update: the caption as the post text, the first image as
+ * its photo, and a "Learn more" button to the website when the kit has one.
+ * Hashtags are left out — Google ignores them and they look odd on Maps.
+ */
+async function publishToGoogle(
+  organizationId: string,
+  connection: ResolvedConnection,
+  body: string,
+  media: { kind: string; url: string },
+): Promise<meta.PublishResult> {
+  const accessToken = await getGoogleAccessToken(organizationId, connection.id);
+  const website = typeof connection.metadata.website === 'string' ? connection.metadata.website : undefined;
+  const created = await google.createLocalPost(accessToken, connection.externalId, {
+    summary: body,
+    ...(media.kind === 'image' ? { imageUrl: media.url } : {}),
+    ...(website ? { callToAction: { type: 'LEARN_MORE', url: website } } : {}),
+  });
+  return { externalId: created.name, permalink: created.searchUrl ?? undefined };
 }
 
 async function failPost(postId: string, targets: { id: string }[], reason: string): Promise<void> {

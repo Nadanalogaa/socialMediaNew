@@ -309,6 +309,15 @@ export async function checkConnection(organizationId: string, connectionId: stri
   if (!row.accessTokenEncrypted) {
     status = 'expired';
     lastError = 'No access token stored. Reconnect this channel.';
+  } else if (row.provider === 'youtube_channel' || row.provider === 'google_business' || row.provider === 'google_search_console') {
+    try {
+      // Refreshing proves the grant is alive; a revoked one fails here.
+      const { getGoogleAccessToken } = await import('./google.js');
+      await getGoogleAccessToken(organizationId, row.id);
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error);
+      status = 'expired';
+    }
   } else if (row.provider === 'facebook_page' || row.provider === 'instagram_business') {
     try {
       await meta.probeConnection(

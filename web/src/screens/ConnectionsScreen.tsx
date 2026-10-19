@@ -80,6 +80,39 @@ export function ConnectionsScreen() {
   const [sdkReady, setSdkReady] = useState(false);
   const [checking, setChecking] = useState(false);
   const [checkNotice, setCheckNotice] = useState<string | null>(null);
+  const [googleBusy, setGoogleBusy] = useState(false);
+
+  // Google sends the browser back here with the outcome in the URL.
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const outcome = params.get('google');
+    if (!outcome) return;
+    if (outcome === 'connected') {
+      const locations = Number(params.get('locations') ?? 0);
+      const sites = Number(params.get('sites') ?? 0);
+      setCheckNotice(
+        `Google connected: ${locations} Business Profile${locations === 1 ? '' : 's'}, ${sites} Search Console propert${sites === 1 ? 'y' : 'ies'}.` +
+          (params.get('businessProfile') === 'unavailable'
+            ? ' Business Profile listings could not be read yet — the Google API access for this app is still pending.'
+            : ''),
+      );
+    } else {
+      setError(`Google connection ${outcome === 'denied' ? 'was cancelled' : 'failed'}: ${params.get('reason') ?? ''}`);
+    }
+    window.history.replaceState(null, '', '/app');
+  }, []);
+
+  async function handleConnectGoogle() {
+    setGoogleBusy(true);
+    setError(null);
+    try {
+      const { authUrl } = await api.startGoogleConnection();
+      window.location.href = authUrl;
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not start Google sign-in.');
+      setGoogleBusy(false);
+    }
+  }
 
   const appId = import.meta.env.VITE_META_APP_ID as string | undefined;
 
@@ -207,12 +240,17 @@ export function ConnectionsScreen() {
         <div>
           <h2 className="text-lg font-semibold text-slate-900">Connected channels</h2>
           <p className="mt-0.5 text-sm text-slate-600">
-            Link the Facebook Pages and Instagram accounts you post to.
+            Facebook Pages and Instagram accounts you post to; your Google Business Profile and website for Google promotion.
           </p>
         </div>
-        <Button onClick={handleConnect} disabled={busy || (Boolean(appId) && !sdkReady)}>
-          {busy ? 'Working…' : !sdkReady && appId ? 'Loading…' : 'Connect Facebook'}
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button onClick={handleConnect} disabled={busy || (Boolean(appId) && !sdkReady)}>
+            {busy ? 'Working…' : !sdkReady && appId ? 'Loading…' : 'Connect Facebook'}
+          </Button>
+          <Button variant="secondary" onClick={() => void handleConnectGoogle()} disabled={googleBusy}>
+            {googleBusy ? 'Opening Google…' : 'Connect Google'}
+          </Button>
+        </div>
       </div>
 
       {error && <Alert>{error}</Alert>}

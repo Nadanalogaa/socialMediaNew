@@ -15,6 +15,7 @@ import { TeamScreen } from './TeamScreen';
 import { BillingScreen } from './BillingScreen';
 import { HomeScreen } from './HomeScreen';
 import { InboxScreen } from './InboxScreen';
+import { GoogleScreen } from './GoogleScreen';
 import { Badge, Card } from '../components/ui';
 
 /**
@@ -45,6 +46,7 @@ type TabKey =
   | 'inbox'
   | 'ideas'
   | 'analytics'
+  | 'google'
   | 'channels'
   | 'creatives'
   | 'reels'
@@ -62,6 +64,7 @@ const TABS: { key: TabKey; label: string; icon: string; ready: boolean }[] = [
   { key: 'inbox', label: 'Inbox', icon: '💬', ready: true },
   { key: 'ideas', label: 'Ideas', icon: '💡', ready: true },
   { key: 'analytics', label: 'Analytics', icon: '◳', ready: true },
+  { key: 'google', label: 'Google', icon: 'G', ready: true },
   { key: 'channels', label: 'Channels', icon: '⚯', ready: true },
   { key: 'creatives', label: 'Posters', icon: '▣', ready: true },
   { key: 'reels', label: 'Reels', icon: '▶', ready: true },
@@ -83,7 +86,7 @@ const NAV_GROUPS: { label: string; icon: string; items: TabKey[] }[] = [
   { label: 'Posts', icon: '☰', items: ['posts'] },
   { label: 'Inbox', icon: '💬', items: ['inbox'] },
   { label: 'Studio', icon: '▶', items: ['reels', 'creatives', 'library', 'ideas'] },
-  { label: 'Analytics', icon: '◳', items: ['analytics'] },
+  { label: 'Grow', icon: '◳', items: ['analytics', 'google'] },
   { label: 'Settings', icon: '⚙', items: ['channels', 'brand', 'team', 'billing', 'whatsapp', 'ads'] },
 ];
 
@@ -116,7 +119,11 @@ export function DashboardScreen({
     setPendingCaption(undefined);
     setPendingBrief(undefined);
   }
-  const [tab, setTab] = useState<TabKey>('home');
+  const [tab, setTab] = useState<TabKey>(() => {
+    // A return from an external sign-in (Google) lands on a named tab.
+    const wanted = new URLSearchParams(window.location.search).get('tab');
+    return wanted && TABS.some((t) => t.key === wanted) ? (wanted as TabKey) : 'home';
+  });
   // Bumping this forces the posts list to refetch after a publish.
   const [postsKey, setPostsKey] = useState(0);
   /** Carried from the reel editor so Publish opens Compose ready to go. */
@@ -281,6 +288,7 @@ export function DashboardScreen({
           />
         )}
         {tab === 'inbox' && <InboxScreen key={session.organization.id} />}
+        {tab === 'google' && <GoogleScreen key={session.organization.id} onConnect={() => setTab('channels')} />}
         {tab === 'ideas' && (
           <IdeasScreen
             key={session.organization.id}

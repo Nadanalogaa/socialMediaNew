@@ -16,7 +16,7 @@ import { Alert, Button, Card, Spinner, providerLabel } from '../components/ui';
 import { PostPreview } from '../components/PostPreview';
 
 const IG_CAPTION_LIMIT = 2200;
-const PUBLISHABLE = ['facebook_page', 'instagram_business'];
+const PUBLISHABLE = ['facebook_page', 'instagram_business', 'google_business'];
 
 /**
  * Post composer.
