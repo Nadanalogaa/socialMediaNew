@@ -21,7 +21,7 @@ export function GoogleScreen({ onConnect }: { onConnect: () => void }) {
       setError(null);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not load Google data.');
-      setData({ configured: false, connected: false, locations: [], sites: [] });
+      setData({ configured: false, connected: false, account: null, locations: [], sites: [] });
     } finally {
       setRefreshing(false);
     }
@@ -67,6 +67,28 @@ export function GoogleScreen({ onConnect }: { onConnect: () => void }) {
           title="No Google account connected yet"
           hint="Settings → Channels → Connect Google. Sign in with the Google account that manages your Business Profile (the one you use for business.google.com)."
         />
+      )}
+
+      {data.connected && data.account && (
+        <Card>
+          <p className="text-sm text-slate-900">
+            Google connected as <strong>{data.account.email ?? data.account.name}</strong>.
+          </p>
+          <ul className="mt-2 space-y-1 text-sm text-slate-700">
+            <li>
+              {data.locations.length > 0 ? '✓' : '⏳'} <strong>Business Profile listings:</strong>{' '}
+              {data.locations.length > 0
+                ? `${data.locations.length} connected`
+                : 'none yet — Google is still approving this app\'s access to the Business Profile API. Press Connect Google again once it is approved and your listings appear here.'}
+            </li>
+            <li>
+              {data.sites.length > 0 ? '✓' : '⏳'} <strong>Website rankings:</strong>{' '}
+              {data.sites.length > 0
+                ? `${data.sites.length} propert${data.sites.length === 1 ? 'y' : 'ies'}`
+                : 'none yet — add your website in Google Search Console with this Google account (Settings → Channels explains), then Connect Google again.'}
+            </li>
+          </ul>
+        </Card>
       )}
 
       {data.locations.map((loc) => (

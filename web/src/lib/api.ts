@@ -446,6 +446,7 @@ export interface GoogleSiteReport {
 export interface GoogleOverview {
   configured: boolean;
   connected: boolean;
+  account: { name: string; email: string | null } | null;
   locations: GoogleLocationReport[];
   sites: GoogleSiteReport[];
 }

@@ -169,14 +169,27 @@ export async function siteReport(organizationId: string, connectionId: string): 
 
 export async function overview(organizationId: string) {
   const rows = await db
-    .select({ id: connections.id, provider: connections.provider })
+    .select({ id: connections.id, provider: connections.provider, displayName: connections.displayName, metadata: connections.metadata })
     .from(connections)
-    .where(and(eq(connections.organizationId, organizationId), inArray(connections.provider, ['google_business', 'google_search_console'])));
+    .where(
+      and(
+        eq(connections.organizationId, organizationId),
+        inArray(connections.provider, ['google_business', 'google_search_console', 'youtube_channel']),
+      ),
+    );
   const [locations, sites] = await Promise.all([
     Promise.all(rows.filter((r) => r.provider === 'google_business').map((r) => locationReport(organizationId, r.id))),
     Promise.all(rows.filter((r) => r.provider === 'google_search_console').map((r) => siteReport(organizationId, r.id))),
   ]);
-  return { locations, sites, connected: rows.length > 0 };
+  // The Google account itself is stored with the YouTube channel, so a
+  // sign-in that found no listings still shows as connected.
+  const account = rows.find((r) => r.provider === 'youtube_channel');
+  return {
+    locations,
+    sites,
+    connected: rows.length > 0,
+    account: account ? { name: account.displayName, email: typeof account.metadata?.email === 'string' ? account.metadata.email : null } : null,
+  };
 }
 
 export async function reply(organizationId: string, connectionId: string, reviewName: string, comment: string): Promise<void> {
