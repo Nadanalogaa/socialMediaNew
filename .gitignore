@@ -40,3 +40,4 @@ coverage
 # Portainer stack variables, assembled locally; never committed.
 .env.portainer
 portainer-stack.env
+migrate-now.sh
