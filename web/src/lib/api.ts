@@ -6,7 +6,22 @@
  * think about 15-minute token lifetimes.
  */
 
-const SESSION_KEY = 'socialboost.session';
+/**
+ * Two independent sessions: the app's and the admin module's. Signing in to
+ * one never signs you in to the other, and each is kept under its own key.
+ * The scope follows the URL: /admin uses the admin session.
+ */
+const SESSION_KEYS = { app: 'socialboost.session', admin: 'socialboost.admin-session' } as const;
+export type SessionScope = keyof typeof SESSION_KEYS;
+let sessionScope: SessionScope = window.location.pathname.startsWith('/admin') ? 'admin' : 'app';
+
+export function setSessionScope(scope: SessionScope): void {
+  sessionScope = scope;
+}
+export function getSessionScope(): SessionScope {
+  return sessionScope;
+}
+const SESSION_KEY = () => SESSION_KEYS[sessionScope];
 
 /** Endpoints that legitimately run without a session. */
 const PUBLIC_PATHS = ['/auth/login', '/auth/register', '/auth/refresh', '/organizations/invitations/'];
@@ -37,7 +52,7 @@ export function setActiveOrganization(session: Session, organization: Organizati
 
 export function loadSession(): Session | null {
   try {
-    const raw = localStorage.getItem(SESSION_KEY);
+    const raw = localStorage.getItem(SESSION_KEY());
     return raw ? (JSON.parse(raw) as Session) : null;
   } catch {
     return null;
@@ -46,7 +61,7 @@ export function loadSession(): Session | null {
 
 export function saveSession(session: Session): void {
   try {
-    localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+    localStorage.setItem(SESSION_KEY(), JSON.stringify(session));
   } catch {
     /* Private browsing can reject writes; the session still works in memory. */
   }
@@ -54,7 +69,7 @@ export function saveSession(session: Session): void {
 
 export function clearSession(): void {
   try {
-    localStorage.removeItem(SESSION_KEY);
+    localStorage.removeItem(SESSION_KEY());
   } catch {
     /* ignore */
   }

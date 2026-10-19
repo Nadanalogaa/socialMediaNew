@@ -5,10 +5,12 @@ interface Props {
   onAuthenticated: (session: Session) => void;
   /** Set when the person arrived through an invitation link. */
   inviteToken?: string | null;
+  /** The platform admin sign-in: no sign-up, and only admin accounts get through. */
+  adminMode?: boolean;
 }
 
 /** Sign-in and sign-up share one screen; the toggle only changes two fields. */
-export function AuthScreen({ onAuthenticated, inviteToken }: Props) {
+export function AuthScreen({ onAuthenticated, inviteToken, adminMode = false }: Props) {
   const [mode, setMode] = useState<'login' | 'register'>('login');
   const [invite, setInvite] = useState<InvitationPreview | null>(null);
 
@@ -43,6 +45,12 @@ export function AuthScreen({ onAuthenticated, inviteToken }: Props) {
       const session = isRegister
         ? await api.register({ email, password, name, organizationName })
         : await api.login({ email, password });
+      if (adminMode && !session.user.isPlatformAdmin) {
+        // The credentials were right, but this door is for the platform team only.
+        await api.logout(session.refreshToken).catch(() => undefined);
+        setError('This account is not a platform admin. Sign in to the app at the main address instead.');
+        return;
+      }
       saveSession(session);
       onAuthenticated(session);
     } catch (err) {
@@ -63,14 +71,14 @@ export function AuthScreen({ onAuthenticated, inviteToken }: Props) {
     <div className="flex min-h-full items-center justify-center bg-slate-50 px-4 py-12">
       <div className="w-full max-w-sm">
         <div className="mb-8 text-center">
-          <div className="mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-xl bg-brand-600 text-lg font-bold text-white">
+          <div className={`mx-auto mb-3 flex h-11 w-11 items-center justify-center rounded-xl text-lg font-bold text-white ${adminMode ? 'bg-amber-500' : 'bg-brand-600'}`}>
             SB
           </div>
           <h1 className="text-xl font-semibold text-slate-900">
-            {isRegister ? 'Create your account' : 'Sign in to SocialBoost'}
+            {adminMode ? 'Platform admin' : isRegister ? 'Create your account' : 'Sign in to SocialBoost'}
           </h1>
           <p className="mt-1 text-sm text-slate-500">
-            {isRegister ? 'Start promoting across every channel.' : 'Welcome back.'}
+            {adminMode ? 'For the team that runs SocialBoost. Customers sign in at the main address.' : isRegister ? 'Start promoting across every channel.' : 'Welcome back.'}
           </p>
         </div>
 
@@ -139,12 +147,19 @@ export function AuthScreen({ onAuthenticated, inviteToken }: Props) {
           <button
             type="submit"
             disabled={busy}
-            className="w-full rounded-lg bg-brand-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-brand-700 disabled:opacity-60"
+            className={`w-full rounded-lg px-4 py-2.5 text-sm font-medium text-white transition disabled:opacity-60 ${adminMode ? 'bg-amber-600 hover:bg-amber-700' : 'bg-brand-600 hover:bg-brand-700'}`}
           >
-            {busy ? 'Please wait…' : isRegister ? 'Create account' : 'Sign in'}
+            {busy ? 'Please wait…' : isRegister ? 'Create account' : adminMode ? 'Sign in to admin' : 'Sign in'}
           </button>
         </form>
 
+        {adminMode ? (
+          <p className="mt-5 text-center text-sm text-slate-600">
+            <a href="/" className="font-medium text-brand-600 hover:underline">
+              Go to the app
+            </a>
+          </p>
+        ) : (
         <p className="mt-5 text-center text-sm text-slate-600">
           {isRegister ? 'Already have an account?' : "Don't have an account?"}{' '}
           <button
@@ -159,6 +174,7 @@ export function AuthScreen({ onAuthenticated, inviteToken }: Props) {
             {isRegister ? 'Sign in' : 'Sign up'}
           </button>
         </p>
+        )}
       </div>
     </div>
   );
