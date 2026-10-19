@@ -21,6 +21,7 @@ import {
   type VideoTemplateDefinition,
 } from '@socialboost/shared';
 import { api, uploadAudio, uploadToCloudinary, type MediaAsset } from '../lib/api';
+import { GUEST_LIMITS, useGuest } from '../lib/guest';
 import {
   drawProjectFrame,
   drawSelectionOutline,
@@ -120,7 +121,11 @@ function ReelPicker({
   onPick: (project: ReelProject) => void;
   onMagic: () => void;
 }) {
+  const { guest, lock } = useGuest();
+  const templateLocked = (slug: string) => guest && !(GUEST_LIMITS.templates as readonly string[]).includes(slug);
+
   function start(template: VideoTemplateDefinition) {
+    if (templateLocked(template.slug)) return void lock('This template');
     const values = Object.fromEntries(
       template.fields.filter((f) => f.defaultValue).map((f) => [f.key, f.defaultValue!]),
     );
@@ -165,12 +170,17 @@ function ReelPicker({
           <li key={template.slug}>
             <button
               onClick={() => start(template)}
-              className="w-full rounded-xl border border-slate-200 bg-white p-3 text-left shadow-sm transition hover:border-brand-400 hover:shadow"
+              className={`w-full rounded-xl border border-slate-200 bg-white p-3 text-left shadow-sm transition hover:border-brand-400 hover:shadow ${
+                templateLocked(template.slug) ? 'opacity-70' : ''
+              }`}
             >
               <div className="flex aspect-[9/16] items-center justify-center rounded-lg bg-slate-900 text-xs text-slate-400">
-                {template.scenes.length} scenes
+                {templateLocked(template.slug) ? '🔒' : `${template.scenes.length} scenes`}
               </div>
-              <p className="mt-2 text-sm font-medium text-slate-900">{template.name}</p>
+              <p className="mt-2 text-sm font-medium text-slate-900">
+                {templateLocked(template.slug) ? '🔒 ' : ''}
+                {template.name}
+              </p>
             </button>
           </li>
         ))}
@@ -201,6 +211,7 @@ function ReelEditor({
   onPublish?: (asset: MediaAsset) => void;
   initialDesignId?: string;
 }) {
+  const { guest, lock } = useGuest();
   const history = useHistory<ReelProject>(initialProject);
   const project = history.state;
   const setProject = history.set;
@@ -434,6 +445,7 @@ function ReelEditor({
   }
 
   function addScene() {
+    if (guest && project.scenes.length >= GUEST_LIMITS.scenes) return void lock(`More than ${GUEST_LIMITS.scenes} scenes`);
     const scenes = [
       ...project.scenes,
       {
@@ -656,8 +668,10 @@ function ReelEditor({
   async function uploadPhoto(file: File, intent: 'layer' | 'logo' | 'library') {
     setError(null);
     try {
-      const signature = await api.uploadSignature();
-      const uploaded = await uploadToCloudinary(file, signature);
+      // A guest's photo never leaves the device: a local URL the canvas draws from.
+      const uploaded = guest
+        ? { url: URL.createObjectURL(file) }
+        : await uploadToCloudinary(file, await api.uploadSignature());
 
       if (intent === 'logo') {
         addLayer(createImageLayer(uploaded.url, true));
@@ -681,6 +695,7 @@ function ReelEditor({
   }
 
   async function handleSave(renderedAssetId?: string) {
+    if (guest) return void lock('Saving a design');
     setSaving(true);
     setError(null);
     try {
@@ -709,8 +724,9 @@ function ReelEditor({
   async function handleAudio(file: File) {
     setError(null);
     try {
-      const signature = await api.uploadSignature();
-      const uploaded = await uploadAudio(file, signature);
+      const uploaded = guest
+        ? { url: URL.createObjectURL(file) }
+        : await uploadAudio(file, await api.uploadSignature());
       setProject({
         ...project,
         audio: {
@@ -733,9 +749,26 @@ function ReelEditor({
     setError(null);
     setNotice(null);
     try {
-      const video = await recordProject(project, setProgress);
+      const video = await recordProject(
+        project,
+        setProgress,
+        guest ? { scale: GUEST_LIMITS.exportScale, watermark: GUEST_LIMITS.watermark } : {},
+      );
       const extension = video.mimeType.includes('mp4') ? 'mp4' : 'webm';
       const file = new File([video.blob], `reel.${extension}`, { type: video.mimeType });
+      if (guest) {
+        // Nothing is uploaded: the reel downloads from the browser.
+        setResult({
+          id: 'local',
+          kind: 'video',
+          url: URL.createObjectURL(file),
+          thumbnailUrl: null,
+          width: null,
+          height: null,
+        });
+        setNotice(null);
+        return;
+      }
       const signature = await api.uploadSignature();
       const uploaded = await uploadToCloudinary(file, signature);
       const asset = await api.registerMedia({
@@ -993,7 +1026,7 @@ function ReelEditor({
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium text-emerald-900">Reel ready</p>
                 <p className="text-xs text-emerald-800">
-                  {duration.toFixed(1)}s · saved to your library
+                  {duration.toFixed(1)}s · {guest ? '720p preview with watermark — sign up for full HD' : 'saved to your library'}
                 </p>
               </div>
               <div className="flex shrink-0 gap-2">
@@ -1009,7 +1042,7 @@ function ReelEditor({
                 >
                   Export
                 </a>
-                <Button onClick={() => onPublish?.(result)}>Publish</Button>
+                <Button onClick={() => (guest ? lock('Publishing') : onPublish?.(result))}>Publish</Button>
               </div>
             </div>
           )}
@@ -1203,6 +1236,7 @@ function ReelEditor({
                 variant="secondary"
                 className="flex-1"
                 onClick={() => {
+                  if (guest && project.scenes.length >= GUEST_LIMITS.scenes) return void lock(`More than ${GUEST_LIMITS.scenes} scenes`);
                   const copy = duplicateScene(scene);
                   setProject({
                     ...project,
@@ -1377,6 +1411,7 @@ function ReelEditor({
               </a>
               <Button
                 onClick={() => {
+                  if (guest) return void lock('Publishing');
                   setPreviewOpen(false);
                   onPublish?.(result);
                 }}
@@ -1577,6 +1612,7 @@ function ReelEditor({
                 <Button
                   variant="secondary"
                   onClick={() => {
+                    if (guest && project.scenes.length >= GUEST_LIMITS.scenes) return void lock(`More than ${GUEST_LIMITS.scenes} scenes`);
                     const copy = duplicateScene(scene);
                     setProject({
                       ...project,

@@ -3,6 +3,7 @@ import { AuthScreen } from './screens/AuthScreen';
 import { DashboardScreen } from './screens/DashboardScreen';
 import { AdminShell } from './screens/AdminShell';
 import { LandingScreen } from './screens/LandingScreen';
+import { GuestStudioScreen } from './screens/GuestStudioScreen';
 import {
   api,
   clearSession,
@@ -36,11 +37,12 @@ type View = 'app' | 'admin';
 const viewFromUrl = (): View => (window.location.pathname.startsWith('/admin') ? 'admin' : 'app');
 
 /** The public pages: the website, and the two sign-in forms. */
-type Page = 'site' | 'login' | 'register' | 'app';
+type Page = 'site' | 'login' | 'register' | 'app' | 'try';
 function pageFromUrl(): Page {
   const path = window.location.pathname;
   if (path === '/login') return 'login';
   if (path === '/register') return 'register';
+  if (path === '/try') return 'try';
   if (path === '/' || path === '') return 'site';
   return 'app';
 }
@@ -199,8 +201,12 @@ export default function App() {
         onSignIn={() => goPage('login')}
         onRegister={() => goPage('register')}
         onOpenApp={() => goPage('app')}
+        onTry={() => goPage('try')}
       />
     );
+  }
+  if (page === 'try') {
+    return <GuestStudioScreen onSignIn={() => goPage('login')} onRegister={() => goPage('register')} onHome={() => goPage('site')} />;
   }
   if (!session) {
     return (

@@ -12,6 +12,7 @@ import {
 } from '@socialboost/shared';
 import { api, uploadAudio, uploadToCloudinary, type BrandKit, type MediaAsset, type SavedBrief } from '../lib/api';
 import { applyBrandPlaceholders, brandFooter } from '../lib/brand';
+import { GUEST_LIMITS, useGuest } from '../lib/guest';
 import { Alert, Button, Spinner } from './ui';
 
 const EXAMPLE = `Logo: top right
@@ -90,6 +91,7 @@ export function MagicDesignDialog({
   /** Text to start from (an idea), without being in edit mode. */
   presetBrief?: string;
 }) {
+  const { guest, lock } = useGuest();
   const [brief, setBrief] = useState(initial?.brief ?? presetBrief ?? '');
   const [brand, setBrand] = useState<BrandKit | null>(null);
   const [brandColor, setBrandColor] = useState(initial?.brandColor ?? '#4f46e5');
@@ -121,6 +123,10 @@ export function MagicDesignDialog({
   const audioInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
+    if (guest) {
+      setHistory([]);
+      return;
+    }
     api
       .listBriefs()
       .then(({ briefs }) => setHistory(briefs))
@@ -188,11 +194,13 @@ export function MagicDesignDialog({
   }
 
   useEffect(() => {
+    // A guest has no library: only what they add from their device.
+    if (guest) return setLibrary([]);
     api
       .listMedia()
       .then(({ media }) => setLibrary(media.filter((asset) => asset.kind === 'image')))
       .catch(() => setLibrary([]));
-  }, []);
+  }, [guest]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => event.key === 'Escape' && onClose();
@@ -203,12 +211,19 @@ export function MagicDesignDialog({
   // Parsed as the user types, so the scene split is visible before committing.
   // {phone}, {website} and friends are filled from the brand kit first.
   const expanded = useMemo(() => applyBrandPlaceholders(brief, brand), [brief, brand]);
-  const scenes = useMemo(() => (expanded.trim() ? parseBrief(expanded) : []), [expanded]);
+  const parsedScenes = useMemo(() => (expanded.trim() ? parseBrief(expanded) : []), [expanded]);
+  // A guest's reel is three scenes; the rest of the brief waits for an account.
+  const scenes = useMemo(() => (guest ? parsedScenes.slice(0, GUEST_LIMITS.scenes) : parsedScenes), [guest, parsedScenes]);
+  const scenesHeld = parsedScenes.length - scenes.length;
   const directives = useMemo(() => parseBriefDirectives(expanded), [expanded]);
   const totalSeconds = scenes.reduce((total, scene) => total + sceneDurationFor(scene), 0);
 
   async function handleAudioFile(file: File) {
     setError(null);
+    if (guest) {
+      setAudio({ url: URL.createObjectURL(file), name: file.name, volume: 0.8, startSeconds: 0, fadeOut: true });
+      return;
+    }
     try {
       const signature = await api.uploadSignature();
       const uploaded = await uploadAudio(file, signature);
@@ -227,6 +242,16 @@ export function MagicDesignDialog({
   async function handlePhotoFile(file: File, target: number | 'logo') {
     setUploading(true);
     setError(null);
+    if (guest) {
+      // Stays on the device: a local URL the canvas can draw from.
+      const url = URL.createObjectURL(file);
+      const asset: MediaAsset = { id: url, kind: 'image', url, thumbnailUrl: null, width: null, height: null };
+      setLibrary((prev) => [asset, ...(prev ?? [])]);
+      if (target === 'logo') lock('A logo on every scene');
+      else togglePhoto(target, url);
+      setUploading(false);
+      return;
+    }
     try {
       const signature = await api.uploadSignature();
       const uploaded = await uploadToCloudinary(file, signature);
@@ -265,6 +290,7 @@ export function MagicDesignDialog({
       ...(logoPosition ? { logoPosition } : {}),
     };
     try {
+      if (guest) throw new Error('guest');
       const saved = await api.saveBrief({
         id,
         name: scenes[0]?.headline || brief.split('\n')[0]!.slice(0, 80),
@@ -301,15 +327,17 @@ export function MagicDesignDialog({
       }
     }
 
+    // Logo and QR are part of the paid-for polish; a guest's brief builds without them.
+    const effectiveDirectives = guest ? { ...directives, qr: undefined, logoPosition: undefined } : directives;
     const built = buildProjectFromBrief(scenes, {
         // Photos chosen for a scene win; "add a photo" draws on the library.
         scenePhotos: scenes.map((_, index) => scenePhotos[index]),
         photoLayout: scenes.map((_, index) => photoLayout[index]),
         photos: (library ?? []).map((asset) => asset.url),
-        logo,
+        logo: guest ? undefined : logo,
         logoPosition: (logoPosition || undefined) as LogoPosition | undefined,
-        qrImages,
-        directives,
+        qrImages: guest ? {} : qrImages,
+        directives: effectiveDirectives,
         brandColor,
         accentColor,
       });
@@ -507,6 +535,11 @@ export function MagicDesignDialog({
           <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
             <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">
               {scenes.length} scene{scenes.length === 1 ? '' : 's'} · {totalSeconds.toFixed(1)}s
+              {scenesHeld > 0 && (
+                <button type="button" onClick={() => lock('More than 3 scenes')} className="ml-2 normal-case tracking-normal text-brand-600 hover:underline">
+                  🔒 {scenesHeld} more scene{scenesHeld === 1 ? '' : 's'} with a free account
+                </button>
+              )}
             </p>
             <ul className="space-y-2">
               {scenes.map((scene, index) => (

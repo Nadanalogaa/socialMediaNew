@@ -5,6 +5,7 @@ import {
   type ProjectLayer,
 } from '@socialboost/shared';
 import { FONT_CHOICES } from '../lib/renderProject';
+import { GUEST_LIMITS, useGuest } from '../lib/guest';
 
 /**
  * Properties of the selected layer.
@@ -29,6 +30,9 @@ export function LayerProperties({
   const style = layer.style;
   const setStyle = (patch: Partial<ProjectLayer['style']>) =>
     onChange({ style: { ...style, ...patch } });
+  const { guest, lock } = useGuest();
+  const fontLocked = (label: string) => guest && !(GUEST_LIMITS.fonts as readonly string[]).includes(label);
+  const effectLocked = (effect: string) => guest && !(GUEST_LIMITS.effects as readonly string[]).includes(effect);
 
   return (
     <div className="space-y-3 text-sm">
@@ -46,12 +50,16 @@ export function LayerProperties({
           <Field label="Font">
             <select
               value={style.fontFamily ?? FONT_CHOICES[0]!.value}
-              onChange={(e) => setStyle({ fontFamily: e.target.value })}
+              onChange={(e) => {
+                const chosen = FONT_CHOICES.find((f) => f.value === e.target.value);
+                if (chosen && fontLocked(chosen.label)) return void lock('This font');
+                setStyle({ fontFamily: e.target.value });
+              }}
               className={inputClass}
             >
               {FONT_CHOICES.map((font) => (
                 <option key={font.label} value={font.value}>
-                  {font.label}
+                  {fontLocked(font.label) ? `🔒 ${font.label}` : font.label}
                 </option>
               ))}
             </select>
@@ -321,7 +329,8 @@ export function LayerProperties({
           <Field label="Effect">
             <select
               value={layer.particles.effect}
-              onChange={(e) =>
+              onChange={(e) => {
+                if (effectLocked(e.target.value)) return void lock('This effect');
                 onChange({
                   content: e.target.value,
                   name: PARTICLE_LABELS[e.target.value as keyof typeof PARTICLE_LABELS],
@@ -329,13 +338,13 @@ export function LayerProperties({
                     ...layer.particles!,
                     effect: e.target.value as typeof layer.particles.effect,
                   },
-                })
-              }
+                });
+              }}
               className={inputClass}
             >
               {PARTICLE_EFFECTS.map((effect) => (
                 <option key={effect} value={effect}>
-                  {PARTICLE_LABELS[effect]}
+                  {effectLocked(effect) ? `🔒 ${PARTICLE_LABELS[effect]}` : PARTICLE_LABELS[effect]}
                 </option>
               ))}
             </select>

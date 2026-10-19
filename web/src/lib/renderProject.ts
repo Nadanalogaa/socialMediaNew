@@ -572,15 +572,46 @@ function pickMimeType(): string {
   return '';
 }
 
+export interface RecordOptions {
+  /** Output size relative to the canonical size; 1 is full resolution. */
+  scale?: number;
+  /** Small text stamped in the corner of every frame. */
+  watermark?: string;
+}
+
 export async function recordProject(
   project: ReelProject,
   onProgress?: (progress: number) => void,
+  options: RecordOptions = {},
 ): Promise<RecordedProject> {
   await document.fonts.ready.catch(() => undefined);
   const images = await preloadProjectImages(project);
 
-  const { w: width, h: height } = ASPECT_RATIOS[project.ratio];
+  const scale = options.scale ?? 1;
+  const { w: fullW, h: fullH } = ASPECT_RATIOS[project.ratio];
+  // Even dimensions: most encoders refuse odd ones.
+  const width = Math.round((fullW * scale) / 2) * 2;
+  const height = Math.round((fullH * scale) / 2) * 2;
   const duration = projectDuration(project);
+
+  const stamp = (ctx: CanvasRenderingContext2D) => {
+    if (!options.watermark) return;
+    const size = Math.round(height * 0.018);
+    ctx.save();
+    ctx.font = `600 ${size}px ${FONT_STACK}`;
+    const textWidth = ctx.measureText(options.watermark).width;
+    const padX = size * 0.7;
+    const x = width - textWidth - padX * 2 - size;
+    const y = height - size * 3.2;
+    ctx.fillStyle = 'rgba(15,23,42,0.55)';
+    ctx.beginPath();
+    ctx.roundRect(x, y, textWidth + padX * 2, size * 1.9, size);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.92)';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(options.watermark, x + padX, y + size * 0.95);
+    ctx.restore();
+  };
 
   const canvas = document.createElement('canvas');
   canvas.width = width;
@@ -609,7 +640,7 @@ export async function recordProject(
   // 16 Mbps at 1080×1920 leaves headroom for the platform's own re-encode.
   const recorder = new MediaRecorder(stream, {
     ...(mimeType ? { mimeType } : {}),
-    videoBitsPerSecond: 16_000_000,
+    videoBitsPerSecond: Math.round(16_000_000 * scale * scale),
   });
 
   const chunks: BlobPart[] = [];
@@ -629,10 +660,12 @@ export async function recordProject(
       const elapsed = (performance.now() - startedAt) / 1000;
       if (elapsed >= duration) {
         drawProjectFrame(ctx, project, images, duration - 0.001, width, height);
+        stamp(ctx);
         resolve();
         return;
       }
       drawProjectFrame(ctx, project, images, elapsed, width, height);
+      stamp(ctx);
       onProgress?.(elapsed / duration);
       requestAnimationFrame(frame);
     };

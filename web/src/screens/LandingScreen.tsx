@@ -10,11 +10,13 @@ export function LandingScreen({
   onSignIn,
   onRegister,
   onOpenApp,
+  onTry,
 }: {
   signedIn: boolean;
   onSignIn: () => void;
   onRegister: () => void;
   onOpenApp: () => void;
+  onTry: () => void;
 }) {
   const primary = 'rounded-lg bg-brand-600 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-brand-700';
   const secondary = 'rounded-lg border border-slate-300 px-5 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-slate-100';
@@ -55,15 +57,51 @@ export function LandingScreen({
               Write a post once and publish it to Facebook and Instagram at the best time. Turn a few lines of text into a finished reel. See what worked. All from your phone.
             </p>
             <div className="mt-7 flex flex-wrap gap-3">
-              <button onClick={signedIn ? onOpenApp : onRegister} className={`${primary} !px-6 !py-3 !text-base`}>
+              <button onClick={onTry} className={`${primary} !px-6 !py-3 !text-base`}>
+                🎬 Try the editor — no account
+              </button>
+              <button onClick={signedIn ? onOpenApp : onRegister} className={`${secondary} !px-6 !py-3 !text-base`}>
                 {signedIn ? 'Open app' : 'Start free — 14 days of Growth'}
               </button>
-              {!signedIn && <button onClick={onSignIn} className={`${secondary} !px-6 !py-3 !text-base`}>Sign in</button>}
             </div>
-            <p className="mt-3 text-xs text-slate-500">No card needed. Free plan forever for one page.</p>
+            <p className="mt-3 text-xs text-slate-500">Make a reel right now in your browser. Sign up only when you want to save or publish it.</p>
           </div>
           <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 shadow-sm">
             <Mockup />
+          </div>
+        </div>
+      </section>
+
+      <section className="border-t border-slate-100 py-14">
+        <div className="mx-auto grid max-w-6xl items-center gap-8 px-4 md:grid-cols-2">
+          <div>
+            <h2 className="text-2xl font-semibold">Make a reel in three minutes. Right here.</h2>
+            <p className="mt-3 text-slate-600">
+              Type what each scene should say, add your photos, pick a sound — Magic Design lays it out, animates the text and exports a reel you can post anywhere. No account, no download, nothing leaves your phone.
+            </p>
+            <ul className="mt-4 space-y-1.5 text-sm text-slate-700">
+              <li>✓ Scenes, animations, effects, music with trim</li>
+              <li>✓ Works on your phone, in the browser</li>
+              <li>✓ Free preview: 3 scenes, 720p with a small watermark</li>
+              <li>✓ Sign up free for full HD, your logo, saving and publishing</li>
+            </ul>
+            <button onClick={onTry} className={`${primary} mt-6 !px-6 !py-3 !text-base`}>Open the editor</button>
+          </div>
+          <div className="rounded-2xl bg-gradient-to-br from-indigo-600 to-fuchsia-500 p-6 text-white shadow-lg">
+            <p className="text-xs uppercase tracking-wide text-white/70">Magic Design · example brief</p>
+            <pre className="mt-3 whitespace-pre-wrap font-mono text-sm leading-relaxed">{`Scene 1 - Opening
+Welcome to Our World of Fine Arts
+NADANALOGA ✨
+Add a photo
+
+Scene 2 - What we teach
+Discover Your Passion. Develop Your Talent.
+Dance • Music • Art • Creativity
+
+Scene 3 - Join us
+Learn. Create. Perform. Grow.
+Contact: 095668 66588`}</pre>
+            <p className="mt-3 text-sm text-white/80">→ a 3-scene reel, text animated, photos placed, ready to export.</p>
           </div>
         </div>
       </section>
