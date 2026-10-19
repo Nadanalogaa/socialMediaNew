@@ -14,6 +14,7 @@ import { BrandScreen } from './BrandScreen';
 import { TeamScreen } from './TeamScreen';
 import { BillingScreen } from './BillingScreen';
 import { HomeScreen } from './HomeScreen';
+import { InboxScreen } from './InboxScreen';
 import { Badge, Card } from '../components/ui';
 
 /**
@@ -41,6 +42,7 @@ type TabKey =
   | 'home'
   | 'compose'
   | 'posts'
+  | 'inbox'
   | 'ideas'
   | 'analytics'
   | 'channels'
@@ -57,6 +59,7 @@ const TABS: { key: TabKey; label: string; icon: string; ready: boolean }[] = [
   { key: 'home', label: 'Home', icon: '⌂', ready: true },
   { key: 'compose', label: 'Compose', icon: '✎', ready: true },
   { key: 'posts', label: 'Posts', icon: '☰', ready: true },
+  { key: 'inbox', label: 'Inbox', icon: '💬', ready: true },
   { key: 'ideas', label: 'Ideas', icon: '💡', ready: true },
   { key: 'analytics', label: 'Analytics', icon: '◳', ready: true },
   { key: 'channels', label: 'Channels', icon: '⚯', ready: true },
@@ -78,6 +81,7 @@ const NAV_GROUPS: { label: string; icon: string; items: TabKey[] }[] = [
   { label: 'Home', icon: '⌂', items: ['home'] },
   { label: 'Compose', icon: '✎', items: ['compose'] },
   { label: 'Posts', icon: '☰', items: ['posts'] },
+  { label: 'Inbox', icon: '💬', items: ['inbox'] },
   { label: 'Studio', icon: '▶', items: ['reels', 'creatives', 'library', 'ideas'] },
   { label: 'Analytics', icon: '◳', items: ['analytics'] },
   { label: 'Settings', icon: '⚙', items: ['channels', 'brand', 'team', 'billing', 'whatsapp', 'ads'] },
@@ -276,6 +280,7 @@ export function DashboardScreen({
             }}
           />
         )}
+        {tab === 'inbox' && <InboxScreen key={session.organization.id} />}
         {tab === 'ideas' && (
           <IdeasScreen
             key={session.organization.id}

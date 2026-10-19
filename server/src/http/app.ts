@@ -11,6 +11,7 @@ import { connectionsRouter } from '../modules/connections/routes.js';
 import { googleCallbackRouter } from '../modules/connections/google-callback.js';
 import { creativesRouter } from '../modules/creatives/routes.js';
 import { ideasRouter } from '../modules/ideas/routes.js';
+import { inboxRouter } from '../modules/inbox/routes.js';
 import { billingRouter } from '../modules/billing/routes.js';
 import { adminRouter } from '../modules/admin/routes.js';
 import * as billing from '../modules/billing/service.js';
@@ -112,6 +113,7 @@ export function createApp(): Express {
   app.use('/api/analytics', analyticsRouter);
   app.use('/api/creatives', creativesRouter);
   app.use('/api/ideas', ideasRouter);
+  app.use('/api/inbox', inboxRouter);
   app.use('/api/billing', billingRouter);
   app.use('/api/admin', adminRouter);
   app.use('/api/media', mediaRouter);

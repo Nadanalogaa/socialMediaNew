@@ -370,6 +370,28 @@ export interface AdminPayment {
   createdAt: string;
 }
 
+export interface InboxComment {
+  id: string;
+  message: string;
+  authorName: string;
+  authorId: string;
+  createdAt: string;
+  fromUs: boolean;
+}
+
+export interface InboxThread {
+  targetId: string;
+  postId: string;
+  provider: string;
+  channelName: string;
+  caption: string;
+  permalink: string | null;
+  publishedAt: string | null;
+  comments: InboxComment[];
+  unanswered: boolean;
+  error: string | null;
+}
+
 export interface ReportPayload extends AnalyticsPayload {
   audience: { connectionId: string; displayName: string; provider: string; followers: number | null }[];
   brand: { name: string; logoUrl: string | null; primaryColor: string | null; website: string | null };
@@ -767,6 +789,12 @@ export const api = {
   adminUsers: (q = '') => request<{ users: AdminUser[] }>(`/admin/users${q ? `?q=${encodeURIComponent(q)}` : ''}`),
   adminSetPlatformAdmin: (id: string, isPlatformAdmin: boolean) =>
     request<{ id: string; isPlatformAdmin: boolean }>(`/admin/users/${id}`, { method: 'PATCH', body: JSON.stringify({ isPlatformAdmin }) }),
+
+  // --- Inbox ---
+  getInbox: (days = 30, refresh = false) =>
+    request<{ threads: InboxThread[]; cachedAt: string }>(`/inbox?days=${days}${refresh ? '&refresh=1' : ''}`),
+  replyToComment: (input: { targetId: string; commentId: string; message: string }) =>
+    request<{ id: string }>('/inbox/reply', { method: 'POST', body: JSON.stringify(input) }),
 
   // --- Home ---
   getHome: () =>
