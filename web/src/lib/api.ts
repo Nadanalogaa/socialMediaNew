@@ -186,7 +186,18 @@ export interface Connection {
   lastError: string | null;
   /** When the stored token runs out; null for tokens that do not expire. */
   tokenExpiresAt: string | null;
+  /** When we last asked Meta whether the token still works. */
+  lastCheckedAt: string | null;
   createdAt: string;
+}
+
+export interface ConnectionHealth {
+  id: string;
+  displayName: string;
+  provider: string;
+  status: 'active' | 'expired' | 'error';
+  lastError: string | null;
+  checkedAt: string;
 }
 
 export interface AvailablePage {
@@ -789,6 +800,9 @@ export const api = {
   adminUsers: (q = '') => request<{ users: AdminUser[] }>(`/admin/users${q ? `?q=${encodeURIComponent(q)}` : ''}`),
   adminSetPlatformAdmin: (id: string, isPlatformAdmin: boolean) =>
     request<{ id: string; isPlatformAdmin: boolean }>(`/admin/users/${id}`, { method: 'PATCH', body: JSON.stringify({ isPlatformAdmin }) }),
+
+  checkConnections: () => request<{ results: ConnectionHealth[] }>('/connections/check', { method: 'POST' }),
+  checkConnection: (id: string) => request<ConnectionHealth>(`/connections/${id}/check`, { method: 'POST' }),
 
   // --- Inbox ---
   getInbox: (days = 30, refresh = false) =>

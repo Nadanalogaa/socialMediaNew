@@ -1,4 +1,4 @@
-import { daysUntil } from '../lib/dates';
+import { daysUntil, formatDateTime } from '../lib/dates';
 import { useEffect, useState } from 'react';
 import {
   ApiError,
@@ -78,8 +78,31 @@ export function ConnectionsScreen() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [sdkReady, setSdkReady] = useState(false);
+  const [checking, setChecking] = useState(false);
+  const [checkNotice, setCheckNotice] = useState<string | null>(null);
 
   const appId = import.meta.env.VITE_META_APP_ID as string | undefined;
+
+  /** Asks Meta whether every token still works; the cards update from the answer. */
+  async function checkAll() {
+    setChecking(true);
+    setError(null);
+    setCheckNotice(null);
+    try {
+      const { results } = await api.checkConnections();
+      const bad = results.filter((r) => r.status !== 'active');
+      setCheckNotice(
+        bad.length === 0
+          ? `All ${results.length} channel${results.length === 1 ? '' : 's'} are working.`
+          : `${bad.length} of ${results.length} need attention: ${bad.map((r) => r.displayName).join(', ')}.`,
+      );
+      await refresh();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not check the channels.');
+    } finally {
+      setChecking(false);
+    }
+  }
 
   useEffect(() => {
     void refresh();
@@ -278,6 +301,34 @@ export function ConnectionsScreen() {
         </Card>
       )}
 
+      {connections && connections.length > 0 && (() => {
+        const attention = connections.filter(
+          (c) => c.status !== 'active' || (c.tokenExpiresAt && daysUntil(c.tokenExpiresAt) <= 10),
+        );
+        return (
+          <Card className={attention.length > 0 ? 'border-amber-200 bg-amber-50/60' : 'border-emerald-200 bg-emerald-50/60'}>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <p className="text-sm font-medium text-slate-900">
+                  {attention.length === 0
+                    ? `All ${connections.length} channel${connections.length === 1 ? '' : 's'} healthy`
+                    : `${attention.length} channel${attention.length === 1 ? '' : 's'} need${attention.length === 1 ? 's' : ''} attention`}
+                </p>
+                <p className="text-xs text-slate-600">
+                  {attention.length === 0
+                    ? 'Tokens are checked daily; scheduled posts will go out.'
+                    : 'Press Reconnect on the flagged channel and sign in to Facebook again.'}
+                </p>
+              </div>
+              <Button variant="secondary" onClick={() => void checkAll()} disabled={checking}>
+                {checking ? 'Checking…' : 'Check now'}
+              </Button>
+            </div>
+            {checkNotice && <p className="mt-2 text-xs text-slate-700">{checkNotice}</p>}
+          </Card>
+        );
+      })()}
+
       {connections === null ? (
         <div className="flex items-center gap-2 text-sm text-slate-500">
           <Spinner /> Loading…
@@ -303,11 +354,21 @@ export function ConnectionsScreen() {
                   <p className="truncate text-sm font-medium text-slate-900">
                     {connection.displayName}
                   </p>
-                  <p className="text-xs text-slate-500">{providerLabel(connection.provider)}</p>
+                  <p className="text-xs text-slate-500">
+                    {providerLabel(connection.provider)}
+                    {connection.lastCheckedAt && ` · checked ${formatDateTime(connection.lastCheckedAt)}`}
+                    {connection.tokenExpiresAt && ` · access until ${new Date(connection.tokenExpiresAt).toLocaleDateString()}`}
+                  </p>
                   {connection.status !== 'active' && connection.lastError && (
                     <p className="mt-1 text-xs text-red-600">{connection.lastError}</p>
                   )}
                 </div>
+                {(connection.status !== 'active' ||
+                  (connection.tokenExpiresAt && daysUntil(connection.tokenExpiresAt) <= 10)) && (
+                  <Button onClick={handleConnect} disabled={busy || !sdkReady}>
+                    Reconnect
+                  </Button>
+                )}
                 {(() => {
                   const days = connection.tokenExpiresAt ? daysUntil(connection.tokenExpiresAt) : null;
                   if (connection.status !== 'active') return <Badge tone="danger">Reconnect needed</Badge>;

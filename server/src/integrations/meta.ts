@@ -575,6 +575,27 @@ export async function replyToComment(
   return data.id;
 }
 
+// --- Health ---------------------------------------------------------------
+
+/**
+ * Proves a stored token still works for its Page or Instagram account.
+ *
+ * The cheapest call that exercises the token: reading the object's own name.
+ * An expired or revoked token fails here with the auth error code, which is
+ * exactly what the health check wants to know.
+ */
+export async function probeConnection(
+  platform: 'facebook' | 'instagram',
+  objectId: string,
+  accessToken: string,
+): Promise<{ name: string }> {
+  const fields = platform === 'instagram' ? 'id,username' : 'id,name';
+  const data = await graphRequest<{ id: string; name?: string; username?: string }>(`/${objectId}`, {
+    params: { access_token: accessToken, fields },
+  });
+  return { name: data.name ?? data.username ?? objectId };
+}
+
 // --- Deletion -------------------------------------------------------------
 
 /**

@@ -68,6 +68,22 @@ connectionsRouter.post(
   }),
 );
 
+/** Re-checks every channel's token with Meta and records the result. */
+connectionsRouter.post(
+  '/check',
+  asyncHandler(async (req, res) => {
+    res.json({ results: await connectionsService.checkAllConnections(req.tenant!.organizationId) });
+  }),
+);
+
+connectionsRouter.post(
+  '/:id/check',
+  validate(idParamSchema, 'params'),
+  asyncHandler(async (req, res) => {
+    res.json(await connectionsService.checkConnection(req.tenant!.organizationId, String(req.params.id)));
+  }),
+);
+
 connectionsRouter.delete(
   '/:id',
   requireRole('owner', 'admin'),

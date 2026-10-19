@@ -9,7 +9,7 @@
  */
 
 import { randomUUID } from 'node:crypto';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import type { Provider } from '@socialboost/shared';
 import { db } from '../../db/client.js';
 import { connections } from '../../db/schema.js';
@@ -219,6 +219,7 @@ export async function listConnections(organizationId: string) {
       lastError: connections.lastError,
       tokenExpiresAt: connections.tokenExpiresAt,
       createdAt: connections.createdAt,
+      lastCheckedAt: sql<string | null>`${connections.metadata}->>'lastCheckedAt'`,
     })
     .from(connections)
     .where(eq(connections.organizationId, organizationId));
@@ -278,6 +279,72 @@ export async function resolveConnection(
 }
 
 /** Marks a connection as needing reauthentication after an auth failure. */
+export interface HealthResult {
+  id: string;
+  displayName: string;
+  provider: string;
+  status: 'active' | 'expired' | 'error';
+  lastError: string | null;
+  checkedAt: string;
+}
+
+/**
+ * Asks Meta whether a connection's token still works, and records the
+ * answer on the row — so the Channels screen, the Home screen and scheduled
+ * publishing all see the same truth.
+ */
+export async function checkConnection(organizationId: string, connectionId: string): Promise<HealthResult> {
+  const [row] = await db
+    .select()
+    .from(connections)
+    .where(and(eq(connections.id, connectionId), eq(connections.organizationId, organizationId)))
+    .limit(1);
+  if (!row) throw notFound('Connection not found');
+
+  const checkedAt = new Date();
+  const metadata = { ...(row.metadata ?? {}), lastCheckedAt: checkedAt.toISOString() };
+  let status: HealthResult['status'] = 'active';
+  let lastError: string | null = null;
+
+  if (!row.accessTokenEncrypted) {
+    status = 'expired';
+    lastError = 'No access token stored. Reconnect this channel.';
+  } else if (row.provider === 'facebook_page' || row.provider === 'instagram_business') {
+    try {
+      await meta.probeConnection(
+        row.provider === 'instagram_business' ? 'instagram' : 'facebook',
+        row.externalId,
+        decryptToken(row.accessTokenEncrypted),
+      );
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error);
+      status = error instanceof meta.GraphApiError && error.isAuthError ? 'expired' : 'error';
+      // A rate limit is not a broken connection; keep the previous verdict.
+      if (error instanceof meta.GraphApiError && error.isRateLimit) {
+        status = row.status as HealthResult['status'];
+        lastError = row.lastError;
+      }
+    }
+  }
+
+  await db
+    .update(connections)
+    .set({ status, lastError, metadata, updatedAt: checkedAt })
+    .where(eq(connections.id, row.id));
+
+  return { id: row.id, displayName: row.displayName, provider: row.provider, status, lastError, checkedAt: checkedAt.toISOString() };
+}
+
+export async function checkAllConnections(organizationId: string): Promise<HealthResult[]> {
+  const rows = await db
+    .select({ id: connections.id })
+    .from(connections)
+    .where(eq(connections.organizationId, organizationId));
+  const results: HealthResult[] = [];
+  for (const row of rows) results.push(await checkConnection(organizationId, row.id));
+  return results;
+}
+
 export async function markConnectionError(
   connectionId: string,
   message: string,
