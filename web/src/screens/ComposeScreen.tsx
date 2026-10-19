@@ -13,6 +13,7 @@ import {
 import { daysUntil, formatDateTime, toDateInput, toLocalInput } from '../lib/dates';
 import { applyBrandPlaceholders } from '../lib/brand';
 import { Alert, Button, Card, Spinner, providerLabel } from '../components/ui';
+import { PostPreview } from '../components/PostPreview';
 
 const IG_CAPTION_LIMIT = 2200;
 const PUBLISHABLE = ['facebook_page', 'instagram_business'];
@@ -286,9 +287,14 @@ export function ComposeScreen({
   }
 
   const selectedConnections = connections.filter((c) => selected.has(c.id));
+  /** One preview per network type; two Facebook Pages look the same. */
+  const previewConnections = selectedConnections.filter(
+    (c, i, all) => all.findIndex((o) => o.provider === c.provider) === i,
+  );
 
   return (
-    <div className="mx-auto max-w-3xl space-y-5">
+    <div className="mx-auto grid max-w-6xl gap-5 lg:grid-cols-[minmax(0,1fr)_340px]">
+    <div className="min-w-0 space-y-5">
       <div>
         <h2 className="text-lg font-semibold text-slate-900">{editing ? 'Edit post' : 'New post'}</h2>
         <p className="mt-0.5 text-sm text-slate-600">
@@ -712,6 +718,30 @@ export function ComposeScreen({
         A draft is saved privately — nothing reaches your audience until you publish it.
         {selectedConnections.length > 1 && ' Each channel succeeds or fails on its own.'}
       </p>
+    </div>
+
+    {/* Live previews: how the post reads on each network, as you type. */}
+    <aside className="space-y-3 lg:sticky lg:top-16 lg:self-start">
+      <h3 className="text-sm font-medium text-slate-900">Preview</h3>
+      {previewConnections.length === 0 ? (
+        <p className="rounded-xl border border-dashed border-slate-300 p-4 text-xs text-slate-500">
+          Pick a channel to see how the post will look.
+        </p>
+      ) : (
+        previewConnections.map((c) => (
+          <div key={c.id}>
+            <p className="mb-1 text-[11px] uppercase tracking-wide text-slate-500">{providerLabel(c.provider)}</p>
+            <PostPreview
+              connection={c}
+              caption={overrides[c.id] ?? caption}
+              hashtags={hashtags}
+              asset={asset}
+              firstComment={firstComment}
+            />
+          </div>
+        ))
+      )}
+    </aside>
     </div>
   );
 }
