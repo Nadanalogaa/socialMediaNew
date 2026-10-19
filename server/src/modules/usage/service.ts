@@ -110,9 +110,13 @@ export async function assertCanAddConnections(
 
   const existing = row?.total ?? 0;
   if (existing + adding > limits.connections) {
+    const room = Math.max(0, limits.connections - existing);
     throw quotaExceeded(
-      `Your plan allows ${limits.connections} connected account(s). You have ${existing}.`,
-      { existing, limit: limits.connections },
+      `Your plan allows ${limits.connections} connected account${limits.connections === 1 ? '' : 's'} and you are adding ${adding} ` +
+        `(a Page and its Instagram account count as two). ${
+          room > 0 ? `Pick fewer — there is room for ${room} more — or upgrade your plan.` : 'Upgrade your plan to add more.'
+        }`,
+      { existing, adding, limit: limits.connections },
     );
   }
 }
