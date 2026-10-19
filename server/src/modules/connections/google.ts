@@ -26,8 +26,11 @@ export async function startGoogleConnection(
   userId: string,
 ): Promise<{ authUrl: string }> {
   const state = randomUUID();
+  // Built first: an unconfigured integration is reported at once, before
+  // anything is written anywhere.
+  const authUrl = google.buildAuthUrl(state);
   await redis.setex(stateKey(state), STATE_TTL_SECONDS, JSON.stringify({ organizationId, userId }));
-  return { authUrl: google.buildAuthUrl(state) };
+  return { authUrl };
 }
 
 export interface GoogleConnectResult {
