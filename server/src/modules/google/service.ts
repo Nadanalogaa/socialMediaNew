@@ -11,6 +11,7 @@ import { and, eq, inArray } from 'drizzle-orm';
 import { db } from '../../db/client.js';
 import { connections } from '../../db/schema.js';
 import { notFound } from '../../lib/errors.js';
+import { env } from '../../lib/env.js';
 import { logger } from '../../lib/logger.js';
 import * as google from '../../integrations/google.js';
 import { getGoogleAccessToken } from '../connections/google.js';
@@ -27,6 +28,11 @@ export interface ScoreItem {
   fix: string;
 }
 
+export interface PerformanceWindow {
+  current: google.LocationPerformance;
+  previous: google.LocationPerformance;
+}
+
 export interface LocationReport {
   connectionId: string;
   title: string;
@@ -36,6 +42,26 @@ export interface LocationReport {
   score: number;
   items: ScoreItem[];
   reviews: { average: number; total: number; unanswered: number; recent: google.GoogleReview[] };
+  /** Views, calls, directions, website clicks: last 28 days against the 28 before. */
+  performance: PerformanceWindow | null;
+  error: string | null;
+}
+
+export interface AnalyticsReport {
+  connectionId: string;
+  property: string;
+  period: { from: string; to: string };
+  current: google.AnalyticsSummary | null;
+  previous: google.AnalyticsSummary | null;
+  error: string | null;
+}
+
+export interface AdsReport {
+  connectionId: string;
+  account: string;
+  currency: string;
+  campaigns: google.AdsCampaignRow[];
+  totals: { impressions: number; clicks: number; costMicros: number; conversions: number };
   error: string | null;
 }
 
@@ -67,11 +93,25 @@ export async function locationReport(organizationId: string, connectionId: strin
 
   try {
     const token = await getGoogleAccessToken(organizationId, row.id);
-    const [details, reviewData, lastPostAt, media] = await Promise.all([
+    const now = Date.now();
+    const perfTo = new Date(now - 3 * DAY);
+    const perfFrom = new Date(perfTo.getTime() - 27 * DAY);
+    const prevTo = new Date(perfFrom.getTime() - DAY);
+    const prevFrom = new Date(prevTo.getTime() - 27 * DAY);
+    const [details, reviewData, lastPostAt, media, performance] = await Promise.all([
       google.getLocationDetails(token, row.externalId),
       google.listReviews(token, row.externalId),
       google.latestLocalPostAt(token, row.externalId).catch(() => null),
       google.countMedia(token, row.externalId).catch(() => ({ count: 0, latestAt: null })),
+      Promise.all([
+        google.fetchLocationPerformance(token, row.externalId, perfFrom, perfTo),
+        google.fetchLocationPerformance(token, row.externalId, prevFrom, prevTo),
+      ])
+        .then(([current, previous]) => ({ current, previous }))
+        .catch((error) => {
+          logger.warn({ err: error, connectionId }, 'Performance unavailable');
+          return null;
+        }),
     ]);
 
     // Remember the website so Business Profile posts can carry a button to it.
@@ -110,12 +150,65 @@ export async function locationReport(organizationId: string, connectionId: strin
       score,
       items,
       reviews: { average: reviewData.averageRating, total: reviewData.total, unanswered, recent: reviewData.reviews.slice(0, 20) },
+      performance,
       error: null,
     };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     logger.warn({ err: error, connectionId }, 'Business Profile report failed');
-    return { ...base, mapsUri: null, reviewUri: null, score: 0, items: [], reviews: { average: 0, total: 0, unanswered: 0, recent: [] }, error: message };
+    return { ...base, mapsUri: null, reviewUri: null, score: 0, items: [], reviews: { average: 0, total: 0, unanswered: 0, recent: [] }, performance: null, error: message };
+  }
+}
+
+export async function analyticsReport(organizationId: string, connectionId: string): Promise<AnalyticsReport> {
+  const [row] = await db
+    .select()
+    .from(connections)
+    .where(and(eq(connections.id, connectionId), eq(connections.organizationId, organizationId), eq(connections.provider, 'google_analytics')))
+    .limit(1);
+  if (!row) throw notFound('Analytics property not found');
+  const to = new Date(Date.now() - DAY);
+  const from = new Date(to.getTime() - 27 * DAY);
+  const prevTo = new Date(from.getTime() - DAY);
+  const prevFrom = new Date(prevTo.getTime() - 27 * DAY);
+  const base = { connectionId: row.id, property: row.displayName, period: { from: isoDay(from), to: isoDay(to) } };
+  try {
+    const token = await getGoogleAccessToken(organizationId, row.id);
+    const [current, previous] = await Promise.all([
+      google.analyticsSummary(token, row.externalId, isoDay(from), isoDay(to)),
+      google.analyticsSummary(token, row.externalId, isoDay(prevFrom), isoDay(prevTo)),
+    ]);
+    return { ...base, current, previous, error: null };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.warn({ err: error, connectionId }, 'Analytics report failed');
+    return { ...base, current: null, previous: null, error: message };
+  }
+}
+
+export async function adsReport(organizationId: string, connectionId: string): Promise<AdsReport> {
+  const [row] = await db
+    .select()
+    .from(connections)
+    .where(and(eq(connections.id, connectionId), eq(connections.organizationId, organizationId), eq(connections.provider, 'google_ads')))
+    .limit(1);
+  if (!row) throw notFound('Google Ads account not found');
+  const base = { connectionId: row.id, account: row.displayName, currency: typeof row.metadata?.currency === 'string' ? (row.metadata.currency as string) : 'INR' };
+  if (!env.GOOGLE_ADS_DEVELOPER_TOKEN) {
+    return { ...base, campaigns: [], totals: { impressions: 0, clicks: 0, costMicros: 0, conversions: 0 }, error: 'Google Ads is not enabled on this service yet.' };
+  }
+  try {
+    const token = await getGoogleAccessToken(organizationId, row.id);
+    const campaigns = await google.adsCampaignReport(token, env.GOOGLE_ADS_DEVELOPER_TOKEN, row.externalId, 30, env.GOOGLE_ADS_LOGIN_CUSTOMER_ID);
+    const totals = campaigns.reduce(
+      (t, c) => ({ impressions: t.impressions + c.impressions, clicks: t.clicks + c.clicks, costMicros: t.costMicros + c.costMicros, conversions: t.conversions + c.conversions }),
+      { impressions: 0, clicks: 0, costMicros: 0, conversions: 0 },
+    );
+    return { ...base, campaigns, totals, error: null };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.warn({ err: error, connectionId }, 'Ads report failed');
+    return { ...base, campaigns: [], totals: { impressions: 0, clicks: 0, costMicros: 0, conversions: 0 }, error: message };
   }
 }
 
@@ -174,12 +267,14 @@ export async function overview(organizationId: string) {
     .where(
       and(
         eq(connections.organizationId, organizationId),
-        inArray(connections.provider, ['google_business', 'google_search_console', 'youtube_channel']),
+        inArray(connections.provider, ['google_business', 'google_search_console', 'youtube_channel', 'google_analytics', 'google_ads']),
       ),
     );
-  const [locations, sites] = await Promise.all([
+  const [locations, sites, analytics, ads] = await Promise.all([
     Promise.all(rows.filter((r) => r.provider === 'google_business').map((r) => locationReport(organizationId, r.id))),
     Promise.all(rows.filter((r) => r.provider === 'google_search_console').map((r) => siteReport(organizationId, r.id))),
+    Promise.all(rows.filter((r) => r.provider === 'google_analytics').map((r) => analyticsReport(organizationId, r.id))),
+    Promise.all(rows.filter((r) => r.provider === 'google_ads').map((r) => adsReport(organizationId, r.id))),
   ]);
   // The Google account itself is stored with the YouTube channel, so a
   // sign-in that found no listings still shows as connected.
@@ -187,6 +282,9 @@ export async function overview(organizationId: string) {
   return {
     locations,
     sites,
+    analytics,
+    ads,
+    adsEnabled: Boolean(env.GOOGLE_ADS_DEVELOPER_TOKEN),
     connected: rows.length > 0,
     account: account ? { name: account.displayName, email: typeof account.metadata?.email === 'string' ? account.metadata.email : null } : null,
   };

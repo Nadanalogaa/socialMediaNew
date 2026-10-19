@@ -42,6 +42,10 @@ const envSchema = z.object({
   /** One Google Cloud project serves every tenant, as with the Meta app. */
   GOOGLE_CLIENT_ID: z.string().optional(),
   GOOGLE_CLIENT_SECRET: z.string().optional(),
+  /** Issued by Google Ads to the manager account; campaigns need it. */
+  GOOGLE_ADS_DEVELOPER_TOKEN: z.string().optional(),
+  /** The manager (MCC) account id, digits only, that holds the token. */
+  GOOGLE_ADS_LOGIN_CUSTOMER_ID: z.string().optional(),
 
   CLOUDINARY_CLOUD_NAME: z.string().optional(),
   CLOUDINARY_API_KEY: z.string().optional(),
@@ -74,5 +78,6 @@ export const features = {
     env.CLOUDINARY_CLOUD_NAME && env.CLOUDINARY_API_KEY && env.CLOUDINARY_API_SECRET,
   ),
   google: Boolean(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET),
+  googleAds: Boolean(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET && env.GOOGLE_ADS_DEVELOPER_TOKEN),
   billing: Boolean(env.RAZORPAY_KEY_ID && env.RAZORPAY_KEY_SECRET),
 } as const;

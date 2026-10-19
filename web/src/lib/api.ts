@@ -431,6 +431,42 @@ export interface GoogleLocationReport {
   score: number;
   items: GoogleScoreItem[];
   reviews: { average: number; total: number; unanswered: number; recent: GoogleReview[] };
+  performance: { current: GooglePerformance; previous: GooglePerformance } | null;
+  error: string | null;
+}
+
+export interface GooglePerformance {
+  impressionsMaps: number;
+  impressionsSearch: number;
+  calls: number;
+  websiteClicks: number;
+  directions: number;
+}
+
+export interface GoogleAnalyticsSummary {
+  sessions: number;
+  users: number;
+  keyEvents: number;
+  engagementRate: number;
+  channels: { channel: string; sessions: number }[];
+  pages: { page: string; views: number }[];
+}
+
+export interface GoogleAnalyticsReport {
+  connectionId: string;
+  property: string;
+  period: { from: string; to: string };
+  current: GoogleAnalyticsSummary | null;
+  previous: GoogleAnalyticsSummary | null;
+  error: string | null;
+}
+
+export interface GoogleAdsReport {
+  connectionId: string;
+  account: string;
+  currency: string;
+  campaigns: { id: string; name: string; status: string; impressions: number; clicks: number; costMicros: number; conversions: number }[];
+  totals: { impressions: number; clicks: number; costMicros: number; conversions: number };
   error: string | null;
 }
 
@@ -449,10 +485,19 @@ export interface GoogleOverview {
   account: { name: string; email: string | null } | null;
   locations: GoogleLocationReport[];
   sites: GoogleSiteReport[];
+  analytics: GoogleAnalyticsReport[];
+  ads: GoogleAdsReport[];
+  adsEnabled: boolean;
 }
 
 export interface ReportPayload extends AnalyticsPayload {
   audience: { connectionId: string; displayName: string; provider: string; followers: number | null }[];
+  google: {
+    locations: { title: string; score: number; reviews: { average: number; total: number; unanswered: number }; performance: { current: GooglePerformance; previous: GooglePerformance } | null; error: string | null }[];
+    sites: { site: string; totals: { clicks: number; impressions: number; previousClicks: number }; top: { query: string; position: number; clicks: number }[]; error: string | null }[];
+    analytics: { property: string; current: GoogleAnalyticsSummary | null; previous: GoogleAnalyticsSummary | null; error: string | null }[];
+    ads: { account: string; currency: string; totals: { impressions: number; clicks: number; costMicros: number; conversions: number }; campaigns: { name: string; clicks: number; costMicros: number; conversions: number }[]; error: string | null }[];
+  } | null;
   brand: { name: string; logoUrl: string | null; primaryColor: string | null; website: string | null };
   generatedAt: string;
 }

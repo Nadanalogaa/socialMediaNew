@@ -90,8 +90,10 @@ export function ConnectionsScreen() {
     if (outcome === 'connected') {
       const locations = Number(params.get('locations') ?? 0);
       const sites = Number(params.get('sites') ?? 0);
+      const properties = Number(params.get('properties') ?? 0);
+      const ads = Number(params.get('ads') ?? 0);
       setCheckNotice(
-        `Google connected: ${locations} Business Profile${locations === 1 ? '' : 's'}, ${sites} Search Console propert${sites === 1 ? 'y' : 'ies'}.` +
+        `Google connected: ${locations} Business Profile${locations === 1 ? '' : 's'}, ${sites} Search Console propert${sites === 1 ? 'y' : 'ies'}, ${properties} Analytics propert${properties === 1 ? 'y' : 'ies'}${ads ? `, ${ads} Ads account${ads === 1 ? '' : 's'}` : ''}.` +
           (params.get('businessProfile') === 'unavailable'
             ? ' Business Profile listings could not be read yet — the Google API access for this app is still pending.'
             : ''),

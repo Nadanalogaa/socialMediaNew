@@ -21,7 +21,7 @@ export function GoogleScreen({ onConnect }: { onConnect: () => void }) {
       setError(null);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not load Google data.');
-      setData({ configured: false, connected: false, account: null, locations: [], sites: [] });
+      setData({ configured: false, connected: false, account: null, locations: [], sites: [], analytics: [], ads: [], adsEnabled: false });
     } finally {
       setRefreshing(false);
     }
@@ -82,6 +82,20 @@ export function GoogleScreen({ onConnect }: { onConnect: () => void }) {
                 : 'none yet — Google is still approving this app\'s access to the Business Profile API. Press Connect Google again once it is approved and your listings appear here.'}
             </li>
             <li>
+              {data.analytics.length > 0 ? '✓' : '⏳'} <strong>Website analytics:</strong>{' '}
+              {data.analytics.length > 0
+                ? `${data.analytics.length} Google Analytics propert${data.analytics.length === 1 ? 'y' : 'ies'}`
+                : 'none yet — the website needs a Google Analytics (GA4) tag; once this Google account has access to it, Connect Google again.'}
+            </li>
+            <li>
+              {data.ads.length > 0 ? '✓' : data.adsEnabled ? '⏳' : '🔜'} <strong>Google Ads:</strong>{' '}
+              {data.ads.length > 0
+                ? `${data.ads.length} account${data.ads.length === 1 ? '' : 's'}`
+                : data.adsEnabled
+                  ? 'no Ads account on this Google login yet.'
+                  : 'coming — being enabled on this service.'}
+            </li>
+            <li>
               {data.sites.length > 0 ? '✓' : '⏳'} <strong>Website rankings:</strong>{' '}
               {data.sites.length > 0
                 ? `${data.sites.length} propert${data.sites.length === 1 ? 'y' : 'ies'}`
@@ -93,6 +107,92 @@ export function GoogleScreen({ onConnect }: { onConnect: () => void }) {
 
       {data.locations.map((loc) => (
         <LocationCard key={loc.connectionId} loc={loc} onReplied={load} />
+      ))}
+
+      {data.analytics.map((a) => (
+        <Card key={a.connectionId}>
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <h3 className="text-sm font-semibold text-slate-900">Website visitors · {a.property}</h3>
+            <span className="text-xs text-slate-500">{a.period.from} → {a.period.to}</span>
+          </div>
+          {a.error ? (
+            <p className="mt-2 text-xs text-amber-900">{a.error}</p>
+          ) : a.current ? (
+            <>
+              <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                {(
+                  [
+                    ['Visits', a.current.sessions, a.previous?.sessions ?? 0],
+                    ['People', a.current.users, a.previous?.users ?? 0],
+                    ['Enquiries / key events', a.current.keyEvents, a.previous?.keyEvents ?? 0],
+                    ['Engaged', a.current.engagementRate, a.previous?.engagementRate ?? 0],
+                  ] as [string, number, number][]
+                ).map(([label, now, before]) => {
+                  const pct = before === 0 ? null : Math.round(((now - before) / before) * 100);
+                  return (
+                    <div key={label} className="rounded-lg border border-slate-200 p-2">
+                      <p className="text-lg font-semibold text-slate-900">{label === 'Engaged' ? `${now}%` : now.toLocaleString('en-IN')}</p>
+                      <p className="text-[11px] text-slate-500">{label}</p>
+                      <p className={`text-[11px] ${pct === null ? 'text-slate-400' : pct >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
+                        {pct === null ? '—' : `${pct >= 0 ? '+' : ''}${pct}% vs before`}
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="mt-3 grid gap-3 sm:grid-cols-2 text-xs">
+                <div>
+                  <p className="mb-1 font-medium text-slate-900">Where visitors came from</p>
+                  <ul className="space-y-0.5 text-slate-700">
+                    {a.current.channels.map((c) => (
+                      <li key={c.channel} className="flex justify-between"><span>{c.channel}</span><span className="tabular-nums">{c.sessions}</span></li>
+                    ))}
+                  </ul>
+                </div>
+                <div>
+                  <p className="mb-1 font-medium text-slate-900">Most viewed pages</p>
+                  <ul className="space-y-0.5 text-slate-700">
+                    {a.current.pages.map((p) => (
+                      <li key={p.page} className="flex justify-between gap-2"><span className="truncate">{p.page}</span><span className="tabular-nums">{p.views}</span></li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+            </>
+          ) : null}
+        </Card>
+      ))}
+
+      {data.ads.map((ad) => (
+        <Card key={ad.connectionId}>
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <h3 className="text-sm font-semibold text-slate-900">Google Ads · {ad.account}</h3>
+            <span className="text-xs text-slate-500">last 30 days</span>
+          </div>
+          {ad.error ? (
+            <p className="mt-2 text-xs text-amber-900">{ad.error}</p>
+          ) : (
+            <>
+              <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
+                <div className="rounded-lg border border-slate-200 p-2"><p className="text-lg font-semibold">{ad.totals.impressions.toLocaleString('en-IN')}</p><p className="text-[11px] text-slate-500">Ad views</p></div>
+                <div className="rounded-lg border border-slate-200 p-2"><p className="text-lg font-semibold">{ad.totals.clicks.toLocaleString('en-IN')}</p><p className="text-[11px] text-slate-500">Clicks</p></div>
+                <div className="rounded-lg border border-slate-200 p-2"><p className="text-lg font-semibold">{ad.currency === 'INR' ? '₹' : ad.currency + ' '}{Math.round(ad.totals.costMicros / 1e6).toLocaleString('en-IN')}</p><p className="text-[11px] text-slate-500">Spent</p></div>
+                <div className="rounded-lg border border-slate-200 p-2"><p className="text-lg font-semibold">{Math.round(ad.totals.conversions)}</p><p className="text-[11px] text-slate-500">Leads</p></div>
+              </div>
+              {ad.campaigns.length > 0 && (
+                <table className="mt-3 w-full text-xs">
+                  <thead className="text-left uppercase tracking-wide text-slate-500"><tr><th className="py-1">Campaign</th><th>Status</th><th>Clicks</th><th>Spent</th><th>Leads</th></tr></thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {ad.campaigns.map((c) => (
+                      <tr key={c.id}><td className="py-1 text-slate-900">{c.name}</td><td className="text-slate-500">{c.status.toLowerCase()}</td><td className="tabular-nums">{c.clicks}</td><td className="tabular-nums">{Math.round(c.costMicros / 1e6)}</td><td className="tabular-nums">{Math.round(c.conversions)}</td></tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+              <p className="mt-2 text-xs text-slate-500">"Promote this offer" — creating a local campaign from here — arrives once Google issues the Ads developer token.</p>
+            </>
+          )}
+        </Card>
       ))}
 
       {data.sites.map((site) => (
@@ -196,6 +296,31 @@ function LocationCard({ loc, onReplied }: { loc: GoogleLocationReport; onReplied
           </div>
         )}
       </div>
+
+      {!loc.error && loc.performance && (
+        <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-5">
+          {(
+            [
+              ['Seen on Maps', loc.performance.current.impressionsMaps, loc.performance.previous.impressionsMaps],
+              ['Seen on Search', loc.performance.current.impressionsSearch, loc.performance.previous.impressionsSearch],
+              ['Calls', loc.performance.current.calls, loc.performance.previous.calls],
+              ['Directions', loc.performance.current.directions, loc.performance.previous.directions],
+              ['Website clicks', loc.performance.current.websiteClicks, loc.performance.previous.websiteClicks],
+            ] as [string, number, number][]
+          ).map(([label, now, before]) => {
+            const pct = before === 0 ? null : Math.round(((now - before) / before) * 100);
+            return (
+              <div key={label} className="rounded-lg border border-slate-200 p-2">
+                <p className="text-lg font-semibold text-slate-900">{now.toLocaleString('en-IN')}</p>
+                <p className="text-[11px] text-slate-500">{label} · 28 days</p>
+                <p className={`text-[11px] ${pct === null ? 'text-slate-400' : pct >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
+                  {pct === null ? (now > 0 ? 'new' : '—') : `${pct >= 0 ? '+' : ''}${pct}% vs before`}
+                </p>
+              </div>
+            );
+          })}
+        </div>
+      )}
 
       {loc.error ? (
         <p className="mt-3 rounded bg-amber-50 px-3 py-2 text-xs text-amber-900">{loc.error}</p>

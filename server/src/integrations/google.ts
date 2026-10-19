@@ -31,6 +31,8 @@ export const GOOGLE_SCOPES = [
   'profile',
   'https://www.googleapis.com/auth/business.manage',
   'https://www.googleapis.com/auth/webmasters.readonly',
+  'https://www.googleapis.com/auth/analytics.readonly',
+  'https://www.googleapis.com/auth/adwords',
   'https://www.googleapis.com/auth/youtube.upload',
   'https://www.googleapis.com/auth/youtube.readonly',
 ];
@@ -462,5 +464,212 @@ export async function searchAnalytics(
     impressions: r.impressions,
     ctr: r.ctr,
     position: Math.round(r.position * 10) / 10,
+  }));
+}
+
+// --- Business Profile performance ---------------------------------------------
+
+export interface LocationPerformance {
+  impressionsMaps: number;
+  impressionsSearch: number;
+  calls: number;
+  websiteClicks: number;
+  directions: number;
+}
+
+const PERF_METRICS = [
+  'BUSINESS_IMPRESSIONS_DESKTOP_MAPS',
+  'BUSINESS_IMPRESSIONS_MOBILE_MAPS',
+  'BUSINESS_IMPRESSIONS_DESKTOP_SEARCH',
+  'BUSINESS_IMPRESSIONS_MOBILE_SEARCH',
+  'CALL_CLICKS',
+  'WEBSITE_CLICKS',
+  'BUSINESS_DIRECTION_REQUESTS',
+] as const;
+
+/** Views, calls, website clicks and direction requests over a date range. */
+export async function fetchLocationPerformance(
+  accessToken: string,
+  locationName: string,
+  from: Date,
+  to: Date,
+): Promise<LocationPerformance> {
+  const bare = locationName.replace(/^accounts\/[^/]+\//, '');
+  const url = new URL(`https://businessprofileperformance.googleapis.com/v1/${bare}:fetchMultiDailyMetricsTimeSeries`);
+  for (const m of PERF_METRICS) url.searchParams.append('dailyMetrics', m);
+  url.searchParams.set('dailyRange.startDate.year', String(from.getUTCFullYear()));
+  url.searchParams.set('dailyRange.startDate.month', String(from.getUTCMonth() + 1));
+  url.searchParams.set('dailyRange.startDate.day', String(from.getUTCDate()));
+  url.searchParams.set('dailyRange.endDate.year', String(to.getUTCFullYear()));
+  url.searchParams.set('dailyRange.endDate.month', String(to.getUTCMonth() + 1));
+  url.searchParams.set('dailyRange.endDate.day', String(to.getUTCDate()));
+  const data = await googleRequest<{
+    multiDailyMetricTimeSeries?: {
+      dailyMetricTimeSeries?: { dailyMetric: string; timeSeries?: { datedValues?: { value?: string }[] } }[];
+    }[];
+  }>(url.toString(), accessToken);
+  const totals: Record<string, number> = {};
+  for (const group of data.multiDailyMetricTimeSeries ?? []) {
+    for (const series of group.dailyMetricTimeSeries ?? []) {
+      totals[series.dailyMetric] = (series.timeSeries?.datedValues ?? []).reduce((s, v) => s + Number(v.value ?? 0), 0);
+    }
+  }
+  const t = (k: string) => totals[k] ?? 0;
+  return {
+    impressionsMaps: t('BUSINESS_IMPRESSIONS_DESKTOP_MAPS') + t('BUSINESS_IMPRESSIONS_MOBILE_MAPS'),
+    impressionsSearch: t('BUSINESS_IMPRESSIONS_DESKTOP_SEARCH') + t('BUSINESS_IMPRESSIONS_MOBILE_SEARCH'),
+    calls: t('CALL_CLICKS'),
+    websiteClicks: t('WEBSITE_CLICKS'),
+    directions: t('BUSINESS_DIRECTION_REQUESTS'),
+  };
+}
+
+// --- Google Analytics 4 --------------------------------------------------------
+
+export interface AnalyticsProperty {
+  /** `properties/123456`. */
+  name: string;
+  displayName: string;
+  account: string;
+}
+
+export async function listAnalyticsProperties(accessToken: string): Promise<AnalyticsProperty[]> {
+  const data = await googleRequest<{
+    accountSummaries?: { displayName?: string; propertySummaries?: { property: string; displayName?: string }[] }[];
+  }>('https://analyticsadmin.googleapis.com/v1beta/accountSummaries?pageSize=200', accessToken);
+  const out: AnalyticsProperty[] = [];
+  for (const account of data.accountSummaries ?? []) {
+    for (const p of account.propertySummaries ?? []) {
+      out.push({ name: p.property, displayName: p.displayName ?? p.property, account: account.displayName ?? '' });
+    }
+  }
+  return out;
+}
+
+export interface AnalyticsSummary {
+  sessions: number;
+  users: number;
+  keyEvents: number;
+  engagementRate: number;
+  channels: { channel: string; sessions: number }[];
+  pages: { page: string; views: number }[];
+}
+
+async function runReport(
+  accessToken: string,
+  property: string,
+  body: Record<string, unknown>,
+): Promise<{ rows?: { dimensionValues?: { value: string }[]; metricValues?: { value: string }[] }[] }> {
+  return googleRequest(`https://analyticsdata.googleapis.com/v1beta/${property}:runReport`, accessToken, { method: 'POST', body });
+}
+
+export async function analyticsSummary(accessToken: string, property: string, startDate: string, endDate: string): Promise<AnalyticsSummary> {
+  const range = [{ startDate, endDate }];
+  const [totals, channels, pages] = await Promise.all([
+    runReport(accessToken, property, { dateRanges: range, metrics: [{ name: 'sessions' }, { name: 'totalUsers' }, { name: 'keyEvents' }, { name: 'engagementRate' }] }),
+    runReport(accessToken, property, {
+      dateRanges: range,
+      dimensions: [{ name: 'sessionDefaultChannelGroup' }],
+      metrics: [{ name: 'sessions' }],
+      orderBys: [{ metric: { metricName: 'sessions' }, desc: true }],
+      limit: 6,
+    }),
+    runReport(accessToken, property, {
+      dateRanges: range,
+      dimensions: [{ name: 'pagePath' }],
+      metrics: [{ name: 'screenPageViews' }],
+      orderBys: [{ metric: { metricName: 'screenPageViews' }, desc: true }],
+      limit: 8,
+    }),
+  ]);
+  const m = totals.rows?.[0]?.metricValues ?? [];
+  const n = (i: number) => Number(m[i]?.value ?? 0);
+  return {
+    sessions: n(0),
+    users: n(1),
+    keyEvents: n(2),
+    engagementRate: Math.round(n(3) * 1000) / 10,
+    channels: (channels.rows ?? []).map((r) => ({ channel: r.dimensionValues?.[0]?.value ?? '', sessions: Number(r.metricValues?.[0]?.value ?? 0) })),
+    pages: (pages.rows ?? []).map((r) => ({ page: r.dimensionValues?.[0]?.value ?? '', views: Number(r.metricValues?.[0]?.value ?? 0) })),
+  };
+}
+
+// --- Google Ads (reporting; campaign creation follows once the token is issued) --
+
+export interface AdsCustomer {
+  id: string;
+  descriptiveName: string;
+  currency: string;
+}
+
+function adsHeaders(accessToken: string, developerToken: string, loginCustomerId?: string): Record<string, string> {
+  return {
+    Authorization: `Bearer ${accessToken}`,
+    'developer-token': developerToken,
+    ...(loginCustomerId ? { 'login-customer-id': loginCustomerId.replace(/-/g, '') } : {}),
+    'Content-Type': 'application/json',
+  };
+}
+
+const ADS_API = 'https://googleads.googleapis.com/v19';
+
+export async function listAdsCustomers(accessToken: string, developerToken: string, loginCustomerId?: string): Promise<AdsCustomer[]> {
+  const listed = await fetch(`${ADS_API}/customers:listAccessibleCustomers`, { headers: adsHeaders(accessToken, developerToken, loginCustomerId) });
+  if (!listed.ok) throw new AppError(400, 'google_ads_failed', `Google Ads: ${(await listed.text()).slice(0, 200)}`);
+  const { resourceNames = [] } = (await listed.json()) as { resourceNames?: string[] };
+  const customers: AdsCustomer[] = [];
+  for (const name of resourceNames.slice(0, 20)) {
+    const id = name.replace('customers/', '');
+    try {
+      const res = await fetch(`${ADS_API}/customers/${id}/googleAds:search`, {
+        method: 'POST',
+        headers: adsHeaders(accessToken, developerToken, loginCustomerId),
+        body: JSON.stringify({ query: 'SELECT customer.id, customer.descriptive_name, customer.currency_code FROM customer LIMIT 1' }),
+      });
+      if (!res.ok) continue;
+      const data = (await res.json()) as { results?: { customer?: { id?: string; descriptiveName?: string; currencyCode?: string } }[] };
+      const c = data.results?.[0]?.customer;
+      if (c?.id) customers.push({ id: String(c.id), descriptiveName: c.descriptiveName ?? `Account ${c.id}`, currency: c.currencyCode ?? 'INR' });
+    } catch {
+      /* a manager or inaccessible account; skip */
+    }
+  }
+  return customers;
+}
+
+export interface AdsCampaignRow {
+  id: string;
+  name: string;
+  status: string;
+  impressions: number;
+  clicks: number;
+  costMicros: number;
+  conversions: number;
+}
+
+export async function adsCampaignReport(
+  accessToken: string,
+  developerToken: string,
+  customerId: string,
+  days: number,
+  loginCustomerId?: string,
+): Promise<AdsCampaignRow[]> {
+  const res = await fetch(`${ADS_API}/customers/${customerId}/googleAds:search`, {
+    method: 'POST',
+    headers: adsHeaders(accessToken, developerToken, loginCustomerId),
+    body: JSON.stringify({
+      query: `SELECT campaign.id, campaign.name, campaign.status, metrics.impressions, metrics.clicks, metrics.cost_micros, metrics.conversions FROM campaign WHERE segments.date DURING LAST_${days === 7 ? '7' : '30'}_DAYS AND campaign.status != 'REMOVED' ORDER BY metrics.cost_micros DESC LIMIT 25`,
+    }),
+  });
+  if (!res.ok) throw new AppError(400, 'google_ads_failed', `Google Ads: ${(await res.text()).slice(0, 200)}`);
+  const data = (await res.json()) as { results?: { campaign?: { id?: string; name?: string; status?: string }; metrics?: { impressions?: string; clicks?: string; costMicros?: string; conversions?: number } }[] };
+  return (data.results ?? []).map((r) => ({
+    id: String(r.campaign?.id ?? ''),
+    name: r.campaign?.name ?? '',
+    status: r.campaign?.status ?? '',
+    impressions: Number(r.metrics?.impressions ?? 0),
+    clicks: Number(r.metrics?.clicks ?? 0),
+    costMicros: Number(r.metrics?.costMicros ?? 0),
+    conversions: Number(r.metrics?.conversions ?? 0),
   }));
 }

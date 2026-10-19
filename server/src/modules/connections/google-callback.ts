@@ -33,6 +33,8 @@ googleCallbackRouter.get(
         google: 'connected',
         locations: String(result.locationsFound),
         sites: String(result.sitesFound),
+        properties: String(result.propertiesFound),
+        ads: String(result.adsFound),
         ...(result.businessProfileAvailable ? {} : { businessProfile: 'unavailable' }),
       });
     } catch (error) {

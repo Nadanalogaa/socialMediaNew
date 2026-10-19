@@ -18,6 +18,9 @@ Google's reviewers than a Gmail address).
    - Business Profile Performance API
    - Google Search Console API
    - YouTube Data API v3
+   - Google Analytics Admin API
+   - Google Analytics Data API
+   - Google Ads API *(for the Ads step below)*
 3. **APIs & Services → OAuth consent screen** (Google now calls it "Google Auth Platform → Branding"):
    - User type: **External**
    - App name: `PostReels` · Support email: admin@nadanaloga.com
@@ -28,6 +31,7 @@ Google's reviewers than a Gmail address).
    - Authorised domains: `nadanaloga.com`
    - Developer contact: admin@nadanaloga.com
    - **Scopes → Add**: `.../auth/business.manage`, `.../auth/webmasters.readonly`,
+     `.../auth/analytics.readonly`, `.../auth/adwords`,
      `.../auth/youtube.upload`, `.../auth/youtube.readonly`, plus `openid`, `email`, `profile`
    - **Test users**: add your own Google accounts (the ones that manage the academy's
      Business Profile). Until the app is verified, only test users can connect.
@@ -64,6 +68,28 @@ switches on per project after a short form:
    growing"), and that you are **not** a reseller.
 3. Google emails a decision; typically 1–2 weeks. Until then the app shows a
    friendly "pending" note on the Google tab and Search Console still works.
+
+## 3b. Google Ads developer token (for campaigns; days to weeks)
+
+Reporting and, later, "Promote this offer" go through the Google Ads API,
+which needs a developer token tied to a **manager account**:
+
+1. https://ads.google.com → create a **Manager account** (MCC) for PostReels
+   if you do not have one (free; it holds no campaigns itself).
+2. In the manager account → **Tools → API Center** → apply for a developer
+   token. It starts as *Test access*; apply for **Basic access** there with
+   the use case "a marketing tool for small businesses that creates and
+   reports on their own local search campaigns in their own Ads accounts".
+   Google checks the Cloud project's brand verification (same project as above).
+3. Put it on the server:
+
+```
+GOOGLE_ADS_DEVELOPER_TOKEN=<token>
+GOOGLE_ADS_LOGIN_CUSTOMER_ID=<manager account id, digits only>
+```
+
+Customers connect their own Ads account with the same Connect Google button;
+nothing is spent through PostReels — Google bills the customer directly.
 
 ## 4. Consent-screen verification (so anyone can connect)
 

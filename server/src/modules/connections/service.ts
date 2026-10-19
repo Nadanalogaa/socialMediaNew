@@ -311,7 +311,13 @@ export async function checkConnection(organizationId: string, connectionId: stri
   if (!row.accessTokenEncrypted) {
     status = 'expired';
     lastError = 'No access token stored. Reconnect this channel.';
-  } else if (row.provider === 'youtube_channel' || row.provider === 'google_business' || row.provider === 'google_search_console') {
+  } else if (
+    row.provider === 'youtube_channel' ||
+    row.provider === 'google_business' ||
+    row.provider === 'google_search_console' ||
+    row.provider === 'google_analytics' ||
+    row.provider === 'google_ads'
+  ) {
     try {
       // Refreshing proves the grant is alive; a revoked one fails here.
       const { getGoogleAccessToken } = await import('./google.js');

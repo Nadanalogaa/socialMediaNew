@@ -136,6 +136,7 @@ export function providerLabel(provider: string): string {
       google_ads: 'Google Ads',
       google_business: 'Google Business Profile',
       google_search_console: 'Google Search',
+      google_analytics: 'Google Analytics',
     }[provider] ?? provider
   );
 }

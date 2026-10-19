@@ -16,6 +16,7 @@ import { badRequest } from '../../lib/errors.js';
 import { logger } from '../../lib/logger.js';
 import { connection as redis } from '../../queue/index.js';
 import * as google from '../../integrations/google.js';
+import { env } from '../../lib/env.js';
 
 /** Long enough to sign in and choose an account, short enough to be useless if leaked. */
 const STATE_TTL_SECONDS = 600;
@@ -38,6 +39,8 @@ export interface GoogleConnectResult {
   accountEmail?: string;
   locationsFound: number;
   sitesFound: number;
+  propertiesFound: number;
+  adsFound: number;
   businessProfileAvailable: boolean;
   message?: string;
 }
@@ -113,6 +116,44 @@ export async function completeGoogleConnection(
     logger.warn({ organizationId, err: error }, 'Search Console listing unavailable');
   }
 
+  // Google Analytics 4 properties: what visitors do on the website.
+  let propertiesFound = 0;
+  try {
+    for (const p of await google.listAnalyticsProperties(tokens.accessToken)) {
+      await upsert({
+        organizationId,
+        provider: 'google_analytics',
+        externalId: p.name,
+        displayName: p.displayName,
+        tokens,
+        metadata: { account: p.account },
+      });
+      propertiesFound++;
+    }
+  } catch (error) {
+    logger.warn({ organizationId, err: error }, 'Analytics listing unavailable');
+  }
+
+  // Google Ads accounts, once the developer token exists.
+  let adsFound = 0;
+  if (env.GOOGLE_ADS_DEVELOPER_TOKEN) {
+    try {
+      for (const c of await google.listAdsCustomers(tokens.accessToken, env.GOOGLE_ADS_DEVELOPER_TOKEN, env.GOOGLE_ADS_LOGIN_CUSTOMER_ID)) {
+        await upsert({
+          organizationId,
+          provider: 'google_ads',
+          externalId: c.id,
+          displayName: c.descriptiveName,
+          tokens,
+          metadata: { currency: c.currency },
+        });
+        adsFound++;
+      }
+    } catch (error) {
+      logger.warn({ organizationId, err: error }, 'Ads listing unavailable');
+    }
+  }
+
   // Stored even with no locations: YouTube uses the same grant.
   await upsert({
     organizationId,
@@ -129,6 +170,8 @@ export async function completeGoogleConnection(
     accountEmail: identity.email,
     locationsFound: locations.length,
     sitesFound,
+    propertiesFound,
+    adsFound,
     businessProfileAvailable,
     message,
   };
@@ -136,7 +179,7 @@ export async function completeGoogleConnection(
 
 async function upsert(input: {
   organizationId: string;
-  provider: 'google_business' | 'youtube_channel' | 'google_search_console';
+  provider: 'google_business' | 'youtube_channel' | 'google_search_console' | 'google_analytics' | 'google_ads';
   externalId: string;
   displayName: string;
   avatarUrl?: string;

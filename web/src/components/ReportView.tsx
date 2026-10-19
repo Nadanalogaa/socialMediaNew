@@ -115,6 +115,65 @@ export function ReportView({ days, onClose }: { days: number; onClose: () => voi
               formatValue={compact}
             />
 
+            {data.google && (data.google.locations.length > 0 || data.google.sites.length > 0 || data.google.analytics.length > 0 || data.google.ads.length > 0) && (
+              <section className="space-y-3">
+                <h2 className="text-sm font-semibold text-slate-900">Google</h2>
+                {data.google.locations.map((l) => (
+                  <div key={l.title} className="rounded-lg border border-slate-200 p-3">
+                    <div className="flex items-baseline justify-between">
+                      <p className="text-sm font-medium text-slate-900">{l.title}</p>
+                      {!l.error && <p className="text-sm"><span className="font-semibold">{l.score}</span><span className="text-slate-400">/100 visibility</span></p>}
+                    </div>
+                    {l.error ? (
+                      <p className="text-xs text-slate-500">Business Profile data not available yet.</p>
+                    ) : (
+                      <p className="mt-1 text-xs text-slate-600">
+                        Reviews {l.reviews.average.toFixed(1)} ★ · {l.reviews.total} total · {l.reviews.unanswered} unanswered
+                        {l.performance && ` · Seen ${(l.performance.current.impressionsMaps + l.performance.current.impressionsSearch).toLocaleString('en-IN')} times · ${l.performance.current.calls} calls · ${l.performance.current.directions} directions · ${l.performance.current.websiteClicks} website clicks (28 days)`}
+                      </p>
+                    )}
+                  </div>
+                ))}
+                {data.google.sites.map((s) => (
+                  <div key={s.site} className="rounded-lg border border-slate-200 p-3">
+                    <p className="text-sm font-medium text-slate-900">Search · {s.site}</p>
+                    {s.error ? (
+                      <p className="text-xs text-slate-500">Search data not available.</p>
+                    ) : (
+                      <>
+                        <p className="mt-1 text-xs text-slate-600">{s.totals.clicks} clicks from Google ({s.totals.previousClicks} in the previous period) · {s.totals.impressions.toLocaleString('en-IN')} impressions</p>
+                        <ul className="mt-1 grid gap-x-4 text-xs text-slate-700 sm:grid-cols-2">
+                          {s.top.map((q) => (
+                            <li key={q.query} className="flex justify-between"><span className="truncate">{q.query}</span><span className="tabular-nums">#{q.position}</span></li>
+                          ))}
+                        </ul>
+                      </>
+                    )}
+                  </div>
+                ))}
+                {data.google.analytics.map((a) => (
+                  <div key={a.property} className="rounded-lg border border-slate-200 p-3">
+                    <p className="text-sm font-medium text-slate-900">Website · {a.property}</p>
+                    {a.current ? (
+                      <p className="mt-1 text-xs text-slate-600">{a.current.sessions.toLocaleString('en-IN')} visits · {a.current.users.toLocaleString('en-IN')} people · {a.current.keyEvents} enquiries{a.previous ? ` (previous period: ${a.previous.sessions} visits, ${a.previous.keyEvents} enquiries)` : ''}</p>
+                    ) : (
+                      <p className="text-xs text-slate-500">Analytics not available.</p>
+                    )}
+                  </div>
+                ))}
+                {data.google.ads.map((ad) => (
+                  <div key={ad.account} className="rounded-lg border border-slate-200 p-3">
+                    <p className="text-sm font-medium text-slate-900">Google Ads · {ad.account}</p>
+                    {ad.error ? (
+                      <p className="text-xs text-slate-500">Ads data not available.</p>
+                    ) : (
+                      <p className="mt-1 text-xs text-slate-600">{ad.totals.clicks} clicks · {ad.currency === 'INR' ? '₹' : ad.currency + ' '}{Math.round(ad.totals.costMicros / 1e6).toLocaleString('en-IN')} spent · {Math.round(ad.totals.conversions)} leads (30 days)</p>
+                    )}
+                  </div>
+                ))}
+              </section>
+            )}
+
             <section>
               <h2 className="mb-2 text-sm font-semibold text-slate-900">Best performing posts</h2>
               {data.topPosts.length === 0 ? (

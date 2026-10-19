@@ -15,6 +15,8 @@ export const PROVIDERS = [
   'google_business',
   /** A Search Console property: the queries a website ranks for. */
   'google_search_console',
+  /** A Google Analytics 4 property: what visitors do on the website. */
+  'google_analytics',
 ] as const;
 export type Provider = (typeof PROVIDERS)[number];
 
