@@ -27,7 +27,7 @@ export async function getHome(organizationId: string) {
       .where(
         and(
           eq(connections.organizationId, organizationId),
-          sql`(${connections.status} <> 'active' or (${connections.tokenExpiresAt} is not null and ${connections.tokenExpiresAt} < ${new Date(now.getTime() + 10 * DAY).toISOString()}::timestamptz))`,
+          sql`(${connections.status} <> 'active' or (${connections.refreshTokenEncrypted} is null and ${connections.tokenExpiresAt} is not null and ${connections.tokenExpiresAt} < ${new Date(now.getTime() + 10 * DAY).toISOString()}::timestamptz))`,
         ),
       ),
     db

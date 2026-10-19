@@ -217,7 +217,9 @@ export async function listConnections(organizationId: string) {
       avatarUrl: connections.avatarUrl,
       status: connections.status,
       lastError: connections.lastError,
-      tokenExpiresAt: connections.tokenExpiresAt,
+      // Only meaningful where nothing renews the token; Google renews with
+      // the refresh token, so its hourly expiry is not the user's concern.
+      tokenExpiresAt: sql<Date | null>`case when ${connections.refreshTokenEncrypted} is null then ${connections.tokenExpiresAt} else null end`,
       createdAt: connections.createdAt,
       lastCheckedAt: sql<string | null>`${connections.metadata}->>'lastCheckedAt'`,
     })

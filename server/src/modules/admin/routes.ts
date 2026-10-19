@@ -73,7 +73,13 @@ adminRouter.get(
     const [expiring] = await db
       .select({ total: count() })
       .from(connections)
-      .where(and(isNotNull(connections.tokenExpiresAt), lt(connections.tokenExpiresAt, new Date(now + 7 * DAY))));
+      .where(
+        and(
+          sql`${connections.refreshTokenEncrypted} is null`,
+          isNotNull(connections.tokenExpiresAt),
+          lt(connections.tokenExpiresAt, new Date(now + 7 * DAY)),
+        ),
+      );
     const [revenue] = await db
       .select({ total: sql<number>`coalesce(sum(${billingOrders.amountInPaise}), 0)::int` })
       .from(billingOrders)

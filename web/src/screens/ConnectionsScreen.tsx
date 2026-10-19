@@ -403,7 +403,18 @@ export function ConnectionsScreen() {
                 </div>
                 {(connection.status !== 'active' ||
                   (connection.tokenExpiresAt && daysUntil(connection.tokenExpiresAt) <= 10)) && (
-                  <Button onClick={handleConnect} disabled={busy || !sdkReady}>
+                  <Button
+                    onClick={() =>
+                      connection.provider.startsWith('google') || connection.provider === 'youtube_channel'
+                        ? void handleConnectGoogle()
+                        : handleConnect()
+                    }
+                    disabled={
+                      connection.provider.startsWith('google') || connection.provider === 'youtube_channel'
+                        ? googleBusy
+                        : busy || !sdkReady
+                    }
+                  >
                     Reconnect
                   </Button>
                 )}
