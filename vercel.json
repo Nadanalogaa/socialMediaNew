@@ -1,22 +1,10 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "buildCommand": "npm run build -w shared && npm run build -w web",
+  "buildCommand": "mkdir -p web/dist && echo '<!doctype html><meta http-equiv=\"refresh\" content=\"0;url=https://postreels.nadanaloga.com/\">' > web/dist/index.html",
+  "installCommand": "true",
   "outputDirectory": "web/dist",
-  "installCommand": "npm install --include=dev",
   "framework": null,
-  "functions": {
-    "api/index.ts": {
-      "memory": 1024,
-      "maxDuration": 60
-    }
-  },
-  "rewrites": [
-    { "source": "/api/(.*)", "destination": "/api/index" },
-    { "source": "/auth/(.*)", "destination": "/api/index" },
-    { "source": "/invite/(.*)", "destination": "/index.html" },
-    { "source": "/admin", "destination": "/index.html" },
-    { "source": "/(login|register|app|try)", "destination": "/index.html" },
-    { "source": "/privacy-policy.html", "destination": "/privacy.html" },
-    { "source": "/terms-of-service.html", "destination": "/terms.html" }
+  "redirects": [
+    { "source": "/(.*)", "destination": "https://postreels.nadanaloga.com/$1", "permanent": true }
   ]
 }
