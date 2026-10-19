@@ -4,7 +4,7 @@ Everything to paste into the Meta App Dashboard for the **SocialMedia** app
 (App ID in `.env.production` as `META_APP_ID`). Do the steps in order; each
 one is a form in the dashboard, and the text to paste is given verbatim.
 
-Replace `https://social-media-new-omega.vercel.app` with the brand domain
+Replace `https://postreels.nadanaloga.com` with the brand domain
 everywhere once it exists — the review is tied to the URLs you submit.
 
 ---
@@ -14,16 +14,16 @@ everywhere once it exists — the review is tied to the URLs you submit.
 | Item | Where | Status |
 |---|---|---|
 | Business Verification | business.facebook.com → Security Centre | **check: must say Verified** |
-| Privacy Policy URL | App settings → Basic | `https://social-media-new-omega.vercel.app/privacy-policy.html` |
-| Terms of Service URL | App settings → Basic | `https://social-media-new-omega.vercel.app/terms-of-service.html` |
-| User data deletion | App settings → Basic → "Data deletion instructions URL" | `https://social-media-new-omega.vercel.app/data-deletion.html` |
-| Deauthorize callback | Facebook Login for Business → Settings | `https://social-media-new-omega.vercel.app/api/webhooks/meta/deauthorize` |
+| Privacy Policy URL | App settings → Basic | `https://postreels.nadanaloga.com/privacy-policy.html` |
+| Terms of Service URL | App settings → Basic | `https://postreels.nadanaloga.com/terms-of-service.html` |
+| User data deletion | App settings → Basic → "Data deletion instructions URL" | `https://postreels.nadanaloga.com/data-deletion.html` |
+| Deauthorize callback | Facebook Login for Business → Settings | `https://postreels.nadanaloga.com/api/webhooks/meta/deauthorize` |
 | App icon (1024×1024) | App settings → Basic | upload `web/public/icon-512.png` scaled up, or your logo |
 | Category | App settings → Basic | **Business and pages** |
-| App domains | App settings → Basic | `social-media-new-omega.vercel.app` |
-| Website → Site URL | App settings → Basic → Add platform → Website | `https://social-media-new-omega.vercel.app/` |
-| Valid OAuth redirect URIs | Facebook Login for Business → Settings | `https://social-media-new-omega.vercel.app/` and `https://social-media-new-omega.vercel.app/app` |
-| Allowed domains for the JS SDK | Facebook Login for Business → Settings | `https://social-media-new-omega.vercel.app` |
+| App domains | App settings → Basic | `postreels.nadanaloga.com` |
+| Website → Site URL | App settings → Basic → Add platform → Website | `https://postreels.nadanaloga.com/` |
+| Valid OAuth redirect URIs | Facebook Login for Business → Settings | `https://postreels.nadanaloga.com/` and `https://postreels.nadanaloga.com/app` |
+| Allowed domains for the JS SDK | Facebook Login for Business → Settings | `https://postreels.nadanaloga.com` |
 | Login config "Nadanaloga" (ID 615765401252483) | Facebook Login for Business → Configurations | must include every permission below |
 | Instagram use case | Use cases → Add "Manage everything on your Page" / Instagram | needed for the `instagram_*` permissions |
 
@@ -34,7 +34,7 @@ Reviewers must be able to log in to **our app** and to a **Facebook account that
 **Our app (already created on the live site):**
 
 ```
-URL:      https://social-media-new-omega.vercel.app/login
+URL:      https://postreels.nadanaloga.com/login
 Email:    meta-reviewer@nadanaloga.com
 Password: Reviewer-cc60627bdb82
 ```
@@ -97,7 +97,7 @@ File → New Screen Recording), log in as the reviewer account, and narrate
 nothing — captions on screen are not needed; the flow must simply be obvious.
 
 **`connect.mp4`** (pages_show_list, business_management, instagram_basic)
-1. Open `https://social-media-new-omega.vercel.app/login`, sign in as `meta-reviewer@nadanaloga.com`.
+1. Open `https://postreels.nadanaloga.com/login`, sign in as `meta-reviewer@nadanaloga.com`.
 2. Settings → Channels → **Connect Facebook**.
 3. The Facebook dialog appears: log in as the Facebook test user, allow the permissions, choose the Page.
 4. The picker shows the Page with its Instagram account → **Connect**.
@@ -127,7 +127,7 @@ writes or designs a post, and publishes or schedules it. Afterwards it sees the
 engagement of those posts.
 
 Test login for our app:
-  https://social-media-new-omega.vercel.app/login
+  https://postreels.nadanaloga.com/login
   meta-reviewer@nadanaloga.com / Reviewer-cc60627bdb82
 
 Steps to test:
@@ -142,7 +142,7 @@ Each permission is used only for the Pages and Instagram accounts the user
 explicitly connected, only on the user's action (Publish / Schedule / view
 Analytics). Users can disconnect a channel at any time (Channels → Remove), which
 deletes the stored token, and can request deletion of all data at
-https://social-media-new-omega.vercel.app/data-deletion.html. Our deauthorize
+https://postreels.nadanaloga.com/data-deletion.html. Our deauthorize
 callback removes a user's tokens when they remove the app on Facebook.
 ```
 
