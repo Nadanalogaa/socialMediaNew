@@ -13,7 +13,6 @@ import { IdeasScreen } from './IdeasScreen';
 import { BrandScreen } from './BrandScreen';
 import { TeamScreen } from './TeamScreen';
 import { BillingScreen } from './BillingScreen';
-import { AdminScreen } from './AdminScreen';
 import { HomeScreen } from './HomeScreen';
 import { Badge, Card } from '../components/ui';
 
@@ -32,8 +31,8 @@ interface Props {
   /** A one-line message from the shell, e.g. the result of an invitation. */
   notice?: string | null;
   onDismissNotice?: () => void;
-  /** Platform admins stepping into a customer's workspace. */
-  onImpersonate?: (session: Session) => void;
+  /** Platform admins have a separate module at /admin. */
+  onOpenAdmin?: () => void;
   impersonating?: boolean;
   onStopImpersonating?: () => void;
 }
@@ -51,7 +50,6 @@ type TabKey =
   | 'brand'
   | 'team'
   | 'billing'
-  | 'admin'
   | 'whatsapp'
   | 'ads';
 
@@ -72,6 +70,19 @@ const TABS: { key: TabKey; label: string; icon: string; ready: boolean }[] = [
   { key: 'ads', label: 'Ads', icon: '◎', ready: false },
 ];
 
+/**
+ * The desktop header groups the tabs so it stays on one line: four things
+ * you do every day, and two menus for the rest.
+ */
+const NAV_GROUPS: { label: string; icon: string; items: TabKey[] }[] = [
+  { label: 'Home', icon: '⌂', items: ['home'] },
+  { label: 'Compose', icon: '✎', items: ['compose'] },
+  { label: 'Posts', icon: '☰', items: ['posts'] },
+  { label: 'Studio', icon: '▶', items: ['reels', 'creatives', 'library', 'ideas'] },
+  { label: 'Analytics', icon: '◳', items: ['analytics'] },
+  { label: 'Settings', icon: '⚙', items: ['channels', 'brand', 'team', 'billing', 'whatsapp', 'ads'] },
+];
+
 /** Shown in the mobile bar; the rest live behind "More". */
 const PRIMARY_MOBILE_TABS: TabKey[] = ['home', 'compose', 'reels', 'posts'];
 
@@ -86,11 +97,21 @@ export function DashboardScreen({
   onSessionChange,
   notice,
   onDismissNotice,
-  onImpersonate,
+  onOpenAdmin,
   impersonating,
   onStopImpersonating,
 }: Props) {
-  const isPlatformAdmin = Boolean(session.user.isPlatformAdmin);
+  const isPlatformAdmin = Boolean(session.user.isPlatformAdmin) && Boolean(onOpenAdmin);
+  const [openGroup, setOpenGroup] = useState<string | null>(null);
+
+  function selectTab(key: TabKey) {
+    setTab(key);
+    setOpenGroup(null);
+    if (key !== 'library') setOpenDesignId(undefined);
+    if (key === 'compose') setEditingPostId(undefined);
+    setPendingCaption(undefined);
+    setPendingBrief(undefined);
+  }
   const [tab, setTab] = useState<TabKey>('home');
   // Bumping this forces the posts list to refetch after a publish.
   const [postsKey, setPostsKey] = useState(0);
@@ -123,42 +144,63 @@ export function DashboardScreen({
             <OrganizationSwitcher session={session} onSwitch={handleSwitch} />
           </div>
 
-          <nav className="hidden min-w-0 flex-1 overflow-x-auto lg:block">
+          <nav className="hidden min-w-0 flex-1 lg:block" onMouseLeave={() => setOpenGroup(null)}>
             <ul className="flex gap-0.5">
-              {TABS.map((item) => (
-                <li key={item.key}>
-                  <button
-                    onClick={() => {
-                      setTab(item.key);
-                      if (item.key !== 'library') setOpenDesignId(undefined);
-                      if (item.key === 'compose') setEditingPostId(undefined);
-                      setPendingCaption(undefined);
-                      setPendingBrief(undefined);
-                    }}
-                    aria-current={tab === item.key ? 'page' : undefined}
-                    className={`flex items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-sm transition ${
-                      tab === item.key
-                        ? 'bg-brand-50 font-medium text-brand-700'
-                        : 'text-slate-600 hover:bg-slate-100'
-                    }`}
-                  >
-                    <span aria-hidden className="text-xs">
-                      {item.icon}
-                    </span>
-                    {item.label}
-                  </button>
-                </li>
-              ))}
+              {NAV_GROUPS.map((group) => {
+                const single = group.items.length === 1;
+                const activeInside = group.items.includes(tab);
+                const activeItem = TABS.find((t) => t.key === tab);
+                return (
+                  <li key={group.label} className="relative">
+                    <button
+                      onClick={() => (single ? selectTab(group.items[0]!) : setOpenGroup((g) => (g === group.label ? null : group.label)))}
+                      onMouseEnter={() => !single && setOpenGroup(group.label)}
+                      aria-current={activeInside ? 'page' : undefined}
+                      aria-haspopup={single ? undefined : 'menu'}
+                      className={`flex items-center gap-1.5 whitespace-nowrap rounded-lg px-2.5 py-1.5 text-sm transition ${
+                        activeInside ? 'bg-brand-50 font-medium text-brand-700' : 'text-slate-600 hover:bg-slate-100'
+                      }`}
+                    >
+                      <span aria-hidden className="text-xs">
+                        {group.icon}
+                      </span>
+                      {single ? group.label : activeInside && activeItem ? `${group.label} · ${activeItem.label}` : group.label}
+                      {!single && <span aria-hidden className="text-[10px] text-slate-400">▾</span>}
+                    </button>
+                    {!single && openGroup === group.label && (
+                      <ul role="menu" className="absolute left-0 top-full z-20 mt-1 min-w-44 rounded-xl border border-slate-200 bg-white p-1 shadow-lg">
+                        {group.items.map((key) => {
+                          const item = TABS.find((t) => t.key === key)!;
+                          return (
+                            <li key={key}>
+                              <button
+                                role="menuitem"
+                                onClick={() => selectTab(key)}
+                                className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-1.5 text-left text-sm ${
+                                  tab === key ? 'bg-brand-50 font-medium text-brand-700' : 'text-slate-700 hover:bg-slate-100'
+                                }`}
+                              >
+                                <span aria-hidden className="w-4 text-center text-xs">
+                                  {item.icon}
+                                </span>
+                                {item.label}
+                                {!item.ready && <span className="ml-auto text-[10px] text-slate-400">soon</span>}
+                              </button>
+                            </li>
+                          );
+                        })}
+                      </ul>
+                    )}
+                  </li>
+                );
+              })}
             </ul>
           </nav>
 
           {isPlatformAdmin && (
             <button
-              onClick={() => setTab('admin')}
-              aria-current={tab === 'admin' ? 'page' : undefined}
-              className={`ml-auto hidden shrink-0 rounded-lg px-2.5 py-1.5 text-sm lg:block ${
-                tab === 'admin' ? 'bg-amber-100 font-medium text-amber-900' : 'text-amber-800 hover:bg-amber-50'
-              }`}
+              onClick={onOpenAdmin}
+              className="ml-auto hidden shrink-0 rounded-lg border border-amber-300 bg-amber-50 px-2.5 py-1.5 text-sm text-amber-900 hover:bg-amber-100 lg:block"
             >
               ⚙ Admin
             </button>
@@ -253,7 +295,6 @@ export function DashboardScreen({
         {tab === 'brand' && <BrandScreen key={session.organization.id} />}
         {tab === 'team' && <TeamScreen key={session.organization.id} session={session} />}
         {tab === 'billing' && <BillingScreen key={session.organization.id} session={session} />}
-        {tab === 'admin' && isPlatformAdmin && onImpersonate && <AdminScreen onImpersonate={onImpersonate} />}
         {tab === 'channels' && <ConnectionsScreen key={session.organization.id} />}
         {tab === 'creatives' && (
           <CreativesScreen
@@ -301,18 +342,18 @@ export function DashboardScreen({
           label: item.label,
           icon: item.icon,
         }))}
-        overflow={TABS.filter((item) => !PRIMARY_MOBILE_TABS.includes(item.key)).map((item) => ({
-          key: item.key,
-          label: item.label,
-          icon: item.icon,
-        }))}
+        overflow={[
+          ...TABS.filter((item) => !PRIMARY_MOBILE_TABS.includes(item.key)).map((item) => ({
+            key: item.key,
+            label: item.label,
+            icon: item.icon,
+          })),
+          ...(isPlatformAdmin ? [{ key: 'admin', label: 'Admin', icon: '⚙' }] : []),
+        ]}
         active={tab}
         onSelect={(key) => {
-          setTab(key as TabKey);
-          if (key !== 'library') setOpenDesignId(undefined);
-          if (key === 'compose') setEditingPostId(undefined);
-          setPendingCaption(undefined);
-          setPendingBrief(undefined);
+          if (key === 'admin') return onOpenAdmin?.();
+          selectTab(key as TabKey);
         }}
         onSignOut={onSignOut}
       />

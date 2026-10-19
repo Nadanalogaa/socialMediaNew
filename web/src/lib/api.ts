@@ -330,6 +330,17 @@ export interface AdminOrganization {
   effectivePlan: { code: string; source: string };
 }
 
+export interface AdminUser {
+  id: string;
+  name: string;
+  email: string;
+  isPlatformAdmin: boolean;
+  lastLoginAt: string | null;
+  createdAt: string;
+  workspaces: number;
+  workspaceNames: string | null;
+}
+
 export interface AdminPayment {
   id: string;
   organizationId: string;
@@ -738,6 +749,9 @@ export const api = {
     request<{ plan: { plan: { code: string }; source: string } }>(`/admin/organizations/${id}`, { method: 'PATCH', body: JSON.stringify(input) }),
   adminImpersonate: (id: string) => request<Session>(`/admin/organizations/${id}/impersonate`, { method: 'POST' }),
   adminPayments: () => request<{ payments: AdminPayment[] }>('/admin/payments'),
+  adminUsers: (q = '') => request<{ users: AdminUser[] }>(`/admin/users${q ? `?q=${encodeURIComponent(q)}` : ''}`),
+  adminSetPlatformAdmin: (id: string, isPlatformAdmin: boolean) =>
+    request<{ id: string; isPlatformAdmin: boolean }>(`/admin/users/${id}`, { method: 'PATCH', body: JSON.stringify({ isPlatformAdmin }) }),
 
   // --- Home ---
   getHome: () =>

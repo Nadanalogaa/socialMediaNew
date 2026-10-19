@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { AuthScreen } from './screens/AuthScreen';
 import { DashboardScreen } from './screens/DashboardScreen';
+import { AdminShell } from './screens/AdminShell';
 import { api, clearSession, loadSession, onSessionExpired, saveSession, type Session } from './lib/api';
 
 /** The token from an /invite/<token> link, kept until the person is signed in. */
@@ -27,12 +28,26 @@ export default function App() {
   const [inviteToken, setInviteToken] = useState<string | null>(() => pendingInviteToken());
   /** The admin's own session, kept while they look at a customer's workspace. */
   const [adminSession, setAdminSession] = useState<Session | null>(null);
+  /** /admin is the platform module; everything else is the app. */
+  const [view, setView] = useState<'app' | 'admin'>(() => (window.location.pathname === '/admin' ? 'admin' : 'app'));
+
+  useEffect(() => {
+    const onPop = () => setView(window.location.pathname === '/admin' ? 'admin' : 'app');
+    window.addEventListener('popstate', onPop);
+    return () => window.removeEventListener('popstate', onPop);
+  }, []);
+
+  function go(next: 'app' | 'admin') {
+    window.history.pushState(null, '', next === 'admin' ? '/admin' : '/');
+    setView(next);
+  }
 
   function impersonate(target: Session) {
     if (!session) return;
     setAdminSession(session);
     saveSession(target);
     setSession(target);
+    go('app');
   }
 
   function stopImpersonating() {
@@ -40,6 +55,7 @@ export default function App() {
     saveSession(adminSession);
     setSession(adminSession);
     setAdminSession(null);
+    go('admin');
   }
   const [inviteNotice, setInviteNotice] = useState<string | null>(null);
 
@@ -77,6 +93,9 @@ export default function App() {
   }
 
   if (!session) return <AuthScreen onAuthenticated={setSession} inviteToken={inviteToken} />;
+  if (view === 'admin' && session.user.isPlatformAdmin && !adminSession) {
+    return <AdminShell session={session} onOpenApp={() => go('app')} onSignOut={handleSignOut} onImpersonate={impersonate} />;
+  }
   return (
     <DashboardScreen
       session={session}
@@ -84,7 +103,7 @@ export default function App() {
       onSessionChange={setSession}
       notice={inviteNotice}
       onDismissNotice={() => setInviteNotice(null)}
-      onImpersonate={impersonate}
+      onOpenAdmin={session.user.isPlatformAdmin ? () => go('admin') : undefined}
       impersonating={adminSession !== null}
       onStopImpersonating={stopImpersonating}
     />

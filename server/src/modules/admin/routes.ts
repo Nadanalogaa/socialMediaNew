@@ -31,6 +31,14 @@ import { getUsageSummary } from '../usage/service.js';
 
 export const adminRouter: Router = Router();
 
+/**
+ * Outer-row references for correlated subqueries. Drizzle writes a bare
+ * "id" when the outer select has no join, which Postgres then resolves to
+ * whichever inner table has an id column — so they are spelled out.
+ */
+const ORG_ID = sql.raw('"organizations"."id"');
+const USER_ID = sql.raw('"users"."id"');
+
 adminRouter.use(requireAuth, requirePlatformAdmin);
 
 const DAY = 86_400_000;
@@ -109,11 +117,11 @@ adminRouter.get(
         trialEndsAt: organizations.trialEndsAt,
         suspendedAt: organizations.suspendedAt,
         createdAt: organizations.createdAt,
-        members: sql<number>`(select count(*) from ${memberships} m where m.organization_id = ${organizations.id})::int`,
-        channels: sql<number>`(select count(*) from ${connections} c where c.organization_id = ${organizations.id})::int`,
-        posts30d: sql<number>`(select count(*) from ${posts} p where p.organization_id = ${organizations.id} and p.created_at > now() - interval '30 days')::int`,
-        lastActivity: sql<Date | null>`(select max(p.updated_at) from ${posts} p where p.organization_id = ${organizations.id})`,
-        ownerEmail: sql<string | null>`(select u.email from ${memberships} m join ${users} u on u.id = m.user_id where m.organization_id = ${organizations.id} and m.role = 'owner' order by m.created_at limit 1)`,
+        members: sql<number>`(select count(*) from ${memberships} m where m.organization_id = ${ORG_ID})::int`,
+        channels: sql<number>`(select count(*) from ${connections} c where c.organization_id = ${ORG_ID})::int`,
+        posts30d: sql<number>`(select count(*) from ${posts} p where p.organization_id = ${ORG_ID} and p.created_at > now() - interval '30 days')::int`,
+        lastActivity: sql<Date | null>`(select max(p.updated_at) from ${posts} p where p.organization_id = ${ORG_ID})`,
+        ownerEmail: sql<string | null>`(select u.email from ${memberships} m join ${users} u on u.id = m.user_id where m.organization_id = ${ORG_ID} and m.role = 'owner' order by m.created_at limit 1)`,
         periodEnd: subscriptions.currentPeriodEnd,
         subscriptionStatus: subscriptions.status,
       })
@@ -123,7 +131,7 @@ adminRouter.get(
         q
           ? or(
               ilike(organizations.name, `%${q}%`),
-              sql`exists (select 1 from ${memberships} m join ${users} u on u.id = m.user_id where m.organization_id = ${organizations.id} and u.email ilike ${'%' + q + '%'})`,
+              sql`exists (select 1 from ${memberships} m join ${users} u on u.id = m.user_id where m.organization_id = ${ORG_ID} and u.email ilike ${'%' + q + '%'})`,
             )
           : undefined,
       )
@@ -272,6 +280,56 @@ adminRouter.post(
       organization: { ...org, role: owner.role },
       organizations: [{ ...org, role: owner.role }],
     });
+  }),
+);
+
+adminRouter.get(
+  '/users',
+  asyncHandler(async (req, res) => {
+    const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+    const rows = await db
+      .select({
+        id: users.id,
+        name: users.name,
+        email: users.email,
+        isPlatformAdmin: users.isPlatformAdmin,
+        lastLoginAt: users.lastLoginAt,
+        createdAt: users.createdAt,
+        workspaces: sql<number>`(select count(*) from ${memberships} m where m.user_id = ${USER_ID})::int`,
+        workspaceNames: sql<string | null>`(select string_agg(o.name, ', ' order by m.created_at) from ${memberships} m join ${organizations} o on o.id = m.organization_id where m.user_id = ${USER_ID})`,
+      })
+      .from(users)
+      .where(q ? or(ilike(users.email, `%${q}%`), ilike(users.name, `%${q}%`)) : undefined)
+      .orderBy(desc(users.createdAt))
+      .limit(200);
+    res.json({ users: rows });
+  }),
+);
+
+/** Grants or removes platform-admin rights; an admin cannot demote themselves. */
+adminRouter.patch(
+  '/users/:id',
+  validate(idParamSchema, 'params'),
+  asyncHandler(async (req, res) => {
+    const id = String(req.params.id);
+    const isPlatformAdmin = Boolean((req.body as { isPlatformAdmin?: boolean }).isPlatformAdmin);
+    if (id === req.auth!.userId && !isPlatformAdmin) {
+      return res.status(409).json({ error: { code: 'conflict', message: 'You cannot remove your own admin rights.' } });
+    }
+    const [updated] = await db
+      .update(users)
+      .set({ isPlatformAdmin, updatedAt: new Date() })
+      .where(eq(users.id, id))
+      .returning({ id: users.id, isPlatformAdmin: users.isPlatformAdmin });
+    if (!updated) throw notFound('User not found');
+    await db.insert(auditLogs).values({
+      userId: req.auth!.userId,
+      action: isPlatformAdmin ? 'admin.user.promoted' : 'admin.user.demoted',
+      targetType: 'user',
+      targetId: id,
+      metadata: {},
+    });
+    res.json(updated);
   }),
 );
 

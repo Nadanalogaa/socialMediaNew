@@ -1,19 +1,28 @@
 import { useCallback, useEffect, useState } from 'react';
 import { PLANS } from '@socialboost/shared';
-import { ApiError, api, type AdminOrganization, type AdminOverview, type AdminPayment, type Session } from '../lib/api';
+import { ApiError, api, type AdminOrganization, type AdminOverview, type AdminPayment, type AdminUser, type Session } from '../lib/api';
 import { rupees } from '../lib/money';
 import { Alert, Badge, Button, Card, EmptyState, Spinner } from '../components/ui';
 import { StatTile } from '../components/charts';
 
-type Tab = 'overview' | 'customers' | 'payments';
+export type AdminTab = 'overview' | 'customers' | 'users' | 'payments';
 
 /**
  * The platform admin portal: every workspace, what they pay, how they use
  * the service, and the levers to help them.
  */
-export function AdminScreen({ onImpersonate }: { onImpersonate: (session: Session) => void }) {
-  const [tab, setTab] = useState<Tab>('overview');
+export function AdminScreen({
+  tab,
+  session,
+  onImpersonate,
+}: {
+  tab: AdminTab;
+  session: Session;
+  onImpersonate: (session: Session) => void;
+}) {
   const [overview, setOverview] = useState<AdminOverview | null>(null);
+  const [usersList, setUsersList] = useState<AdminUser[] | null>(null);
+  const [uq, setUq] = useState('');
   const [orgs, setOrgs] = useState<AdminOrganization[] | null>(null);
   const [payments, setPayments] = useState<AdminPayment[] | null>(null);
   const [q, setQ] = useState('');
@@ -41,27 +50,99 @@ export function AdminScreen({ onImpersonate }: { onImpersonate: (session: Sessio
     return () => clearTimeout(t);
   }, [q, loadOrgs]);
 
+  const loadUsers = useCallback(async (query: string) => {
+    try {
+      const { users } = await api.adminUsers(query);
+      setUsersList(users);
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not load users.');
+      setUsersList([]);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (tab !== 'users') return;
+    const t = setTimeout(() => void loadUsers(uq), 250);
+    return () => clearTimeout(t);
+  }, [tab, uq, loadUsers]);
+
+  const TITLES: Record<AdminTab, [string, string]> = {
+    overview: ['Overview', 'How the service is doing today.'],
+    customers: ['Customers', 'Every workspace: plan, people, channels and activity.'],
+    users: ['Users', 'Every account, and who can administer the platform.'],
+    payments: ['Payments', 'Every Razorpay order.'],
+  };
+
   return (
     <div className="mx-auto max-w-6xl space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <h2 className="text-lg font-semibold text-slate-900">Platform admin</h2>
-          <p className="mt-0.5 text-sm text-slate-600">Every customer workspace, across the whole service.</p>
-        </div>
-        <div className="flex rounded-lg border border-slate-300 p-0.5 text-sm">
-          {(['overview', 'customers', 'payments'] as Tab[]).map((t) => (
-            <button
-              key={t}
-              onClick={() => setTab(t)}
-              className={`rounded-md px-3 py-1 capitalize ${tab === t ? 'bg-brand-600 text-white' : 'text-slate-600 hover:bg-slate-100'}`}
-            >
-              {t}
-            </button>
-          ))}
-        </div>
+      <div>
+        <h2 className="text-lg font-semibold text-slate-900">{TITLES[tab][0]}</h2>
+        <p className="mt-0.5 text-sm text-slate-600">{TITLES[tab][1]}</p>
       </div>
 
       {error && <Alert>{error}</Alert>}
+
+      {tab === 'users' && (
+        <>
+          <input
+            value={uq}
+            onChange={(e) => setUq(e.target.value)}
+            placeholder="Search by name or email"
+            className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm outline-none focus:border-brand-500"
+          />
+          {usersList === null ? (
+            <Spinner />
+          ) : (
+            <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white">
+              <table className="w-full text-sm">
+                <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+                  <tr>
+                    <th className="px-3 py-2">User</th>
+                    <th className="px-3 py-2">Workspaces</th>
+                    <th className="px-3 py-2">Last sign-in</th>
+                    <th className="px-3 py-2">Joined</th>
+                    <th className="px-3 py-2">Platform admin</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {usersList.map((u) => (
+                    <tr key={u.id}>
+                      <td className="px-3 py-2">
+                        <p className="font-medium text-slate-900">{u.name}</p>
+                        <p className="text-xs text-slate-500">{u.email}</p>
+                      </td>
+                      <td className="px-3 py-2 text-xs text-slate-700">
+                        {u.workspaces} · {u.workspaceNames ?? '—'}
+                      </td>
+                      <td className="px-3 py-2 text-xs text-slate-500">{u.lastLoginAt ? new Date(u.lastLoginAt).toLocaleString() : '—'}</td>
+                      <td className="px-3 py-2 text-xs text-slate-500">{new Date(u.createdAt).toLocaleDateString()}</td>
+                      <td className="px-3 py-2">
+                        <label className="flex items-center gap-2 text-xs">
+                          <input
+                            type="checkbox"
+                            checked={u.isPlatformAdmin}
+                            disabled={u.id === session.user.id}
+                            onChange={(e) => {
+                              const next = e.target.checked;
+                              if (next && !confirm(`Make ${u.email} a platform admin? They will see every customer.`)) return;
+                              api
+                                .adminSetPlatformAdmin(u.id, next)
+                                .then(() => loadUsers(uq))
+                                .catch((err) => setError(err instanceof ApiError ? err.message : 'Could not update.'));
+                            }}
+                            className="h-4 w-4 accent-brand-600"
+                          />
+                          {u.isPlatformAdmin ? <Badge tone="warning">admin</Badge> : <span className="text-slate-500">no</span>}
+                        </label>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </>
+      )}
 
       {tab === 'overview' &&
         (overview ? (
