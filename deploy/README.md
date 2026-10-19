@@ -64,7 +64,7 @@ In **Nginx Proxy Manager → Hosts → Proxy Hosts → Add**:
 
 | Field | Value |
 |---|---|
-| Domain names | `social.nadanaloga.com` (your choice) |
+| Domain names | `postreels.nadanaloga.com` (your choice) |
 | Scheme / Forward host / port | `http` / `socialboost-api` / `3001` |
 | Websockets support | on |
 | Block common exploits | on |
