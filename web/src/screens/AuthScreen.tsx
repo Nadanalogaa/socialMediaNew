@@ -7,11 +7,15 @@ interface Props {
   inviteToken?: string | null;
   /** The platform admin sign-in: no sign-up, and only admin accounts get through. */
   adminMode?: boolean;
+  /** Which form opens first; the toggle still switches between them. */
+  initialMode?: 'login' | 'register';
+  /** Takes the person back to the website. */
+  onBack?: () => void;
 }
 
 /** Sign-in and sign-up share one screen; the toggle only changes two fields. */
-export function AuthScreen({ onAuthenticated, inviteToken, adminMode = false }: Props) {
-  const [mode, setMode] = useState<'login' | 'register'>('login');
+export function AuthScreen({ onAuthenticated, inviteToken, adminMode = false, initialMode = 'login', onBack }: Props) {
+  const [mode, setMode] = useState<'login' | 'register'>(initialMode);
   const [invite, setInvite] = useState<InvitationPreview | null>(null);
 
   useEffect(() => {
@@ -156,7 +160,7 @@ export function AuthScreen({ onAuthenticated, inviteToken, adminMode = false }: 
         {adminMode ? (
           <p className="mt-5 text-center text-sm text-slate-600">
             <a href="/" className="font-medium text-brand-600 hover:underline">
-              Go to the app
+              Go to the website
             </a>
           </p>
         ) : (
@@ -173,6 +177,14 @@ export function AuthScreen({ onAuthenticated, inviteToken, adminMode = false }: 
           >
             {isRegister ? 'Sign in' : 'Sign up'}
           </button>
+          {onBack && (
+            <>
+              {' · '}
+              <button type="button" onClick={onBack} className="text-slate-500 hover:underline">
+                Back to website
+              </button>
+            </>
+          )}
         </p>
         )}
       </div>

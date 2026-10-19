@@ -15,6 +15,7 @@
     { "source": "/auth/(.*)", "destination": "/api/index" },
     { "source": "/invite/(.*)", "destination": "/index.html" },
     { "source": "/admin", "destination": "/index.html" },
+    { "source": "/(login|register|app)", "destination": "/index.html" },
     { "source": "/privacy-policy.html", "destination": "/privacy.html" },
     { "source": "/terms-of-service.html", "destination": "/terms.html" }
   ]

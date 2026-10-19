@@ -2,7 +2,7 @@
   "name": "SocialBoost",
   "short_name": "SocialBoost",
   "description": "Create and publish posts, reels and ads across every channel.",
-  "start_url": "/",
+  "start_url": "/app",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait",

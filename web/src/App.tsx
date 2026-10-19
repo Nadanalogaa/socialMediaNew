@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { AuthScreen } from './screens/AuthScreen';
 import { DashboardScreen } from './screens/DashboardScreen';
 import { AdminShell } from './screens/AdminShell';
+import { LandingScreen } from './screens/LandingScreen';
 import {
   api,
   clearSession,
@@ -34,6 +35,16 @@ function pendingInviteToken(): string | null {
 type View = 'app' | 'admin';
 const viewFromUrl = (): View => (window.location.pathname.startsWith('/admin') ? 'admin' : 'app');
 
+/** The public pages: the website, and the two sign-in forms. */
+type Page = 'site' | 'login' | 'register' | 'app';
+function pageFromUrl(): Page {
+  const path = window.location.pathname;
+  if (path === '/login') return 'login';
+  if (path === '/register') return 'register';
+  if (path === '/' || path === '') return 'site';
+  return 'app';
+}
+
 /** Reads the session stored for a view without disturbing the active scope. */
 function sessionFor(view: View): Session | null {
   setSessionScope(view);
@@ -52,6 +63,7 @@ function sessionFor(view: View): Session | null {
  */
 export default function App() {
   const [view, setView] = useState<View>(viewFromUrl);
+  const [page, setPage] = useState<Page>(pageFromUrl);
   const [session, setSession] = useState<Session | null>(() => sessionFor('app'));
   const [adminSession, setAdminSession] = useState<Session | null>(() => sessionFor('admin'));
   const [inviteToken, setInviteToken] = useState<string | null>(() => pendingInviteToken());
@@ -66,15 +78,25 @@ export default function App() {
   }, [view]);
 
   useEffect(() => {
-    const onPop = () => setView(viewFromUrl());
+    const onPop = () => {
+      setView(viewFromUrl());
+      setPage(pageFromUrl());
+    };
     window.addEventListener('popstate', onPop);
     return () => window.removeEventListener('popstate', onPop);
   }, []);
 
   function go(next: View) {
-    window.history.pushState(null, '', next === 'admin' ? '/admin' : '/');
+    window.history.pushState(null, '', next === 'admin' ? '/admin' : '/app');
     setSessionScope(next);
     setView(next);
+    setPage('app');
+  }
+
+  function goPage(next: Page) {
+    window.history.pushState(null, '', next === 'site' ? '/' : `/${next}`);
+    setPage(next);
+    setView('app');
   }
 
   function impersonate(target: Session) {
@@ -116,6 +138,12 @@ export default function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session?.user.id, inviteToken, view]);
 
+  // Signed in already: the forms have nothing to do, so they lead into the app.
+  useEffect(() => {
+    if (session && (page === 'login' || page === 'register')) goPage('app');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session, page]);
+
   // Return to the sign-in screen when a session ends, rather than leaving a
   // dashboard on screen whose every action would fail.
   useEffect(
@@ -131,9 +159,12 @@ export default function App() {
     setSessionScope(which);
     const current = which === 'admin' ? adminSession : session;
     if (which === 'admin') setAdminSession(null);
-    else setSession(null);
+    else {
+      setSession(null);
+      goPage('site');
+    }
     clearSession();
-    setSessionScope(view);
+    setSessionScope(which === 'admin' ? 'admin' : viewFromUrl());
     // Best-effort revocation; the local session is already gone either way.
     if (current?.refreshToken) await api.logout(current.refreshToken).catch(() => undefined);
   }
@@ -159,7 +190,32 @@ export default function App() {
     );
   }
 
-  if (!session) return <AuthScreen onAuthenticated={setSession} inviteToken={inviteToken} />;
+  // The website, and the sign-in / sign-up pages. An invitation link skips
+  // the website and goes straight to the form.
+  if (page === 'site' && !inviteToken) {
+    return (
+      <LandingScreen
+        signedIn={session !== null}
+        onSignIn={() => goPage('login')}
+        onRegister={() => goPage('register')}
+        onOpenApp={() => goPage('app')}
+      />
+    );
+  }
+  if (!session) {
+    return (
+      <AuthScreen
+        key={page}
+        initialMode={page === 'register' ? 'register' : 'login'}
+        onAuthenticated={(s) => {
+          setSession(s);
+          goPage('app');
+        }}
+        inviteToken={inviteToken}
+        onBack={() => goPage('site')}
+      />
+    );
+  }
   return (
     <DashboardScreen
       session={session}
