@@ -53,6 +53,8 @@ export interface AnalyticsReport {
   period: { from: string; to: string };
   current: google.AnalyticsSummary | null;
   previous: google.AnalyticsSummary | null;
+  /** The tag the website must carry, and whether it was found there. */
+  tag: { measurementId: string; siteUrl: string; installed: boolean | null } | null;
   error: string | null;
 }
 
@@ -174,15 +176,21 @@ export async function analyticsReport(organizationId: string, connectionId: stri
   const base = { connectionId: row.id, property: row.displayName, period: { from: isoDay(from), to: isoDay(to) } };
   try {
     const token = await getGoogleAccessToken(organizationId, row.id);
-    const [current, previous] = await Promise.all([
+    const [current, previous, stream] = await Promise.all([
       google.analyticsSummary(token, row.externalId, isoDay(from), isoDay(to)),
       google.analyticsSummary(token, row.externalId, isoDay(prevFrom), isoDay(prevTo)),
+      google.analyticsStream(token, row.externalId).catch(() => null),
     ]);
-    return { ...base, current, previous, error: null };
+    // Only worth checking the site when there is nothing to show: a tag that
+    // reports visits is obviously installed.
+    const tag = stream
+      ? { ...stream, installed: current.sessions > 0 ? true : await google.tagInstalled(stream.siteUrl, stream.measurementId) }
+      : null;
+    return { ...base, current, previous, tag, error: null };
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     logger.warn({ err: error, connectionId }, 'Analytics report failed');
-    return { ...base, current: null, previous: null, error: message };
+    return { ...base, current: null, previous: null, tag: null, error: message };
   }
 }
 

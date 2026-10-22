@@ -119,6 +119,44 @@ export function GoogleScreen({ onConnect }: { onConnect: () => void }) {
             <p className="mt-2 text-xs text-amber-900">{a.error}</p>
           ) : a.current ? (
             <>
+              {a.tag && a.tag.installed === false && (
+                <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50/70 p-3 text-xs text-slate-800">
+                  <p className="font-medium text-amber-900">
+                    The Analytics tag is not on {a.tag.siteUrl || 'the website'} yet — so nothing is being counted.
+                  </p>
+                  <p className="mt-1">
+                    Paste this just before <code>&lt;/head&gt;</code> on every page (or send it to whoever manages the website). Numbers start within a day.
+                  </p>
+                  <pre className="mt-2 overflow-x-auto rounded bg-white p-2 font-mono text-[11px] leading-snug text-slate-800">{`<script async src="https://www.googletagmanager.com/gtag/js?id=${a.tag.measurementId}"></script>
+<script>
+  window.dataLayer = window.dataLayer || [];
+  function gtag(){dataLayer.push(arguments);}
+  gtag('js', new Date());
+  gtag('config', '${a.tag.measurementId}');
+</script>`}</pre>
+                  <div className="mt-2 flex flex-wrap gap-3">
+                    <button
+                      onClick={() =>
+                        void navigator.clipboard?.writeText(
+                          `<script async src="https://www.googletagmanager.com/gtag/js?id=${a.tag!.measurementId}"></script>\n<script>\n  window.dataLayer = window.dataLayer || [];\n  function gtag(){dataLayer.push(arguments);}\n  gtag('js', new Date());\n  gtag('config', '${a.tag!.measurementId}');\n</script>`,
+                        )
+                      }
+                      className="text-brand-600 hover:underline"
+                    >
+                      Copy snippet
+                    </button>
+                    <a
+                      href={`https://wa.me/?text=${encodeURIComponent(`Please add this Google Analytics tag to ${a.tag.siteUrl} before </head> on every page. Measurement ID: ${a.tag.measurementId}. Snippet: https://support.google.com/analytics/answer/9304153`)}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-brand-600 hover:underline"
+                    >
+                      Send to web developer
+                    </a>
+                    <span className="text-slate-500">Measurement ID {a.tag.measurementId}</span>
+                  </div>
+                </div>
+              )}
               <div className="mt-2 grid grid-cols-2 gap-2 sm:grid-cols-4">
                 {(
                   [

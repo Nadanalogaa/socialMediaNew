@@ -458,6 +458,7 @@ export interface GoogleAnalyticsReport {
   period: { from: string; to: string };
   current: GoogleAnalyticsSummary | null;
   previous: GoogleAnalyticsSummary | null;
+  tag: { measurementId: string; siteUrl: string; installed: boolean | null } | null;
   error: string | null;
 }
 

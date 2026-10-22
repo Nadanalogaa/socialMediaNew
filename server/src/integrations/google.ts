@@ -546,6 +546,29 @@ export async function listAnalyticsProperties(accessToken: string): Promise<Anal
   return out;
 }
 
+/** The web data stream's measurement id ("G-…") and the site it is for. */
+export async function analyticsStream(accessToken: string, property: string): Promise<{ measurementId: string; siteUrl: string } | null> {
+  const data = await googleRequest<{ dataStreams?: { type?: string; webStreamData?: { measurementId?: string; defaultUri?: string } }[] }>(
+    `https://analyticsadmin.googleapis.com/v1beta/${property}/dataStreams`,
+    accessToken,
+  );
+  const web = (data.dataStreams ?? []).find((s) => s.type === 'WEB_DATA_STREAM' && s.webStreamData?.measurementId);
+  return web ? { measurementId: web.webStreamData!.measurementId!, siteUrl: web.webStreamData!.defaultUri ?? '' } : null;
+}
+
+/** Whether the site's home page carries this measurement id (or any gtag/GTM). */
+export async function tagInstalled(siteUrl: string, measurementId: string): Promise<boolean | null> {
+  if (!siteUrl) return null;
+  try {
+    const url = siteUrl.startsWith('http') ? siteUrl : `https://${siteUrl}`;
+    const res = await fetch(url, { redirect: 'follow', signal: AbortSignal.timeout(8000), headers: { 'User-Agent': 'PostReels tag check' } });
+    const html = await res.text();
+    return html.includes(measurementId) || /googletagmanager\.com\/(gtag\/js|gtm\.js)/.test(html);
+  } catch {
+    return null;
+  }
+}
+
 export interface AnalyticsSummary {
   sessions: number;
   users: number;
