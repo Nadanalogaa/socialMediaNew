@@ -189,12 +189,16 @@ inboxRouter.post(
   requireRole('owner', 'admin', 'member'),
   validate(suggestSchema),
   asyncHandler(async (req, res) => {
-    if (!features.ai) throw badRequest('AI suggestions are not enabled on this service.');
     const brand = await getBrand(req.tenant!.organizationId);
-    const reply = await gemini.suggestCommentReply(
-      { name: brand.name, industry: brand.industry, description: brand.description, toneOfVoice: brand.toneOfVoice, targetAudience: brand.targetAudience },
-      req.body as z.infer<typeof suggestSchema>,
-    );
-    res.json({ reply });
+    const context = { name: brand.name, industry: brand.industry, description: brand.description, toneOfVoice: brand.toneOfVoice, targetAudience: brand.targetAudience };
+    const input = req.body as z.infer<typeof suggestSchema>;
+    if (features.ai) {
+      try {
+        return res.json({ reply: await gemini.suggestCommentReply(context, input), source: 'ai' });
+      } catch (error) {
+        logger.warn({ err: error }, 'AI comment reply failed; using the template');
+      }
+    }
+    res.json({ reply: gemini.templateCommentReply(context, input), source: 'template' });
   }),
 );

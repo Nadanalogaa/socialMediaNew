@@ -33,14 +33,15 @@ googleRouter.post(
   requireRole('owner', 'admin', 'member'),
   validate(suggestSchema),
   asyncHandler(async (req, res) => {
-    res.json({ reply: await service.suggestReviewReply(req.tenant!.organizationId, req.body as z.infer<typeof suggestSchema>) });
+    res.json(await service.suggestReviewReply(req.tenant!.organizationId, req.body as z.infer<typeof suggestSchema>));
   }),
 );
 
 googleRouter.get(
   '/overview',
   asyncHandler(async (req, res) => {
-    res.json({ configured: features.google, ai: features.ai, places: features.places, ...(await service.overview(req.tenant!.organizationId)) });
+    // Suggestions always exist (templates at worst), so the button always shows.
+    res.json({ configured: features.google, ai: true, aiProvider: features.ai, places: features.places, ...(await service.overview(req.tenant!.organizationId)) });
   }),
 );
 

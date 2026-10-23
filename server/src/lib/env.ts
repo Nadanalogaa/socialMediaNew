@@ -33,6 +33,8 @@ const envSchema = z.object({
     .regex(/^[0-9a-fA-F]{64}$/, 'TOKEN_ENCRYPTION_KEY must be 64 hex characters (32 bytes)'),
 
   GEMINI_API_KEY: z.string().optional(),
+  /** Groq's free tier (Llama); used before Gemini when both exist. */
+  GROQ_API_KEY: z.string().optional(),
 
   META_APP_ID: z.string().optional(),
   META_APP_SECRET: z.string().optional(),
@@ -78,7 +80,7 @@ export const isProduction = env.NODE_ENV === 'production';
 
 /** Feature availability, so routes can 503 clearly instead of failing obscurely. */
 export const features = {
-  ai: Boolean(env.GEMINI_API_KEY),
+  ai: Boolean(env.GROQ_API_KEY || env.GEMINI_API_KEY),
   meta: Boolean(env.META_APP_ID && env.META_APP_SECRET),
   cloudinary: Boolean(
     env.CLOUDINARY_CLOUD_NAME && env.CLOUDINARY_API_KEY && env.CLOUDINARY_API_SECRET,

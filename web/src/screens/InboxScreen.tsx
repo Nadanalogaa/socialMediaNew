@@ -20,7 +20,8 @@ export function InboxScreen() {
   const [suggesting, setSuggesting] = useState<string | null>(null);
 
   useEffect(() => {
-    void getFeatures().then((f) => setAi(f.ai));
+    // Drafts always exist (a template when no AI provider is configured).
+    void getFeatures().then(() => setAi(true));
   }, []);
 
   async function suggest(thread: InboxThread, comment: { id: string; authorName: string; message: string }) {

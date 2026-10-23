@@ -314,10 +314,17 @@ export async function competitors(organizationId: string, connectionId: string):
 
 // --- AI suggestions -----------------------------------------------------------------
 
-export async function suggestReviewReply(organizationId: string, review: { reviewer: string; rating: number; comment: string }): Promise<string> {
-  if (!features.ai) throw serviceUnavailable('AI suggestions are not enabled on this service.');
+export async function suggestReviewReply(organizationId: string, review: { reviewer: string; rating: number; comment: string }): Promise<{ reply: string; source: 'ai' | 'template' }> {
   const brand = await getBrand(organizationId);
-  return gemini.suggestReviewReply({ name: brand.name, industry: brand.industry, description: brand.description, toneOfVoice: brand.toneOfVoice, targetAudience: brand.targetAudience }, review);
+  const context = { name: brand.name, industry: brand.industry, description: brand.description, toneOfVoice: brand.toneOfVoice, targetAudience: brand.targetAudience };
+  if (features.ai) {
+    try {
+      return { reply: await gemini.suggestReviewReply(context, review), source: 'ai' };
+    } catch (error) {
+      logger.warn({ err: error }, 'AI reply failed; using the template');
+    }
+  }
+  return { reply: gemini.templateReviewReply(context, review), source: 'template' };
 }
 
 export async function analyticsReport(organizationId: string, connectionId: string): Promise<AnalyticsReport> {
