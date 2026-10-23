@@ -18,7 +18,8 @@ export function activeProvider(): Provider | null {
   return null;
 }
 
-const GROQ_MODEL = 'llama-3.3-70b-versatile';
+/** Groq retires model names without notice; the first that exists is used. */
+const GROQ_MODELS = ['openai/gpt-oss-120b', 'openai/gpt-oss-20b', 'qwen/qwen3.8-27b'];
 const GEMINI_MODEL = 'gemini-3.8-flash';
 
 function toAppError(provider: Provider, status: number, body: string): AppError {
@@ -34,26 +35,36 @@ export async function generateText(system: string, prompt: string, options: { js
   if (!provider) throw serviceUnavailable('No AI provider is configured.');
 
   if (provider === 'groq') {
-    const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
-      method: 'POST',
-      headers: { Authorization: `Bearer ${env.GROQ_API_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        model: GROQ_MODEL,
-        messages: [
-          { role: 'system', content: system },
-          { role: 'user', content: prompt },
-        ],
-        temperature: 0.7,
-        max_tokens: 800,
-        ...(options.json ? { response_format: { type: 'json_object' } } : {}),
-      }),
-    });
-    const text = await response.text();
-    if (!response.ok) throw toAppError('groq', response.status, text);
-    const data = JSON.parse(text) as { choices?: { message?: { content?: string } }[] };
-    const content = data.choices?.[0]?.message?.content?.trim();
-    if (!content) throw new Error('The AI returned an empty response.');
-    return content;
+    let lastError: AppError | null = null;
+    for (const model of GROQ_MODELS) {
+      const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${env.GROQ_API_KEY}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          model,
+          messages: [
+            { role: 'system', content: `${system}\nOutput only the requested text.` },
+            { role: 'user', content: prompt },
+          ],
+          temperature: 0.7,
+          max_tokens: 900,
+          // These models think before answering; a little is enough for copy.
+          reasoning_effort: 'low',
+          ...(options.json ? { response_format: { type: 'json_object' } } : {}),
+        }),
+      });
+      const text = await response.text();
+      if (response.status === 404 || (response.status === 400 && /model_not_found|does not exist/.test(text))) {
+        lastError = toAppError('groq', response.status, text);
+        continue;
+      }
+      if (!response.ok) throw toAppError('groq', response.status, text);
+      const data = JSON.parse(text) as { choices?: { message?: { content?: string } }[] };
+      const content = data.choices?.[0]?.message?.content?.trim();
+      if (!content) throw new Error('The AI returned an empty response.');
+      return content;
+    }
+    throw lastError ?? serviceUnavailable('No Groq model is available to this key.');
   }
 
   const response = await fetch('https://generativelanguage.googleapis.com/v1beta/interactions', {
