@@ -316,7 +316,7 @@ export async function competitors(organizationId: string, connectionId: string):
 
 export async function suggestReviewReply(organizationId: string, review: { reviewer: string; rating: number; comment: string }): Promise<{ reply: string; source: 'ai' | 'template' }> {
   const brand = await getBrand(organizationId);
-  const context = { name: brand.name, industry: brand.industry, description: brand.description, toneOfVoice: brand.toneOfVoice, targetAudience: brand.targetAudience };
+  const context = { name: brand.name, phone: brand.phone, email: brand.email, website: brand.website, industry: brand.industry, description: brand.description, toneOfVoice: brand.toneOfVoice, targetAudience: brand.targetAudience };
   if (features.ai) {
     try {
       return { reply: await gemini.suggestReviewReply(context, review), source: 'ai' };

@@ -10,6 +10,9 @@ import { generateText, parseJson } from './ai.js';
 
 export interface BrandContext {
   name: string;
+  phone?: string | null;
+  email?: string | null;
+  website?: string | null;
   website?: string | null;
   industry?: string | null;
   description?: string | null;
@@ -28,6 +31,17 @@ export function brandInstruction(brand: BrandContext): string {
     'Write plainly and specifically. Avoid cliché marketing language, exclamation marks and emoji unless asked.',
     'Respect every length limit exactly — text that overflows its space is unusable.',
   ];
+  const contact = [
+    brand.phone ? `phone ${brand.phone}` : null,
+    brand.email ? `email ${brand.email}` : null,
+    brand.website ? `website ${brand.website}` : null,
+  ].filter(Boolean);
+  parts.push(
+    contact.length > 0
+      ? `The only contact details you may mention are: ${contact.join(', ')}.`
+      : 'You do not know any phone number, email or address for the business; invite people to message the page instead.',
+    'Never invent facts: no prices, fees, discounts, dates, timings, phone numbers, emails or addresses that are not given above or in the request. If asked for such a detail you do not have, say the team will share it by message.',
+  );
   return parts.filter(Boolean).join('\n');
 }
 

@@ -190,7 +190,7 @@ inboxRouter.post(
   validate(suggestSchema),
   asyncHandler(async (req, res) => {
     const brand = await getBrand(req.tenant!.organizationId);
-    const context = { name: brand.name, industry: brand.industry, description: brand.description, toneOfVoice: brand.toneOfVoice, targetAudience: brand.targetAudience };
+    const context = { name: brand.name, phone: brand.phone, email: brand.email, website: brand.website, industry: brand.industry, description: brand.description, toneOfVoice: brand.toneOfVoice, targetAudience: brand.targetAudience };
     const input = req.body as z.infer<typeof suggestSchema>;
     if (features.ai) {
       try {
