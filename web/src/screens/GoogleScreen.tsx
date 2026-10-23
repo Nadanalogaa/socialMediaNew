@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import QRCode from 'qrcode';
-import { ApiError, api, type GoogleLocationReport, type GoogleOverview } from '../lib/api';
+import { ApiError, api, type CompetitorSnapshot, type GoogleLocationReport, type GoogleOverview, type KeywordSuggestion } from '../lib/api';
 import { formatDateTime } from '../lib/dates';
 import { Alert, Badge, Button, Card, EmptyState, Spinner } from '../components/ui';
 
@@ -9,8 +9,9 @@ import { Alert, Badge, Button, Card, EmptyState, Spinner } from '../components/u
  * the reviews to answer, the link to ask for more, and where the website
  * ranks for the searches that matter.
  */
-export function GoogleScreen({ onConnect }: { onConnect: () => void }) {
+export function GoogleScreen({ onConnect, onMakePost }: { onConnect: () => void; onMakePost?: (caption: string) => void }) {
   const [data, setData] = useState<GoogleOverview | null>(null);
+  const [keywords, setKeywords] = useState<{ keywords: KeywordSuggestion[]; basis: string[] } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -21,7 +22,7 @@ export function GoogleScreen({ onConnect }: { onConnect: () => void }) {
       setError(null);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : 'Could not load Google data.');
-      setData({ configured: false, connected: false, account: null, locations: [], sites: [], analytics: [], ads: [], adsEnabled: false });
+      setData({ configured: false, ai: false, places: false, connected: false, account: null, locations: [], sites: [], analytics: [], ads: [], adsEnabled: false });
     } finally {
       setRefreshing(false);
     }
@@ -29,6 +30,7 @@ export function GoogleScreen({ onConnect }: { onConnect: () => void }) {
 
   useEffect(() => {
     void load();
+    api.getKeywords().then(setKeywords).catch(() => setKeywords({ keywords: [], basis: [] }));
   }, [load]);
 
   if (!data) {
@@ -106,8 +108,36 @@ export function GoogleScreen({ onConnect }: { onConnect: () => void }) {
       )}
 
       {data.locations.map((loc) => (
-        <LocationCard key={loc.connectionId} loc={loc} onReplied={load} />
+        <LocationCard key={loc.connectionId} loc={loc} onReplied={load} ai={data.ai} places={data.places} />
       ))}
+
+      {keywords && keywords.keywords.length > 0 && (
+        <Card>
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <h3 className="text-sm font-semibold text-slate-900">What people search for</h3>
+            <span className="text-xs text-slate-500">based on {keywords.basis.join(' · ')}</span>
+          </div>
+          <p className="mt-1 text-xs text-slate-600">
+            Use these words in your posts, your listing description and your website pages. Real searches first; phrases shown in grey are what customers typically type for your kind of business here.
+          </p>
+          <ul className="mt-3 flex flex-wrap gap-1.5">
+            {keywords.keywords.map((k) => (
+              <li key={k.phrase}>
+                <button
+                  onClick={() => onMakePost?.(k.phrase.charAt(0).toUpperCase() + k.phrase.slice(1) + ' — ')}
+                  title={k.source === 'search' ? `Position #${k.position} · ${k.clicks} clicks · ${k.impressions} impressions — click to start a post` : 'Click to start a post with this phrase'}
+                  className={`rounded-full border px-2.5 py-1 text-xs ${
+                    k.source === 'search' ? 'border-brand-300 bg-brand-50 text-brand-800' : 'border-slate-300 text-slate-600 hover:bg-slate-50'
+                  }`}
+                >
+                  {k.phrase}
+                  {k.source === 'search' && k.position !== undefined && <span className="ml-1 text-[10px] text-brand-500">#{k.position}</span>}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      )}
 
       {data.analytics.map((a) => (
         <Card key={a.connectionId}>
@@ -282,12 +312,36 @@ export function GoogleScreen({ onConnect }: { onConnect: () => void }) {
   );
 }
 
-function LocationCard({ loc, onReplied }: { loc: GoogleLocationReport; onReplied: () => Promise<void> }) {
+function LocationCard({ loc, onReplied, ai, places }: { loc: GoogleLocationReport; onReplied: () => Promise<void>; ai: boolean; places: boolean }) {
   const [qr, setQr] = useState<string | null>(null);
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [sending, setSending] = useState<string | null>(null);
+  const [suggesting, setSuggesting] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showAll, setShowAll] = useState(false);
+  const [snapshot, setSnapshot] = useState<CompetitorSnapshot | null | 'loading'>(null);
+
+  async function suggest(r: { name: string; reviewer: string; rating: number; comment: string }) {
+    setSuggesting(r.name);
+    setError(null);
+    try {
+      const { reply } = await api.suggestReviewReply({ reviewer: r.reviewer, rating: r.rating, comment: r.comment });
+      setDraft((d) => ({ ...d, [r.name]: reply }));
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not suggest a reply.');
+    } finally {
+      setSuggesting(null);
+    }
+  }
+
+  async function loadCompetitors() {
+    setSnapshot('loading');
+    try {
+      setSnapshot(await api.getCompetitors(loc.connectionId));
+    } catch (err) {
+      setSnapshot({ connectionId: loc.connectionId, query: '', you: null, competitors: [], notes: [], error: err instanceof ApiError ? err.message : 'Could not load.' });
+    }
+  }
 
   useEffect(() => {
     if (!loc.reviewUri) return;
@@ -433,6 +487,17 @@ function LocationCard({ loc, onReplied }: { loc: GoogleLocationReport; onReplied
                     <p className="mt-1 rounded bg-slate-50 px-2 py-1 text-xs text-slate-600">You replied: {r.reply.comment}</p>
                   ) : (
                     <div className="mt-2 flex gap-2">
+                      {ai && (
+                        <button
+                          type="button"
+                          onClick={() => void suggest({ name: r.name, reviewer: r.reviewer, rating: r.rating, comment: r.comment })}
+                          disabled={suggesting === r.name}
+                          title="Draft a reply in your brand's voice"
+                          className="shrink-0 rounded-lg border border-slate-300 px-2 text-xs text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                        >
+                          {suggesting === r.name ? '…' : '✨'}
+                        </button>
+                      )}
                       <input
                         value={draft[r.name] ?? ''}
                         onChange={(e) => setDraft((d) => ({ ...d, [r.name]: e.target.value }))}
@@ -451,6 +516,47 @@ function LocationCard({ loc, onReplied }: { loc: GoogleLocationReport; onReplied
               {showAll ? 'Show only unanswered' : `Show all recent reviews (${loc.reviews.recent.length})`}
             </button>
           </div>
+        </div>
+      )}
+
+      {!loc.error && places && (
+        <div className="mt-4 border-t border-slate-100 pt-3">
+          {snapshot === null ? (
+            <button onClick={() => void loadCompetitors()} className="text-xs font-medium text-brand-600 hover:underline">
+              Compare with nearby {loc.category ? loc.category.toLowerCase() + 's' : 'businesses'} →
+            </button>
+          ) : snapshot === 'loading' ? (
+            <p className="text-xs text-slate-500">Looking around {loc.locality ?? 'you'}…</p>
+          ) : snapshot.error ? (
+            <p className="text-xs text-amber-900">{snapshot.error}</p>
+          ) : (
+            <>
+              <h4 className="text-sm font-medium text-slate-900">Nearby · "{snapshot.query}"</h4>
+              <table className="mt-2 w-full text-xs">
+                <thead className="text-left uppercase tracking-wide text-slate-500">
+                  <tr><th className="py-1">Business</th><th>Rating</th><th>Reviews</th><th>Photos</th><th>Website</th></tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {snapshot.you && (
+                    <tr className="bg-brand-50 font-medium text-brand-900">
+                      <td className="py-1">You · {snapshot.you.name}</td><td>{snapshot.you.rating ?? '—'}</td><td>{snapshot.you.reviews}</td><td>{snapshot.you.photos}</td><td>{snapshot.you.website ? '✓' : '—'}</td>
+                    </tr>
+                  )}
+                  {snapshot.competitors.map((c) => (
+                    <tr key={c.placeId} className="text-slate-700">
+                      <td className="py-1">
+                        {c.mapsUri ? <a href={c.mapsUri} target="_blank" rel="noreferrer" className="hover:underline">{c.name}</a> : c.name}
+                      </td>
+                      <td>{c.rating ?? '—'}</td><td>{c.reviews}</td><td>{c.photos}</td><td>{c.website ? '✓' : '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <ul className="mt-2 space-y-0.5 text-xs text-slate-700">
+                {snapshot.notes.map((n) => <li key={n}>→ {n}</li>)}
+              </ul>
+            </>
+          )}
         </div>
       )}
     </Card>

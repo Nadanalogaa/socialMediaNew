@@ -17,7 +17,10 @@ import { asyncHandler, requireAuth, requireRole, validate, withOrganization } fr
 import { badRequest, notFound } from '../../lib/errors.js';
 import { logger } from '../../lib/logger.js';
 import * as meta from '../../integrations/meta.js';
+import * as gemini from '../../integrations/gemini.js';
+import { features } from '../../lib/env.js';
 import { resolveConnection } from '../connections/service.js';
+import { getBrand } from '../organizations/service.js';
 
 export const inboxRouter: Router = Router();
 
@@ -171,5 +174,27 @@ inboxRouter.post(
     } catch (error) {
       throw badRequest(error instanceof Error ? error.message : 'Could not post the reply.');
     }
+  }),
+);
+
+const suggestSchema = z.object({
+  authorName: z.string().max(200),
+  message: z.string().max(5000),
+  postCaption: z.string().max(5000).default(''),
+});
+
+/** A reply drafted in the brand's voice; the person still presses Send. */
+inboxRouter.post(
+  '/suggest',
+  requireRole('owner', 'admin', 'member'),
+  validate(suggestSchema),
+  asyncHandler(async (req, res) => {
+    if (!features.ai) throw badRequest('AI suggestions are not enabled on this service.');
+    const brand = await getBrand(req.tenant!.organizationId);
+    const reply = await gemini.suggestCommentReply(
+      { name: brand.name, industry: brand.industry, description: brand.description, toneOfVoice: brand.toneOfVoice, targetAudience: brand.targetAudience },
+      req.body as z.infer<typeof suggestSchema>,
+    );
+    res.json({ reply });
   }),
 );

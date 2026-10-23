@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ApiError, api, type Session } from '../lib/api';
+import { ApiError, api, type Nudge, type Session } from '../lib/api';
 import { daysUntil, formatDateTime } from '../lib/dates';
 import { Alert, Badge, Button, Card, Spinner, providerLabel, statusTone } from '../components/ui';
 
@@ -28,13 +28,16 @@ export function HomeScreen({
   onGo,
 }: {
   session: Session;
-  onGo: (tab: 'compose' | 'posts' | 'reels' | 'channels' | 'ideas' | 'analytics') => void;
+  onGo: (tab: 'compose' | 'posts' | 'reels' | 'channels' | 'ideas' | 'analytics' | 'google' | 'brand' | 'inbox') => void;
 }) {
   const [home, setHome] = useState<Home | null>(null);
+  const [nudges, setNudges] = useState<Nudge[] | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     api.getHome().then(setHome).catch((err) => setError(err instanceof ApiError ? err.message : 'Could not load.'));
+    // Slower (it asks Google), so it arrives after the rest of the page.
+    api.getNudges().then(({ nudges }) => setNudges(nudges)).catch(() => setNudges([]));
   }, []);
 
   const hour = new Date().getHours();
@@ -119,6 +122,30 @@ export function HomeScreen({
           </ul>
         </Card>
       )}
+
+      <Card>
+        <div className="flex items-baseline justify-between">
+          <h3 className="text-sm font-semibold text-slate-900">This week's to-dos</h3>
+          {nudges === null && <span className="text-xs text-slate-400">checking…</span>}
+        </div>
+        {nudges && nudges.length === 0 && <p className="mt-2 text-sm text-slate-500">Nothing pressing — keep posting and replying.</p>}
+        {nudges && nudges.length > 0 && (
+          <ul className="mt-2 divide-y divide-slate-100">
+            {nudges.map((n) => (
+              <li key={n.key} className="flex items-start gap-3 py-2">
+                <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${n.severity === 'high' ? 'bg-red-500' : n.severity === 'medium' ? 'bg-amber-500' : 'bg-slate-400'}`} />
+                <span className="min-w-0 flex-1">
+                  <span className="block text-sm font-medium text-slate-900">{n.title}</span>
+                  <span className="block text-xs text-slate-600">{n.detail}</span>
+                </span>
+                <button onClick={() => onGo(n.tab)} className="shrink-0 text-xs text-brand-600 hover:underline">
+                  Do it
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+      </Card>
 
       <div className="grid gap-3 md:grid-cols-3">
         <Card>

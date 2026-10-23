@@ -11,6 +11,7 @@ import { closeDatabase } from './db/client.js';
 import { QUEUE_NAMES, connection, metricsQueue } from './queue/index.js';
 import { processMetricsJob } from './queue/processors/metrics.js';
 import { processHealthSweep } from './queue/processors/health.js';
+import { sendWeeklyDigests } from './modules/nudges/service.js';
 import { processPublishJob } from './queue/processors/publish.js';
 import { logger } from './lib/logger.js';
 
@@ -42,6 +43,7 @@ register(
   QUEUE_NAMES.metrics,
   (async (job: Job) => {
     if (job.name === 'health-sweep') return processHealthSweep();
+    if (job.name === 'weekly-digest') return void (await sendWeeklyDigests());
     return processMetricsJob(job as never);
   }) as (job: Job) => Promise<void>,
   2,
@@ -52,6 +54,11 @@ register(
 void metricsQueue
   .upsertJobScheduler('health-sweep', { every: 24 * 60 * 60 * 1000 }, { name: 'health-sweep', data: {} })
   .catch((error) => logger.warn({ err: error }, 'Could not schedule the health sweep'));
+
+// Monday 08:00 in India: the week's to-dos land before the week starts.
+void metricsQueue
+  .upsertJobScheduler('weekly-digest', { pattern: '30 2 * * 1' }, { name: 'weekly-digest', data: {} })
+  .catch((error) => logger.warn({ err: error }, 'Could not schedule the weekly digest'));
 
 logger.info({ queues: Object.values(QUEUE_NAMES) }, 'Worker started');
 

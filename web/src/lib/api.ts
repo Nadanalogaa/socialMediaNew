@@ -422,10 +422,37 @@ export interface GoogleScoreItem {
   fix: string;
 }
 
+export interface Nudge {
+  key: string;
+  severity: 'high' | 'medium' | 'low';
+  title: string;
+  detail: string;
+  tab: 'posts' | 'compose' | 'channels' | 'google' | 'reels' | 'brand' | 'inbox';
+}
+
+export interface KeywordSuggestion {
+  phrase: string;
+  source: 'search' | 'category';
+  position?: number;
+  clicks?: number;
+  impressions?: number;
+}
+
+export interface CompetitorSnapshot {
+  connectionId: string;
+  query: string;
+  you: { name: string; rating: number | null; reviews: number; photos: number; website: boolean } | null;
+  competitors: { placeId: string; name: string; rating: number | null; reviews: number; photos: number; website: boolean; mapsUri: string | null }[];
+  notes: string[];
+  error: string | null;
+}
+
 export interface GoogleLocationReport {
   connectionId: string;
   title: string;
   address: string | null;
+  category: string | null;
+  locality: string | null;
   mapsUri: string | null;
   reviewUri: string | null;
   score: number;
@@ -482,6 +509,8 @@ export interface GoogleSiteReport {
 
 export interface GoogleOverview {
   configured: boolean;
+  ai: boolean;
+  places: boolean;
   connected: boolean;
   account: { name: string; email: string | null } | null;
   locations: GoogleLocationReport[];
@@ -899,6 +928,13 @@ export const api = {
 
   // --- Google promotion ---
   getGoogleOverview: () => request<GoogleOverview>('/google/overview'),
+  getKeywords: () => request<{ keywords: KeywordSuggestion[]; basis: string[] }>('/google/keywords'),
+  getCompetitors: (connectionId: string) => request<CompetitorSnapshot>(`/google/competitors/${connectionId}`),
+  suggestReviewReply: (input: { reviewer: string; rating: number; comment: string }) =>
+    request<{ reply: string }>('/google/reviews/suggest', { method: 'POST', body: JSON.stringify(input) }),
+  suggestCommentReply: (input: { authorName: string; message: string; postCaption: string }) =>
+    request<{ reply: string }>('/inbox/suggest', { method: 'POST', body: JSON.stringify(input) }),
+  getNudges: () => request<{ nudges: Nudge[] }>('/nudges'),
   replyToReview: (input: { connectionId: string; reviewName: string; comment: string }) =>
     request<{ ok: boolean }>('/google/reviews/reply', { method: 'POST', body: JSON.stringify(input) }),
 

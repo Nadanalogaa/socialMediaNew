@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ApiError, api, type InboxThread } from '../lib/api';
+import { ApiError, api, getFeatures, type InboxThread } from '../lib/api';
 import { formatDateTime } from '../lib/dates';
 import { Alert, Badge, Button, Card, EmptyState, Spinner, providerLabel } from '../components/ui';
 
@@ -16,6 +16,24 @@ export function InboxScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [draft, setDraft] = useState<Record<string, string>>({});
   const [sending, setSending] = useState<string | null>(null);
+  const [ai, setAi] = useState(false);
+  const [suggesting, setSuggesting] = useState<string | null>(null);
+
+  useEffect(() => {
+    void getFeatures().then((f) => setAi(f.ai));
+  }, []);
+
+  async function suggest(thread: InboxThread, comment: { id: string; authorName: string; message: string }) {
+    setSuggesting(comment.id);
+    try {
+      const { reply } = await api.suggestCommentReply({ authorName: comment.authorName, message: comment.message, postCaption: thread.caption });
+      setDraft((d) => ({ ...d, [comment.id]: reply }));
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Could not suggest a reply.');
+    } finally {
+      setSuggesting(null);
+    }
+  }
 
   const load = useCallback(async (refresh = false) => {
     setRefreshing(true);
@@ -152,6 +170,17 @@ export function InboxScreen() {
                   if (!last) return null;
                   return (
                     <div className="mt-3 flex gap-2">
+                      {ai && (
+                        <button
+                          type="button"
+                          onClick={() => void suggest(thread, last)}
+                          disabled={suggesting === last.id}
+                          title="Draft a reply in your brand's voice"
+                          className="shrink-0 rounded-lg border border-slate-300 px-2 text-sm text-slate-700 hover:bg-slate-50 disabled:opacity-50"
+                        >
+                          {suggesting === last.id ? '…' : '✨'}
+                        </button>
+                      )}
                       <input
                         value={draft[last.id] ?? ''}
                         onChange={(e) => setDraft((d) => ({ ...d, [last.id]: e.target.value }))}

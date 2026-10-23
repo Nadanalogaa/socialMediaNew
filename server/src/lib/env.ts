@@ -47,6 +47,12 @@ const envSchema = z.object({
   /** The manager (MCC) account id, digits only, that holds the token. */
   GOOGLE_ADS_LOGIN_CUSTOMER_ID: z.string().optional(),
 
+  /** Places API (New) key, for the nearby-competitor snapshot. */
+  GOOGLE_PLACES_API_KEY: z.string().optional(),
+  /** Brevo transactional email, for weekly digests, invitations and sign-up mail. */
+  BREVO_API_KEY: z.string().optional(),
+  EMAIL_FROM: z.string().default('PostReels <admin@nadanaloga.com>'),
+
   CLOUDINARY_CLOUD_NAME: z.string().optional(),
   CLOUDINARY_API_KEY: z.string().optional(),
   CLOUDINARY_API_SECRET: z.string().optional(),
@@ -80,4 +86,6 @@ export const features = {
   google: Boolean(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET),
   googleAds: Boolean(env.GOOGLE_CLIENT_ID && env.GOOGLE_CLIENT_SECRET && env.GOOGLE_ADS_DEVELOPER_TOKEN),
   billing: Boolean(env.RAZORPAY_KEY_ID && env.RAZORPAY_KEY_SECRET),
+  places: Boolean(env.GOOGLE_PLACES_API_KEY),
+  email: Boolean(env.BREVO_API_KEY),
 } as const;

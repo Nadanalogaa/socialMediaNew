@@ -284,6 +284,9 @@ export async function listBusinessLocations(accessToken: string): Promise<Busine
 
 export interface LocationDetails {
   title: string;
+  locality: string | null;
+  sublocality: string | null;
+  latlng: { latitude: number; longitude: number } | null;
   primaryCategory: string | null;
   additionalCategories: number;
   description: string;
@@ -300,9 +303,11 @@ export async function getLocationDetails(accessToken: string, locationName: stri
   // Business Information takes the bare `locations/{id}` name.
   const bare = locationName.replace(/^accounts\/[^/]+\//, '');
   const url = new URL(`https://mybusinessbusinessinformation.googleapis.com/v1/${bare}`);
-  url.searchParams.set('readMask', 'name,title,categories,phoneNumbers,websiteUri,regularHours,profile,metadata');
+  url.searchParams.set('readMask', 'name,title,categories,phoneNumbers,websiteUri,regularHours,profile,metadata,storefrontAddress,latlng');
   const data = await googleRequest<{
     title?: string;
+    storefrontAddress?: { locality?: string; sublocality?: string; addressLines?: string[] };
+    latlng?: { latitude?: number; longitude?: number };
     categories?: { primaryCategory?: { displayName?: string }; additionalCategories?: unknown[] };
     phoneNumbers?: { primaryPhone?: string };
     websiteUri?: string;
@@ -312,6 +317,12 @@ export async function getLocationDetails(accessToken: string, locationName: stri
   }>(url.toString(), accessToken);
   return {
     title: data.title ?? 'Untitled',
+    locality: data.storefrontAddress?.locality ?? null,
+    sublocality: data.storefrontAddress?.sublocality ?? null,
+    latlng:
+      typeof data.latlng?.latitude === 'number' && typeof data.latlng?.longitude === 'number'
+        ? { latitude: data.latlng.latitude, longitude: data.latlng.longitude }
+        : null,
     primaryCategory: data.categories?.primaryCategory?.displayName ?? null,
     additionalCategories: data.categories?.additionalCategories?.length ?? 0,
     description: data.profile?.description ?? '',
@@ -694,5 +705,58 @@ export async function adsCampaignReport(
     clicks: Number(r.metrics?.clicks ?? 0),
     costMicros: Number(r.metrics?.costMicros ?? 0),
     conversions: Number(r.metrics?.conversions ?? 0),
+  }));
+}
+
+// --- Places: nearby competitors -----------------------------------------------
+
+export interface NearbyPlace {
+  placeId: string;
+  name: string;
+  rating: number | null;
+  reviews: number;
+  photos: number;
+  website: boolean;
+  mapsUri: string | null;
+}
+
+/**
+ * Businesses of the same kind around a point. Text search with a location
+ * bias finds what a customer would see searching "<category> near me" there.
+ */
+export async function searchCompetitors(
+  apiKey: string,
+  query: string,
+  center: { latitude: number; longitude: number },
+  radiusMeters = 5000,
+): Promise<NearbyPlace[]> {
+  const response = await fetch('https://places.googleapis.com/v1/places:searchText', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Goog-Api-Key': apiKey,
+      'X-Goog-FieldMask': 'places.id,places.displayName,places.rating,places.userRatingCount,places.photos,places.websiteUri,places.googleMapsUri',
+    },
+    body: JSON.stringify({
+      textQuery: query,
+      locationBias: { circle: { center, radius: radiusMeters } },
+      maxResultCount: 10,
+      languageCode: 'en',
+    }),
+  });
+  if (!response.ok) {
+    throw new AppError(400, 'places_failed', `Google Places: ${(await response.text()).slice(0, 200)}`);
+  }
+  const data = (await response.json()) as {
+    places?: { id: string; displayName?: { text?: string }; rating?: number; userRatingCount?: number; photos?: unknown[]; websiteUri?: string; googleMapsUri?: string }[];
+  };
+  return (data.places ?? []).map((p) => ({
+    placeId: p.id,
+    name: p.displayName?.text ?? 'Unnamed',
+    rating: typeof p.rating === 'number' ? p.rating : null,
+    reviews: p.userRatingCount ?? 0,
+    photos: p.photos?.length ?? 0,
+    website: Boolean(p.websiteUri),
+    mapsUri: p.googleMapsUri ?? null,
   }));
 }

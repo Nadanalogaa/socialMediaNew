@@ -288,7 +288,17 @@ export function DashboardScreen({
           />
         )}
         {tab === 'inbox' && <InboxScreen key={session.organization.id} />}
-        {tab === 'google' && <GoogleScreen key={session.organization.id} onConnect={() => setTab('channels')} />}
+        {tab === 'google' && (
+          <GoogleScreen
+            key={session.organization.id}
+            onConnect={() => setTab('channels')}
+            onMakePost={(caption) => {
+              setEditingPostId(undefined);
+              setPendingCaption(caption);
+              setTab('compose');
+            }}
+          />
+        )}
         {tab === 'ideas' && (
           <IdeasScreen
             key={session.organization.id}

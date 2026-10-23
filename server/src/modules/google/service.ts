@@ -10,11 +10,13 @@
 import { and, eq, inArray } from 'drizzle-orm';
 import { db } from '../../db/client.js';
 import { connections } from '../../db/schema.js';
-import { notFound } from '../../lib/errors.js';
-import { env } from '../../lib/env.js';
+import { notFound, serviceUnavailable } from '../../lib/errors.js';
+import { env, features } from '../../lib/env.js';
 import { logger } from '../../lib/logger.js';
 import * as google from '../../integrations/google.js';
+import * as gemini from '../../integrations/gemini.js';
 import { getGoogleAccessToken } from '../connections/google.js';
+import { getBrand } from '../organizations/service.js';
 
 const DAY = 86_400_000;
 
@@ -37,6 +39,8 @@ export interface LocationReport {
   connectionId: string;
   title: string;
   address: string | null;
+  category: string | null;
+  locality: string | null;
   mapsUri: string | null;
   reviewUri: string | null;
   score: number;
@@ -116,11 +120,20 @@ export async function locationReport(organizationId: string, connectionId: strin
         }),
     ]);
 
-    // Remember the website so Business Profile posts can carry a button to it.
-    if (details.website && row.metadata?.website !== details.website) {
+    // Remembered on the row: the website for Business Profile post buttons,
+    // and the category, locality and coordinates for keywords and competitors.
+    const remembered = {
+      website: details.website,
+      placeId: details.placeId,
+      category: details.primaryCategory,
+      locality: details.locality,
+      sublocality: details.sublocality,
+      latlng: details.latlng,
+    };
+    if (JSON.stringify(remembered) !== JSON.stringify({ website: row.metadata?.website, placeId: row.metadata?.placeId, category: row.metadata?.category, locality: row.metadata?.locality, sublocality: row.metadata?.sublocality, latlng: row.metadata?.latlng })) {
       await db
         .update(connections)
-        .set({ metadata: { ...(row.metadata ?? {}), website: details.website, placeId: details.placeId } })
+        .set({ metadata: { ...(row.metadata ?? {}), ...remembered } })
         .where(eq(connections.id, row.id));
     }
 
@@ -147,6 +160,8 @@ export async function locationReport(organizationId: string, connectionId: strin
     return {
       ...base,
       title: details.title || base.title,
+      category: details.primaryCategory,
+      locality: details.sublocality ?? details.locality,
       mapsUri: details.mapsUri,
       reviewUri: details.newReviewUri ?? (details.placeId ? `https://search.google.com/local/writereview?placeid=${details.placeId}` : null),
       score,
@@ -158,8 +173,151 @@ export async function locationReport(organizationId: string, connectionId: strin
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     logger.warn({ err: error, connectionId }, 'Business Profile report failed');
-    return { ...base, mapsUri: null, reviewUri: null, score: 0, items: [], reviews: { average: 0, total: 0, unanswered: 0, recent: [] }, performance: null, error: message };
+    return { ...base, category: null, locality: null, mapsUri: null, reviewUri: null, score: 0, items: [], reviews: { average: 0, total: 0, unanswered: 0, recent: [] }, performance: null, error: message };
   }
+}
+
+// --- Keywords ---------------------------------------------------------------------
+
+export interface KeywordSuggestion {
+  phrase: string;
+  /** Where it came from: a real search the site appeared for, or a pattern for the category and area. */
+  source: 'search' | 'category';
+  position?: number;
+  clicks?: number;
+  impressions?: number;
+}
+
+/**
+ * What people search for, and what they would search for.
+ *
+ * Real queries from Search Console come first, ranked by impressions — the
+ * ones with many impressions and a poor position are the opportunities. Then
+ * the phrases a local customer types for this kind of business in this area.
+ */
+export async function keywordSuggestions(organizationId: string): Promise<{ keywords: KeywordSuggestion[]; basis: string[] }> {
+  const rows = await db
+    .select({ id: connections.id, provider: connections.provider, displayName: connections.displayName, metadata: connections.metadata })
+    .from(connections)
+    .where(and(eq(connections.organizationId, organizationId), inArray(connections.provider, ['google_business', 'google_search_console'])));
+
+  const seen = new Set<string>();
+  const out: KeywordSuggestion[] = [];
+  const basis: string[] = [];
+  const add = (k: KeywordSuggestion) => {
+    const key = k.phrase.toLowerCase().trim();
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    out.push({ ...k, phrase: key });
+  };
+
+  for (const site of rows.filter((r) => r.provider === 'google_search_console')) {
+    try {
+      const report = await siteReport(organizationId, site.id);
+      if (report.queries.length > 0) basis.push(`searches on ${report.site}`);
+      for (const q of [...report.queries].sort((a, b) => b.impressions - a.impressions)) {
+        add({ phrase: q.query, source: 'search', position: q.position, clicks: q.clicks, impressions: q.impressions });
+      }
+    } catch {
+      /* no search data yet */
+    }
+  }
+
+  const brand = await getBrand(organizationId).catch(() => null);
+  for (const loc of rows.filter((r) => r.provider === 'google_business')) {
+    const category = typeof loc.metadata?.category === 'string' ? (loc.metadata.category as string).toLowerCase() : null;
+    const area = (typeof loc.metadata?.sublocality === 'string' && loc.metadata.sublocality) || (typeof loc.metadata?.locality === 'string' && loc.metadata.locality) || null;
+    const city = typeof loc.metadata?.locality === 'string' ? (loc.metadata.locality as string) : null;
+    if (!category) continue;
+    basis.push(`${category}${area ? ` in ${area}` : ''}`);
+    const places = [area, city].filter((p): p is string => Boolean(p)).map((p) => p.toLowerCase());
+    for (const place of [...new Set(places)]) {
+      add({ phrase: `${category} in ${place}`, source: 'category' });
+      add({ phrase: `best ${category} ${place}`, source: 'category' });
+      add({ phrase: `${category} ${place} fees`, source: 'category' });
+    }
+    add({ phrase: `${category} near me`, source: 'category' });
+    add({ phrase: `${category} reviews`, source: 'category' });
+    // Services named in the brand kit become long-tail phrases.
+    const services = (brand?.description ?? '').match(/\b([A-Z][a-z]+(?: [A-Z][a-z]+)?)\b/g) ?? [];
+    for (const service of services.slice(0, 6)) {
+      for (const place of places.slice(0, 1)) add({ phrase: `${service.toLowerCase()} classes ${place}`, source: 'category' });
+    }
+  }
+
+  return { keywords: out.slice(0, 40), basis };
+}
+
+// --- Competitors ------------------------------------------------------------------
+
+export interface CompetitorSnapshot {
+  connectionId: string;
+  query: string;
+  you: { name: string; rating: number | null; reviews: number; photos: number; website: boolean } | null;
+  competitors: google.NearbyPlace[];
+  /** Plain-language takeaways. */
+  notes: string[];
+  error: string | null;
+}
+
+const competitorCache = new Map<string, { at: number; snapshot: CompetitorSnapshot }>();
+const COMPETITOR_TTL = 24 * 60 * 60 * 1000;
+
+export async function competitors(organizationId: string, connectionId: string): Promise<CompetitorSnapshot> {
+  const cached = competitorCache.get(connectionId);
+  if (cached && Date.now() - cached.at < COMPETITOR_TTL) return cached.snapshot;
+
+  const [row] = await db
+    .select()
+    .from(connections)
+    .where(and(eq(connections.id, connectionId), eq(connections.organizationId, organizationId), eq(connections.provider, 'google_business')))
+    .limit(1);
+  if (!row) throw notFound('Business Profile not found');
+  if (!features.places) throw serviceUnavailable('The competitor snapshot is not enabled on this service yet.');
+
+  const meta = row.metadata ?? {};
+  const category = typeof meta.category === 'string' ? meta.category : null;
+  const latlng = meta.latlng as { latitude: number; longitude: number } | null | undefined;
+  const area = (typeof meta.sublocality === 'string' && meta.sublocality) || (typeof meta.locality === 'string' && meta.locality) || '';
+  const base = { connectionId: row.id, query: category ? `${category} ${area}`.trim() : row.displayName };
+  if (!category || !latlng) {
+    return { ...base, you: null, competitors: [], notes: [], error: 'Open the Google tab once so the listing details are read, then try again.' };
+  }
+
+  try {
+    const places = await google.searchCompetitors(env.GOOGLE_PLACES_API_KEY!, base.query, latlng);
+    const placeId = typeof meta.placeId === 'string' ? meta.placeId : null;
+    const mine = places.find((p) => p.placeId === placeId);
+    const others = places.filter((p) => p.placeId !== placeId).slice(0, 6);
+    const you = mine ? { name: mine.name, rating: mine.rating, reviews: mine.reviews, photos: mine.photos, website: mine.website } : null;
+
+    const notes: string[] = [];
+    if (you) {
+      const moreReviews = others.filter((o) => o.reviews > you.reviews).length;
+      if (moreReviews > 0) notes.push(`${moreReviews} of ${others.length} nearby have more reviews than you — ask every customer for one.`);
+      const betterRated = others.filter((o) => (o.rating ?? 0) > (you.rating ?? 0) + 0.2).length;
+      if (betterRated > 0) notes.push(`${betterRated} are rated higher; replying to every review and fixing what low reviews mention closes that gap.`);
+      if (!you.website && others.some((o) => o.website)) notes.push('Competitors list a website; add yours (or your Instagram) to the listing.');
+      if (notes.length === 0) notes.push('You lead the nearby listings — keep posting weekly and collecting reviews to stay there.');
+    } else {
+      notes.push('Your listing did not appear in the first results for this search — the category, address or name on the profile may not match how customers search.');
+    }
+    const snapshot: CompetitorSnapshot = { ...base, you, competitors: others, notes, error: null };
+    competitorCache.set(connectionId, { at: Date.now(), snapshot });
+    return snapshot;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    logger.warn({ err: error, connectionId }, 'Competitor snapshot failed');
+    return { ...base, you: null, competitors: [], notes: [], error: message };
+  }
+}
+
+// --- AI suggestions -----------------------------------------------------------------
+
+export async function suggestReviewReply(organizationId: string, review: { reviewer: string; rating: number; comment: string }): Promise<string> {
+  if (!features.ai) throw serviceUnavailable('AI suggestions are not enabled on this service.');
+  const brand = await getBrand(organizationId);
+  return gemini.suggestReviewReply({ name: brand.name, industry: brand.industry, description: brand.description, toneOfVoice: brand.toneOfVoice, targetAudience: brand.targetAudience }, review);
 }
 
 export async function analyticsReport(organizationId: string, connectionId: string): Promise<AnalyticsReport> {

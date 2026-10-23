@@ -174,3 +174,50 @@ export async function generateCaption(
   if (!text) throw new Error('The AI returned an empty response.');
   return JSON.parse(text) as { caption: string; hashtags: string[] };
 }
+
+/** A short, warm reply to a Google review, in the business's own voice. */
+export async function suggestReviewReply(
+  brand: BrandContext,
+  review: { reviewer: string; rating: number; comment: string },
+): Promise<string> {
+  const response = await callGemini(() =>
+    getClient().models.generateContent({
+      model: MODEL,
+      contents: [
+        `Write a reply from the business owner to this Google review.`,
+        `Reviewer: ${review.reviewer}. Rating: ${review.rating} out of 5.`,
+        `Review text: "${review.comment || '(no text, rating only)'}"`,
+        review.rating >= 4
+          ? 'Thank them specifically for what they praised, invite them back, keep it to two or three sentences.'
+          : 'Apologise sincerely without excuses, acknowledge the specific issue, offer to put it right and give a way to contact the owner directly, keep it to three or four sentences.',
+        'No hashtags, no emojis beyond one at most, no generic marketing. Plain text only.',
+      ].join('\n'),
+      config: { systemInstruction: brandInstruction(brand) },
+    }),
+  );
+  const text = response.text?.trim();
+  if (!text) throw new Error('The AI returned an empty response.');
+  return text;
+}
+
+/** A reply to a comment under a post, matching how the brand speaks. */
+export async function suggestCommentReply(
+  brand: BrandContext,
+  comment: { authorName: string; message: string; postCaption: string },
+): Promise<string> {
+  const response = await callGemini(() =>
+    getClient().models.generateContent({
+      model: MODEL,
+      contents: [
+        `Write a reply to this comment on the business's social media post.`,
+        `Post: "${comment.postCaption.slice(0, 300)}"`,
+        `Comment by ${comment.authorName}: "${comment.message}"`,
+        'One or two sentences. If they ask about price, timing or availability, answer helpfully and invite them to message or call. Friendly, not salesy. Plain text, at most one emoji.',
+      ].join('\n'),
+      config: { systemInstruction: brandInstruction(brand) },
+    }),
+  );
+  const text = response.text?.trim();
+  if (!text) throw new Error('The AI returned an empty response.');
+  return text;
+}
