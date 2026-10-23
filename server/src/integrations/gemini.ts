@@ -39,7 +39,7 @@ export function brandInstruction(brand: BrandContext): string {
     contact.length > 0
       ? `The only contact details you may mention are: ${contact.join(', ')}.`
       : 'You do not know any phone number, email or address for the business; invite people to message the page instead.',
-    'Never invent facts: no prices, fees, discounts, dates, timings, phone numbers, emails or addresses that are not given above or in the request. If asked for such a detail you do not have, say the team will share it by message.',
+    'Use every fact the request gives you (offers, discounts, dates, names) exactly as given. Do not add facts of your own: no prices, fees, timings, phone numbers, emails or addresses beyond what is given above or in the request. When a reader asks for a detail you were not given, say the team will share it by message — and still complete the task.',
   );
   return parts.filter(Boolean).join('\n');
 }

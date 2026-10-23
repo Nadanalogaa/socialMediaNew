@@ -53,12 +53,33 @@ export async function generateText(system: string, prompt: string, options: { js
           ...(options.json ? { response_format: { type: 'json_object' } } : {}),
         }),
       });
-      const text = await response.text();
+      let text = await response.text();
       if (response.status === 404 || (response.status === 400 && /model_not_found|does not exist/.test(text))) {
         lastError = toAppError('groq', response.status, text);
         continue;
       }
-      if (!response.ok) throw toAppError('groq', response.status, text);
+      // Strict JSON mode fails when the model prefers to explain itself; the
+      // plain reply usually still contains the object, so ask again without it.
+      if (response.status === 400 && options.json && /json_validate_failed/.test(text)) {
+        const retry = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${env.GROQ_API_KEY}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            model,
+            messages: [
+              { role: 'system', content: `${system}\nOutput only a JSON object, nothing else.` },
+              { role: 'user', content: prompt },
+            ],
+            temperature: 0.5,
+            max_tokens: 900,
+            reasoning_effort: 'low',
+          }),
+        });
+        text = await retry.text();
+        if (!retry.ok) throw toAppError('groq', retry.status, text);
+      } else if (!response.ok) {
+        throw toAppError('groq', response.status, text);
+      }
       const data = JSON.parse(text) as { choices?: { message?: { content?: string } }[] };
       const content = data.choices?.[0]?.message?.content?.trim();
       if (!content) throw new Error('The AI returned an empty response.');
