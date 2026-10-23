@@ -13,7 +13,6 @@ export interface BrandContext {
   phone?: string | null;
   email?: string | null;
   website?: string | null;
-  website?: string | null;
   industry?: string | null;
   description?: string | null;
   toneOfVoice?: string | null;
