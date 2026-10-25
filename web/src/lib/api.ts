@@ -598,7 +598,7 @@ export interface StockPhoto {
   photographer: string;
   photographerUrl: string;
   alt: string;
-  source: 'pexels';
+  source: 'pixabay' | 'pexels';
 }
 
 export interface MagicStoryPhotoScene {
@@ -828,6 +828,7 @@ export const api = {
         photographer: photo.photographer,
         photographerUrl: photo.photographerUrl,
         alt: photo.alt,
+        source: photo.source,
       }),
     }),
 

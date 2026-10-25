@@ -602,7 +602,7 @@ export function MagicDesignDialog({
               )}
               {found && found.photos.length === 0 && <p className="mt-1 text-xs text-slate-500">No photos for that — try other words.</p>}
               <p className="mt-1 text-[10px] text-slate-400">
-                Free photos by <a href="https://www.pexels.com" target="_blank" rel="noreferrer" className="underline">Pexels</a>. Tap one to use it in this scene.
+                Free stock photos{found?.photos[0] ? ` by ${found.photos[0].source === 'pixabay' ? 'Pixabay' : 'Pexels'}` : ''}, free for commercial use. Tap one to use it in this scene.
               </p>
             </div>
           );

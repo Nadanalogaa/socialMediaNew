@@ -21,7 +21,7 @@ import { brandProfiles } from '../../db/schema.js';
 import { badRequest } from '../../lib/errors.js';
 import * as gemini from '../../integrations/gemini.js';
 import { importImageFromUrl } from '../../integrations/cloudinary.js';
-import { firstStockPhotos, searchStockPhotos, stockPhotosConfigured, type StockPhoto } from '../../integrations/pexels.js';
+import { firstStockPhotos, searchStockPhotos, stockPhotoSource, stockPhotosConfigured, type StockPhoto } from '../../integrations/stock-photos.js';
 import * as mediaService from '../media/service.js';
 import { assertWithinQuota, recordUsage } from '../usage/service.js';
 import * as designs from './service.js';
@@ -139,7 +139,7 @@ async function importStockPhoto(organizationId: string, photo: StockPhoto) {
     width: imported.width ?? photo.width,
     height: imported.height ?? photo.height,
     bytes: imported.bytes ?? undefined,
-    source: 'pexels',
+    source: photo.source,
     providerRef: photo.id,
   });
 }
@@ -159,7 +159,7 @@ creativesRouter.post(
       return;
     }
     const photos = await searchStockPhotos(req.body.query, { perPage: 12, page: req.body.page });
-    res.json({ photos, configured: true });
+    res.json({ photos, configured: true, source: stockPhotoSource() });
   }),
 );
 
@@ -171,6 +171,7 @@ const stockPickSchema = z.object({
   photographer: z.string().max(200).optional(),
   photographerUrl: z.string().max(500).optional(),
   alt: z.string().max(500).optional(),
+  source: z.enum(['pixabay', 'pexels']).optional(),
 });
 
 /** The user chose a stock photo: import it so it behaves like an upload. */
@@ -186,7 +187,7 @@ creativesRouter.post(
       photographer: req.body.photographer ?? '',
       photographerUrl: req.body.photographerUrl ?? '',
       alt: req.body.alt ?? '',
-      source: 'pexels',
+      source: req.body.source ?? stockPhotoSource() ?? 'pixabay',
     });
     res.status(201).json(asset);
   }),
