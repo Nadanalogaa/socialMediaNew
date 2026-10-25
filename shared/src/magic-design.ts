@@ -455,13 +455,14 @@ function blockFor(name: string, lines: BriefLine[], base: RoleSpec, gapBefore?: 
     maxLines: base.maxLines,
     keepLines: base.keepLines,
     weight: style.weight ?? base.weight,
+    // Known before fitting: capitals are wider, and the fit must see that.
+    uppercase: style.uppercase,
     lineHeight: base.lineHeight,
     color: style.color ?? base.color,
     animation: style.animation ?? base.animation,
     delaySeconds: base.delaySeconds,
   });
   block.align = style.align;
-  block.uppercase = style.uppercase;
   block.fontFamily = style.fontFamily;
   block.gapBefore = style.gapBefore ? Math.max(gapBefore ?? 0, 5) : gapBefore;
   return block;
