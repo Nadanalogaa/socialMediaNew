@@ -1,6 +1,8 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import QRCode from 'qrcode';
 import {
+  MAGIC_INDUSTRIES,
+  MAGIC_TEMPLATES,
   buildProjectFromBrief,
   parseBrief,
   parseBriefDirectives,
@@ -86,6 +88,8 @@ export function MagicDesignDialog({
   onCreate,
   initial,
   presetBrief,
+  presetDescription,
+  presetLanguage,
 }: {
   onClose: () => void;
   onCreate: (project: ReelProject, magic: MagicBrief, audio?: ProjectAudio) => void;
@@ -93,14 +97,20 @@ export function MagicDesignDialog({
   initial?: MagicBrief;
   /** Text to start from (an idea), without being in edit mode. */
   presetBrief?: string;
+  /** A description typed on the website: the story is written at once. */
+  presetDescription?: string;
+  presetLanguage?: string;
 }) {
   const { guest, lock } = useGuest();
   const [brief, setBrief] = useState(initial?.brief ?? presetBrief ?? '');
   // "Describe" lets the story be written for the user; "Write" is scene by scene.
   const [mode, setMode] = useState<'describe' | 'write'>(initial || presetBrief ? 'write' : 'describe');
   const [aiAvailable, setAiAvailable] = useState<boolean | null>(null);
-  const [description, setDescription] = useState('');
-  const [language, setLanguage] = useState('English');
+  const [description, setDescription] = useState(presetDescription ?? '');
+  const [language, setLanguage] = useState(presetLanguage ?? 'English');
+  const [showTemplates, setShowTemplates] = useState(false);
+  const [industry, setIndustry] = useState<string>('All');
+  const autoWritten = useRef(false);
   const [sceneCount, setSceneCount] = useState(5);
   const [writing, setWriting] = useState(false);
   /** Set once a story was written: the scenes the story wants a photo in. */
@@ -207,24 +217,23 @@ export function MagicDesignDialog({
     setMode('write');
   }
 
-  async function writeStory(instruction?: string) {
-    if (guest) {
-      lock('Writing the story for you');
-      return;
-    }
-    if (description.trim().length < 10) {
+  async function writeStory(instruction?: string, text: string = description) {
+    if (text.trim().length < 10) {
       setError('Tell us a little more about the business first — a few sentences is enough.');
       return;
     }
     setWriting(true);
     setError(null);
+    setShowTemplates(false);
     try {
-      const story = await api.writeMagicStory({
-        description: description.trim(),
-        sceneCount,
-        language,
-        ...(instruction && brief.trim() ? { currentBrief: brief, instruction } : {}),
-      });
+      const story = guest
+        ? await api.writeMagicStoryAsGuest({ description: text.trim(), language })
+        : await api.writeMagicStory({
+            description: text.trim(),
+            sceneCount,
+            language,
+            ...(instruction && brief.trim() ? { currentBrief: brief, instruction } : {}),
+          });
       setBrief(story.brief);
       setStoryPhotoScenes(story.needs.photoScenes);
       setSkipped(new Set());
@@ -255,6 +264,36 @@ export function MagicDesignDialog({
   function skip(item: string) {
     setSkipped((prev) => new Set(prev).add(item));
   }
+
+  /** Fills a template's placeholders from the brand kit, or leaves a blank to type into. */
+  function fillTemplate(text: string): string {
+    const withBrand = applyBrandPlaceholders(text, brand);
+    return withBrand.replace(/\{city\}/gi, brand?.address?.split(',').pop()?.trim() || 'Chennai').replace(/\{(name|phone|website)\}/gi, '');
+  }
+
+  function useTemplate(slug: string, how: 'write' | 'scenes') {
+    const template = MAGIC_TEMPLATES.find((item) => item.slug === slug);
+    if (!template) return;
+    const text = fillTemplate(template.description).replace(/^\s+is /, 'We are ');
+    setDescription(text);
+    if (how === 'write' && (aiAvailable || guest)) {
+      void writeStory(undefined, text);
+      return;
+    }
+    setBrief(fillTemplate(template.brief).replace(/^(Contact|Website):\s*$/gm, '').replace(/\n{3,}/g, '\n\n'));
+    setStoryPhotoScenes(null);
+    setShowTemplates(false);
+    setMode('write');
+  }
+
+  // Arriving from the website with a description: the story is written at once.
+  useEffect(() => {
+    if (!presetDescription || autoWritten.current || aiAvailable === null) return;
+    if (!aiAvailable && !guest) return;
+    autoWritten.current = true;
+    void writeStory(undefined, presetDescription);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [presetDescription, aiAvailable, guest]);
 
   /** Looks for stock photos for one scene, from the chooser's search box. */
   async function findStockPhotos(sceneIndex: number, query: string) {
@@ -681,6 +720,16 @@ export function MagicDesignDialog({
           </div>
           <button
             type="button"
+            onClick={() => setShowTemplates((v) => !v)}
+            className={`rounded-lg border px-2.5 py-1 text-sm ${
+              showTemplates ? 'border-brand-500 bg-brand-50 text-brand-700' : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+            }`}
+            title="Starting points for your industry"
+          >
+            🗂 Templates
+          </button>
+          <button
+            type="button"
             onClick={() => setShowHistory((v) => !v)}
             className={`rounded-lg border px-2.5 py-1 text-sm ${
               showHistory ? 'border-brand-500 bg-brand-50 text-brand-700' : 'border-slate-200 text-slate-600 hover:bg-slate-50'
@@ -695,6 +744,53 @@ export function MagicDesignDialog({
 
       <div className="mx-auto max-w-6xl px-4 py-4 pb-24 sm:pb-8">
         {error && <Alert>{error}</Alert>}
+
+        {showTemplates && (
+          <div className="mb-4 rounded-2xl border border-slate-200 bg-white p-4">
+            <div className="mb-2 flex flex-wrap items-center gap-2">
+              <h3 className="text-sm font-semibold text-slate-900">Templates by industry</h3>
+              <p className="text-xs text-slate-500">Pick one close to your business; the words are rewritten for you and every line stays editable.</p>
+            </div>
+            <div className="mb-3 flex flex-wrap gap-1">
+              {['All', ...MAGIC_INDUSTRIES].map((item) => (
+                <button
+                  key={item}
+                  type="button"
+                  onClick={() => setIndustry(item)}
+                  className={`rounded-full border px-2.5 py-0.5 text-xs ${
+                    industry === item ? 'border-brand-500 bg-brand-50 text-brand-700' : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+                  }`}
+                >
+                  {item}
+                </button>
+              ))}
+            </div>
+            <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+              {MAGIC_TEMPLATES.filter((template) => industry === 'All' || template.industry === industry).map((template) => (
+                <li key={template.slug} className="flex flex-col rounded-xl border border-slate-200 p-3">
+                  <div className="flex items-start gap-2">
+                    <span className="text-xl leading-none">{template.emoji}</span>
+                    <div className="min-w-0">
+                      <p className="text-sm font-medium text-slate-900">{template.name}</p>
+                      <p className="text-xs text-slate-500">{template.industry} · {template.goal}</p>
+                    </div>
+                  </div>
+                  <p className="mt-2 line-clamp-3 flex-1 text-xs text-slate-600">{fillTemplate(template.description).replace(/^\s+is /, 'We are ')}</p>
+                  <div className="mt-2 flex items-center gap-2">
+                    {(aiAvailable || guest) && (
+                      <button type="button" onClick={() => useTemplate(template.slug, 'write')} disabled={writing} className="rounded-md bg-brand-600 px-2 py-1 text-xs font-medium text-white hover:bg-brand-700 disabled:opacity-50">
+                        ✨ Write my story
+                      </button>
+                    )}
+                    <button type="button" onClick={() => useTemplate(template.slug, 'scenes')} className="rounded-md border border-slate-300 px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-50">
+                      Use these scenes
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
 
         {showHistory && (
           <div className="mb-4 rounded-xl border border-slate-200 bg-white p-3">
@@ -775,7 +871,7 @@ export function MagicDesignDialog({
                       ))}
                     </select>
                     <label className="ml-1 text-slate-600">Scenes</label>
-                    <select value={sceneCount} onChange={(e) => setSceneCount(Number(e.target.value))} className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs">
+                    <select value={guest ? 3 : sceneCount} disabled={guest} onChange={(e) => setSceneCount(Number(e.target.value))} className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs disabled:opacity-60" title={guest ? 'Three scenes in the free preview' : undefined}>
                       {[3, 4, 5, 6, 7].map((n) => (
                         <option key={n} value={n}>
                           {n}
@@ -793,7 +889,11 @@ export function MagicDesignDialog({
                   </div>
                   <p className="mt-2 text-xs text-slate-500">
                     Say what you do, where you are, who it is for, what makes you good at it, and what you are offering now.
-                    Your brand kit's name, phone and website are used as they are; nothing else is invented.
+                    Your brand kit's name, phone and website are used as they are; nothing else is invented. Not sure what to write?{' '}
+                    <button type="button" onClick={() => setShowTemplates(true)} className="font-medium text-brand-600 hover:underline">
+                      Pick a template for your industry
+                    </button>
+                    .
                   </p>
                 </div>
               ) : (

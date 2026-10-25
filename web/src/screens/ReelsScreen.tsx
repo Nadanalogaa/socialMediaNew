@@ -43,17 +43,22 @@ export function ReelsScreen({
   onPublish,
   openDesignId,
   initialBrief,
+  initialDescription,
+  initialLanguage,
 }: {
   onPublish?: (asset: MediaAsset) => void;
   /** Set when arriving from My designs, to reopen a saved reel. */
   openDesignId?: string;
   /** Set when arriving from an idea: Magic Design opens with this text. */
   initialBrief?: string;
+  /** Set when arriving from the website's description box: the story is written at once. */
+  initialDescription?: string;
+  initialLanguage?: string;
 }) {
   const [project, setProject] = useState<ReelProject | null>(null);
   const [designId, setDesignId] = useState<string | undefined>(openDesignId);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [magicFromPicker, setMagicFromPicker] = useState(Boolean(initialBrief));
+  const [magicFromPicker, setMagicFromPicker] = useState(Boolean(initialBrief || initialDescription));
 
   useEffect(() => {
     if (!openDesignId) return;
@@ -92,6 +97,8 @@ export function ReelsScreen({
         {magicFromPicker && (
           <MagicDesignDialog
             presetBrief={initialBrief}
+            presetDescription={initialDescription}
+            presetLanguage={initialLanguage}
             onClose={() => setMagicFromPicker(false)}
             onCreate={(built, magic, audio) => {
               setDesignId(undefined);

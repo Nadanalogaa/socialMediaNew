@@ -14,6 +14,10 @@ export function GuestStudioScreen({
   onRegister: () => void;
   onHome: () => void;
 }) {
+  // "/try?describe=…&lang=…" from the website's box: Magic Design opens writing.
+  const params = new URLSearchParams(window.location.search);
+  const describe = params.get('describe')?.trim() || undefined;
+  const lang = params.get('lang')?.trim() || undefined;
   return (
     <GuestProvider onSignIn={onSignIn} onRegister={onRegister}>
       <div className="flex min-h-full flex-col bg-slate-50">
@@ -40,7 +44,7 @@ export function GuestStudioScreen({
             {GUEST_LIMITS.scenes} scenes, {GUEST_LIMITS.effects.length} effects, {GUEST_LIMITS.fonts.length} fonts, 720p export with a small
             watermark. Anything with a 🔒 opens up with a free account.
           </p>
-          <ReelsScreen />
+          <ReelsScreen initialDescription={describe} initialLanguage={lang} />
         </main>
       </div>
     </GuestProvider>

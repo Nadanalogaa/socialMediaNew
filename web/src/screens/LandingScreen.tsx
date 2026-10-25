@@ -1,4 +1,5 @@
-import { PLANS, PLAN_ORDER } from '@socialboost/shared';
+import { useState } from 'react';
+import { MAGIC_TEMPLATES, PLANS, PLAN_ORDER } from '@socialboost/shared';
 import { rupees } from '../lib/money';
 
 /**
@@ -16,7 +17,8 @@ export function LandingScreen({
   onSignIn: () => void;
   onRegister: () => void;
   onOpenApp: () => void;
-  onTry: () => void;
+  /** Opens the free studio; with a description, Magic Design writes the reel at once. */
+  onTry: (describe?: string, language?: string) => void;
 }) {
   const primary = 'rounded-lg bg-brand-600 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-brand-700';
   const secondary = 'rounded-lg border border-slate-300 px-5 py-2.5 text-sm font-medium text-slate-700 transition hover:bg-slate-100';
@@ -46,62 +48,47 @@ export function LandingScreen({
         </div>
       </header>
 
-      <section className="mx-auto max-w-6xl px-4 pb-16 pt-14 md:pt-20">
-        <div className="grid items-center gap-10 md:grid-cols-2">
-          <div>
-            <p className="mb-3 inline-block rounded-full bg-brand-50 px-3 py-1 text-xs font-medium text-brand-700">Made for Indian businesses · ₹ pricing · UPI</p>
-            <h1 className="text-4xl font-semibold leading-tight tracking-tight md:text-5xl">
-              Post everywhere.<br />Design in minutes.<br />No agency needed.
-            </h1>
-            <p className="mt-5 max-w-lg text-lg text-slate-600">
-              Write a post once and publish it to Facebook and Instagram at the best time. Turn a few lines of text into a finished reel. See what worked. All from your phone.
-            </p>
-            <div className="mt-7 flex flex-wrap gap-3">
-              <button onClick={onTry} className={`${primary} !px-6 !py-3 !text-base`}>
-                🎬 Try the editor — no account
-              </button>
-              <button onClick={signedIn ? onOpenApp : onRegister} className={`${secondary} !px-6 !py-3 !text-base`}>
-                {signedIn ? 'Open app' : 'Start free — 14 days of Growth'}
-              </button>
-            </div>
-            <p className="mt-3 text-xs text-slate-500">Make a reel right now in your browser. Sign up only when you want to save or publish it.</p>
-          </div>
-          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 shadow-sm">
-            <Mockup />
-          </div>
+      <section className="mx-auto max-w-6xl px-4 pb-16 pt-10 md:pt-16">
+        <div className="mx-auto max-w-3xl text-center">
+          <p className="mb-3 inline-block rounded-full bg-brand-50 px-3 py-1 text-xs font-medium text-brand-700">Made for Indian businesses · ₹ pricing · UPI</p>
+          <h1 className="text-4xl font-semibold leading-tight tracking-tight md:text-5xl">
+            Describe your business.<br />Get a reel in a minute.
+          </h1>
+          <p className="mt-4 text-lg text-slate-600">
+            Tell Magic Design what you do and what you want to announce. It writes the story, lays out the scenes, picks the photos and animates the text. No account needed to try.
+          </p>
+        </div>
+        <MagicBox onTry={onTry} />
+        <div className="mt-5 flex flex-wrap items-center justify-center gap-3 text-sm text-slate-500">
+          <span>Already have an account?</span>
+          <button onClick={signedIn ? onOpenApp : onSignIn} className="font-medium text-brand-600 hover:underline">
+            {signedIn ? 'Open the app' : 'Sign in'}
+          </button>
+          <span>·</span>
+          <button onClick={() => onTry()} className="font-medium text-brand-600 hover:underline">
+            Open the editor without describing
+          </button>
         </div>
       </section>
 
       <section className="border-t border-slate-100 py-14">
         <div className="mx-auto grid max-w-6xl items-center gap-8 px-4 md:grid-cols-2">
           <div>
-            <h2 className="text-2xl font-semibold">Make a reel in three minutes. Right here.</h2>
+            <h2 className="text-2xl font-semibold">From a few sentences to a finished reel</h2>
             <p className="mt-3 text-slate-600">
-              Type what each scene should say, add your photos, pick a sound — Magic Design lays it out, animates the text and exports a reel you can post anywhere. No account, no download, nothing leaves your phone.
+              Magic Design turns your words into a story: an opening that hooks, what you offer, why to trust you, the offer, and how to reach you. Photos that fit each scene are placed for you, your logo sits on every scene, and every line stays editable.
             </p>
             <ul className="mt-4 space-y-1.5 text-sm text-slate-700">
-              <li>✓ Scenes, animations, effects, music with trim</li>
-              <li>✓ Works on your phone, in the browser</li>
+              <li>✓ English, Tamil, Hindi and more</li>
+              <li>✓ Templates for {new Set(MAGIC_TEMPLATES.map((t) => t.industry)).size} industries to start from</li>
+              <li>✓ Change anything by hand, or ask for a rewrite</li>
               <li>✓ Free preview: 3 scenes, 720p with a small watermark</li>
-              <li>✓ Sign up free for full HD, your logo, saving and publishing</li>
+              <li>✓ Sign up free for full HD, photos, your logo, saving and publishing</li>
             </ul>
-            <button onClick={onTry} className={`${primary} mt-6 !px-6 !py-3 !text-base`}>Open the editor</button>
+            <button onClick={() => onTry()} className={`${primary} mt-6 !px-6 !py-3 !text-base`}>Open the editor</button>
           </div>
-          <div className="rounded-2xl bg-gradient-to-br from-indigo-600 to-fuchsia-500 p-6 text-white shadow-lg">
-            <p className="text-xs uppercase tracking-wide text-white/70">Magic Design · example brief</p>
-            <pre className="mt-3 whitespace-pre-wrap font-mono text-sm leading-relaxed">{`Scene 1 - Opening
-Welcome to Our World of Fine Arts
-NADANALOGA ✨
-Add a photo
-
-Scene 2 - What we teach
-Discover Your Passion. Develop Your Talent.
-Dance • Music • Art • Creativity
-
-Scene 3 - Join us
-Learn. Create. Perform. Grow.
-Contact: 095668 66588`}</pre>
-            <p className="mt-3 text-sm text-white/80">→ a 3-scene reel, text animated, photos placed, ready to export.</p>
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 shadow-sm">
+            <Mockup />
           </div>
         </div>
       </section>
@@ -229,6 +216,78 @@ const FAQ = [
   { q: 'How do I pay?', a: 'By UPI, card or net banking through Razorpay, monthly or yearly. There is a free plan with no time limit.' },
   { q: 'Is it an app?', a: 'It works in any browser and installs on Android and iPhone from the browser menu ("Add to Home Screen").' },
 ];
+
+const BOX_LANGUAGES = ['English', 'Tamil', 'Hindi', 'Telugu', 'Kannada', 'Malayalam'];
+
+/** Quick starts shown under the box: one per industry, first template each. */
+const QUICK_STARTS = Array.from(
+  MAGIC_TEMPLATES.reduce((map, template) => (map.has(template.industry) ? map : map.set(template.industry, template)), new Map<string, (typeof MAGIC_TEMPLATES)[number]>()).values(),
+).slice(0, 6);
+
+/**
+ * The conversation window on the website: a visitor describes the business
+ * and lands in the studio with the story already written.
+ */
+function MagicBox({ onTry }: { onTry: (describe?: string, language?: string) => void }) {
+  const [text, setText] = useState('');
+  const [language, setLanguage] = useState('English');
+  const ready = text.trim().length >= 10;
+
+  function submit() {
+    if (!ready) return;
+    onTry(text.trim(), language);
+  }
+
+  return (
+    <div className="mx-auto mt-8 max-w-3xl rounded-2xl border border-slate-200 bg-white p-3 shadow-xl shadow-brand-600/10 sm:p-4">
+      <div className="flex items-start gap-3">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-600 to-fuchsia-500 text-base text-white">✨</span>
+        <div className="rounded-2xl rounded-tl-sm bg-slate-100 px-4 py-2.5 text-sm text-slate-800">
+          Hi! Tell me about your business and what you want to announce. I will write the reel: scenes, photos and all.
+        </div>
+      </div>
+      <div className="mt-3 rounded-2xl border border-slate-300 focus-within:border-brand-500 focus-within:ring-2 focus-within:ring-brand-500/20">
+        <textarea
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) submit();
+          }}
+          rows={4}
+          placeholder="I run a dance academy in Chennai called Sree Annai. We teach Bharatanatyam and Carnatic music for kids and adults. Admissions open for the July batch, free demo class…"
+          className="w-full resize-none rounded-t-2xl bg-transparent px-4 py-3 text-sm leading-relaxed outline-none sm:text-base"
+        />
+        <div className="flex flex-wrap items-center gap-2 border-t border-slate-200 px-3 py-2">
+          <select value={language} onChange={(e) => setLanguage(e.target.value)} className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs text-slate-700" aria-label="Language of the reel">
+            {BOX_LANGUAGES.map((item) => (
+              <option key={item}>{item}</option>
+            ))}
+          </select>
+          <span className="hidden text-xs text-slate-400 sm:inline">Ctrl + Enter to send</span>
+          <button
+            onClick={submit}
+            disabled={!ready}
+            className="ml-auto rounded-xl bg-brand-600 px-5 py-2 text-sm font-medium text-white transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            ✨ Create my reel — free, no account
+          </button>
+        </div>
+      </div>
+      <div className="mt-3 flex flex-wrap items-center gap-1.5">
+        <span className="text-xs text-slate-500">Try one:</span>
+        {QUICK_STARTS.map((template) => (
+          <button
+            key={template.slug}
+            onClick={() => setText(template.description.replace(/\{name\}/g, 'We').replace(/\{city\}/g, 'Chennai').replace(/^We is /, 'We are '))}
+            className="rounded-full border border-slate-200 px-2.5 py-1 text-xs text-slate-700 hover:border-brand-300 hover:bg-brand-50"
+          >
+            {template.emoji} {template.name}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 /** A stylised screenshot, so the hero has something to look at without an image file. */
 function Mockup() {

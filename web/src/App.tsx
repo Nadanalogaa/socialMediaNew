@@ -201,7 +201,16 @@ export default function App() {
         onSignIn={() => goPage('login')}
         onRegister={() => goPage('register')}
         onOpenApp={() => goPage('app')}
-        onTry={() => goPage('try')}
+        onTry={(describe, lang) => {
+          if (describe) {
+            const query = new URLSearchParams({ describe, ...(lang ? { lang } : {}) });
+            window.history.pushState(null, '', `/try?${query}`);
+            setPage('try');
+            setView('app');
+          } else {
+            goPage('try');
+          }
+        }}
       />
     );
   }

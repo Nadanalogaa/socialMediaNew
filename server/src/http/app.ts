@@ -9,7 +9,7 @@ import { authRouter } from '../modules/auth/routes.js';
 import { analyticsRouter } from '../modules/analytics/routes.js';
 import { connectionsRouter } from '../modules/connections/routes.js';
 import { googleCallbackRouter } from '../modules/connections/google-callback.js';
-import { creativesRouter } from '../modules/creatives/routes.js';
+import { creativesRouter, publicCreativesRouter } from '../modules/creatives/routes.js';
 import { ideasRouter } from '../modules/ideas/routes.js';
 import { inboxRouter } from '../modules/inbox/routes.js';
 import { googleRouter } from '../modules/google/routes.js';
@@ -114,6 +114,7 @@ export function createApp(): Express {
   app.use('/api/organizations', organizationsRouter);
   app.use('/api/analytics', analyticsRouter);
   app.use('/api/creatives', creativesRouter);
+  app.use('/api/public/creatives', publicCreativesRouter);
   app.use('/api/ideas', ideasRouter);
   app.use('/api/inbox', inboxRouter);
   app.use('/api/google', googleRouter);

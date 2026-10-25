@@ -24,7 +24,7 @@ export function getSessionScope(): SessionScope {
 const SESSION_KEY = () => SESSION_KEYS[sessionScope];
 
 /** Endpoints that legitimately run without a session. */
-const PUBLIC_PATHS = ['/auth/login', '/auth/register', '/auth/refresh', '/organizations/invitations/'];
+const PUBLIC_PATHS = ['/auth/login', '/auth/register', '/auth/refresh', '/organizations/invitations/', '/public/'];
 
 export interface Organization {
   id: string;
@@ -810,6 +810,10 @@ export const api = {
     currentBrief?: string;
     instruction?: string;
   }) => request<MagicStory>('/creatives/magic/story', { method: 'POST', body: JSON.stringify(input) }),
+
+  /** The story writer for visitors: no account, a short reel, no photos. */
+  writeMagicStoryAsGuest: (input: { description: string; language?: string }) =>
+    request<MagicStory>('/public/creatives/magic/story', { method: 'POST', body: JSON.stringify(input) }),
 
   searchStockPhotos: (query: string, page = 1) =>
     request<{ photos: StockPhoto[]; configured: boolean }>('/creatives/magic/photos', {

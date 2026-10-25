@@ -18,7 +18,7 @@ import {
 } from '../../http/middleware.js';
 import { db } from '../../db/client.js';
 import { brandProfiles } from '../../db/schema.js';
-import { badRequest } from '../../lib/errors.js';
+import { badRequest, tooManyRequests } from '../../lib/errors.js';
 import * as gemini from '../../integrations/gemini.js';
 import { importImageFromUrl } from '../../integrations/cloudinary.js';
 import { firstStockPhotos, searchStockPhotos, stockPhotoSource, stockPhotosConfigured, type StockPhoto } from '../../integrations/stock-photos.js';
@@ -27,6 +27,49 @@ import { assertWithinQuota, recordUsage } from '../usage/service.js';
 import * as designs from './service.js';
 
 export const creativesRouter: Router = Router();
+
+/**
+ * The one door open to visitors: Magic Design's story writer, so the website
+ * can show the product before asking for an account. No photos (those are
+ * imported into a tenant's library), a short reel, and a few tries per IP.
+ */
+export const publicCreativesRouter: Router = Router();
+
+const GUEST_STORY_LIMIT = { perHour: 6, perDay: 15 };
+const guestStoryHits = new Map<string, number[]>();
+
+function guestAllowed(ip: string): boolean {
+  const now = Date.now();
+  const hits = (guestStoryHits.get(ip) ?? []).filter((t) => now - t < 24 * 60 * 60 * 1000);
+  const lastHour = hits.filter((t) => now - t < 60 * 60 * 1000).length;
+  if (lastHour >= GUEST_STORY_LIMIT.perHour || hits.length >= GUEST_STORY_LIMIT.perDay) return false;
+  hits.push(now);
+  guestStoryHits.set(ip, hits);
+  // The map must not grow for ever on a busy day.
+  if (guestStoryHits.size > 5000) {
+    for (const [key, value] of guestStoryHits) if (value.every((t) => now - t > 24 * 60 * 60 * 1000)) guestStoryHits.delete(key);
+  }
+  return true;
+}
+
+publicCreativesRouter.post(
+  '/magic/story',
+  validate(magicStorySchema),
+  asyncHandler(async (req, res) => {
+    if (!guestAllowed(req.ip ?? 'unknown')) throw tooManyRequests('You have tried a few reels already — sign up free to keep going.');
+    const plan = await gemini.writeMagicStory(
+      { name: 'the business' },
+      { description: req.body.description, language: req.body.language, sceneCount: Math.min(req.body.sceneCount ?? 3, 3) },
+    );
+    res.json({
+      title: plan.title,
+      language: plan.language,
+      brief: briefFromPlan(plan),
+      needs: { photoScenes: plan.scenes.flatMap((scene, index) => (scene.photo ? [index] : [])) },
+      photoScenes: [],
+    });
+  }),
+);
 
 creativesRouter.use(requireAuth, withOrganization);
 
