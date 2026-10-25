@@ -39,16 +39,15 @@ publicCreativesRouter.post(
   '/magic/story',
   validate(magicStorySchema),
   asyncHandler(async (req, res) => {
-    const plan = await gemini.writeMagicStory(
-      { name: 'the business' },
-      { description: req.body.description, language: req.body.language, sceneCount: req.body.sceneCount },
-    );
+    const plan = await gemini.writeMagicStory({ name: 'the business' }, req.body);
     // Visitors get pictures too; they are kept in a shared guests folder and
     // not registered to any library.
+    const keep = new Set(req.body.keepPhotoScenes ?? []);
     const photoScenes = await Promise.all(
       plan.scenes.flatMap((scene, index) => {
         if (!scene.photo) return [];
         const query = scene.imageQuery || scene.headline;
+        if (keep.has(index)) return [Promise.resolve({ index, query, chosen: null, alternatives: [] as StockPhoto[] })];
         return [
           (async () => {
             const alternatives = stockPhotosConfigured() ? await firstStockPhotos(query) : [];
@@ -149,10 +148,12 @@ creativesRouter.post(
     // Pictures for the scenes that want one: found and imported in parallel,
     // so the story arrives with photos already in place. Any miss leaves the
     // scene for the user to fill; it never fails the story.
+    const keep = new Set(req.body.keepPhotoScenes ?? []);
     const photoScenes = await Promise.all(
       plan.scenes.flatMap((scene, index) => {
         if (!scene.photo) return [];
         const query = scene.imageQuery || scene.headline;
+        if (keep.has(index)) return [Promise.resolve({ index, query, chosen: null, alternatives: [] as StockPhoto[] })];
         return [
           (async () => {
             const alternatives = stockPhotosConfigured() ? await firstStockPhotos(query) : [];

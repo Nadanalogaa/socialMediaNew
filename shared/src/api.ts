@@ -238,6 +238,8 @@ export const magicStorySchema = z.object({
   language: z.string().max(40).optional(),
   currentBrief: z.string().max(20000).optional(),
   instruction: z.string().max(1000).optional(),
+  /** Scenes that already have a photo: no new one is looked up for them. */
+  keepPhotoScenes: z.array(z.number().int().min(0).max(20)).max(20).optional(),
 });
 export type MagicStoryInput = z.infer<typeof magicStorySchema>;
 

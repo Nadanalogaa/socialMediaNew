@@ -809,10 +809,11 @@ export const api = {
     language?: string;
     currentBrief?: string;
     instruction?: string;
+    keepPhotoScenes?: number[];
   }) => request<MagicStory>('/creatives/magic/story', { method: 'POST', body: JSON.stringify(input) }),
 
   /** The story writer for visitors: no account, a short reel, no photos. */
-  writeMagicStoryAsGuest: (input: { description: string; language?: string; sceneCount?: number }) =>
+  writeMagicStoryAsGuest: (input: { description: string; language?: string; sceneCount?: number; currentBrief?: string; instruction?: string; keepPhotoScenes?: number[] }) =>
     request<MagicStory>('/public/creatives/magic/story', { method: 'POST', body: JSON.stringify(input) }),
 
   searchStockPhotos: (query: string, page = 1) =>

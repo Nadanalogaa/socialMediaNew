@@ -54,6 +54,9 @@ const DESCRIBE_EXAMPLE = `I run an educational institution named Sree Annai Fine
 
 const STORY_LANGUAGES = ['English', 'Tamil', 'Tanglish', 'Hindi', 'Telugu', 'Kannada', 'Malayalam'];
 
+/** Changes people ask for most, one tap away. */
+const CHAT_SUGGESTIONS = ['Shorter', 'More energetic', 'Add one more scene about our teachers', 'Make the offer the first scene', 'Change to Tamil'];
+
 const LOGO_POSITIONS: { value: LogoPosition; label: string }[] = [
   { value: 'top-right', label: 'Top right' },
   { value: 'top-left', label: 'Top left' },
@@ -104,9 +107,13 @@ export function MagicDesignDialog({
   const { guest, lock } = useGuest();
   const [brief, setBrief] = useState(initial?.brief ?? presetBrief ?? '');
   // "Describe" lets the story be written for the user; "Write" is scene by scene.
-  const [mode, setMode] = useState<'describe' | 'write'>(initial || presetBrief ? 'write' : 'describe');
+  // "Describe" writes the story; "chat" changes it in conversation; "write" is the raw scene text.
+  const [mode, setMode] = useState<'describe' | 'chat' | 'write'>(initial ? 'chat' : presetBrief ? 'write' : 'describe');
+  const [turns, setTurns] = useState<{ role: 'user' | 'assistant'; text: string }[]>(initial?.conversation ?? []);
+  const [chatInput, setChatInput] = useState('');
+  const chatEnd = useRef<HTMLDivElement>(null);
   const [aiAvailable, setAiAvailable] = useState<boolean | null>(null);
-  const [description, setDescription] = useState(presetDescription ?? '');
+  const [description, setDescription] = useState(initial?.description ?? presetDescription ?? '');
   const [language, setLanguage] = useState(presetLanguage ?? 'English');
   const [showTemplates, setShowTemplates] = useState(false);
   const [industry, setIndustry] = useState<string>('All');
@@ -216,26 +223,32 @@ export function MagicDesignDialog({
     setDescription(saved.options?.description ?? '');
     setBriefId(saved.id);
     setShowHistory(false);
-    setMode('write');
+    setTurns([]);
+    setMode('chat');
   }
 
-  async function writeStory(instruction?: string, text: string = description) {
-    if (text.trim().length < 10) {
+  async function writeStory(instruction?: string, text: string = description): Promise<boolean> {
+    // A reel written by hand has no description; the scenes themselves stand in.
+    const source = text.trim().length >= 10 ? text.trim() : brief.trim();
+    if (source.length < 10) {
       setError('Tell us a little more about the business first — a few sentences is enough.');
-      return;
+      return false;
     }
+    const revising = Boolean(instruction && brief.trim());
     setWriting(true);
     setError(null);
     setShowTemplates(false);
     try {
-      const story = guest
-        ? await api.writeMagicStoryAsGuest({ description: text.trim(), language, sceneCount })
-        : await api.writeMagicStory({
-            description: text.trim(),
-            sceneCount,
-            language,
-            ...(instruction && brief.trim() ? { currentBrief: brief, instruction } : {}),
-          });
+      const keepPhotoScenes = revising
+        ? Object.entries(scenePhotos).filter(([, urls]) => urls.length > 0).map(([k]) => Number(k))
+        : [];
+      const input = {
+        description: source,
+        sceneCount,
+        language,
+        ...(revising ? { currentBrief: brief, instruction, keepPhotoScenes } : {}),
+      };
+      const story = guest ? await api.writeMagicStoryAsGuest(input) : await api.writeMagicStory(input);
       setBrief(story.brief);
       setStoryPhotoScenes(story.needs.photoScenes);
       setSkipped(new Set());
@@ -251,19 +264,28 @@ export function MagicDesignDialog({
           imported.push(scene.chosen);
         }
       }
-      setScenePhotos(picked);
-      setPhotoLayout({});
-      setSuggestions(found);
+      if (revising) {
+        // Photos already in place stay; only scenes without one take the new picks.
+        setScenePhotos((prev) => ({ ...picked, ...prev }));
+        setSuggestions((prev) => ({ ...prev, ...found }));
+      } else {
+        setScenePhotos(picked);
+        setPhotoLayout({});
+        setSuggestions(found);
+      }
       if (imported.length > 0) setLibrary((prev) => [...imported, ...(prev ?? [])]);
-      setMode('write');
+      setMode('chat');
+      return true;
     } catch (err) {
       // The page stays open for the user to try again; nothing builds on its own.
       autoCreate.current = false;
       setError(err instanceof Error ? err.message : 'Could not write the story. Please try again.');
+      return false;
     } finally {
       setWriting(false);
     }
   }
+
 
   function skip(item: string) {
     setSkipped((prev) => new Set(prev).add(item));
@@ -287,7 +309,7 @@ export function MagicDesignDialog({
     setBrief(fillTemplate(template.brief).replace(/^(Contact|Website):\s*$/gm, '').replace(/\n{3,}/g, '\n\n'));
     setStoryPhotoScenes(null);
     setShowTemplates(false);
-    setMode('write');
+    setMode('chat');
   }
 
   // Arriving from the website with a description: the story is written at once.
@@ -392,6 +414,44 @@ export function MagicDesignDialog({
   const scenesHeld = parsedScenes.length - scenes.length;
   const directives = useMemo(() => parseBriefDirectives(expanded), [expanded]);
   const totalSeconds = scenes.reduce((total, scene) => total + sceneDurationFor(scene), 0);
+
+  /** One turn of the conversation: the change is asked for, applied, and reported back. */
+  async function sendChange(text: string) {
+    const message = text.trim();
+    if (!message || writing) return;
+    setChatInput('');
+    const before = parsedScenes.map((scene) => scene.headline);
+    setTurns((prev) => [...prev, { role: 'user', text: message }]);
+    const ok = await writeStory(message);
+    if (!ok) {
+      setTurns((prev) => [...prev, { role: 'assistant', text: 'Sorry, that did not go through. Please try again.' }]);
+      return;
+    }
+    // Reported on the next render, once the new scenes are parsed.
+    pendingReport.current = before;
+    if (initial) autoCreate.current = true;
+  }
+  const pendingReport = useRef<string[] | null>(null);
+
+  useEffect(() => {
+    if (!pendingReport.current || writing) return;
+    const before = pendingReport.current;
+    pendingReport.current = null;
+    const after = parsedScenes.map((scene) => scene.headline);
+    const changed = after.map((h, i) => (h !== before[i] ? i + 1 : 0)).filter(Boolean);
+    const what =
+      after.length !== before.length
+        ? `Done — the reel now has ${after.length} scenes.`
+        : changed.length === 0
+          ? 'Done — the wording is adjusted.'
+          : `Done — scene${changed.length === 1 ? '' : 's'} ${changed.join(', ')} changed.`;
+    setTurns((prev) => [...prev, { role: 'assistant', text: initial ? `${what} Rebuilding the reel…` : `${what} Press Create when you are happy, or ask for more.` }]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [writing, parsedScenes]);
+
+  useEffect(() => {
+    chatEnd.current?.scrollIntoView({ block: 'nearest' });
+  }, [turns.length]);
 
   async function handleAudioFile(file: File) {
     setError(null);
@@ -536,6 +596,8 @@ export function MagicDesignDialog({
         logoPosition: logoPosition || undefined,
         brandColor,
         accentColor,
+        description: description.trim() || undefined,
+        conversation: turns,
       },
       audio,
     );
@@ -848,8 +910,9 @@ export function MagicDesignDialog({
                   <div className="ml-auto flex flex-wrap items-center gap-1">
                     {(
                       [
-                        ['describe', '✨ Describe your business'],
-                        ['write', '✍️ Write the scenes'],
+                        ['describe', '✨ Describe'],
+                        ['chat', '💬 Ask for changes'],
+                        ['write', '✍️ Scene text'],
                       ] as const
                     ).map(([value, label]) => (
                       <button
@@ -867,7 +930,84 @@ export function MagicDesignDialog({
                 )}
               </div>
 
-              {mode === 'describe' ? (
+              {mode === 'chat' ? (
+                <div>
+                  {brief.trim() === '' ? (
+                    <p className="rounded-xl border border-dashed border-slate-300 p-4 text-center text-sm text-slate-500">
+                      Nothing to change yet —{' '}
+                      <button type="button" onClick={() => setMode('describe')} className="font-medium text-brand-600 hover:underline">
+                        describe your business
+                      </button>{' '}
+                      and the story is written first.
+                    </p>
+                  ) : (
+                    <>
+                      <div className="max-h-72 space-y-2 overflow-y-auto rounded-xl bg-slate-50 p-3">
+                        {description.trim() && (
+                          <div className="flex gap-2">
+                            <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-300 text-[11px] font-semibold text-white">You</span>
+                            <p className="rounded-2xl rounded-tl-sm bg-white px-3 py-2 text-sm text-slate-800">{description}</p>
+                          </div>
+                        )}
+                        <div className="flex gap-2">
+                          <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-600 to-fuchsia-500 text-xs text-white">✨</span>
+                          <p className="rounded-2xl rounded-tl-sm bg-brand-50 px-3 py-2 text-sm text-slate-800">
+                            Here is your reel in {parsedScenes.length} scenes{parsedScenes[0]?.headline ? `, opening with “${parsedScenes[0].headline}”` : ''}. Tell me what to change: a scene, the tone, the language, the offer, the length.
+                          </p>
+                        </div>
+                        {turns.map((turn, i) => (
+                          <div key={i} className="flex gap-2">
+                            {turn.role === 'user' ? (
+                              <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-300 text-[11px] font-semibold text-white">You</span>
+                            ) : (
+                              <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-600 to-fuchsia-500 text-xs text-white">✨</span>
+                            )}
+                            <p className={`rounded-2xl rounded-tl-sm px-3 py-2 text-sm text-slate-800 ${turn.role === 'user' ? 'bg-white' : 'bg-brand-50'}`}>{turn.text}</p>
+                          </div>
+                        ))}
+                        {writing && (
+                          <div className="flex gap-2">
+                            <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-600 to-fuchsia-500 text-xs text-white">✨</span>
+                            <p className="rounded-2xl rounded-tl-sm bg-brand-50 px-3 py-2 text-sm text-slate-500">Rewriting…</p>
+                          </div>
+                        )}
+                        <div ref={chatEnd} />
+                      </div>
+                      <form
+                        className="mt-2 flex items-end gap-2"
+                        onSubmit={(event) => {
+                          event.preventDefault();
+                          void sendChange(chatInput);
+                        }}
+                      >
+                        <textarea
+                          value={chatInput}
+                          onChange={(e) => setChatInput(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === 'Enter' && !e.shiftKey) {
+                              e.preventDefault();
+                              void sendChange(chatInput);
+                            }
+                          }}
+                          rows={2}
+                          placeholder="e.g. Make scene 2 about the Carnatic classes · Shorter and more energetic · Put the phone number bigger on the last scene · Change to Tamil"
+                          className="min-w-0 flex-1 rounded-xl border border-slate-300 px-3 py-2 text-sm leading-relaxed outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20"
+                        />
+                        <Button type="submit" disabled={writing || !chatInput.trim()} className="!py-2">
+                          Send
+                        </Button>
+                      </form>
+                      <div className="mt-1.5 flex flex-wrap gap-1">
+                        {CHAT_SUGGESTIONS.map((hint) => (
+                          <button key={hint} type="button" onClick={() => void sendChange(hint)} disabled={writing} className="rounded-full border border-slate-200 px-2 py-0.5 text-[11px] text-slate-600 hover:bg-slate-50 disabled:opacity-50">
+                            {hint}
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+              ) : mode === 'describe' ? (
                 <div>
                   <textarea
                     value={description}
@@ -964,7 +1104,7 @@ export function MagicDesignDialog({
               )}
             </section>
 
-            {storyPhotoScenes !== null && mode === 'write' && scenes.length > 0 && (
+            {storyPhotoScenes !== null && mode !== 'describe' && scenes.length > 0 && (
               <section className={`rounded-2xl border p-4 ${openQuestions > 0 ? 'border-amber-200 bg-amber-50' : 'border-emerald-200 bg-emerald-50'}`}>
                 <h3 className={`text-sm font-semibold ${openQuestions > 0 ? 'text-amber-900' : 'text-emerald-900'}`}>
                   {openQuestions > 0 ? '2 · A few quick questions' : '2 · All set — create the reel when you are ready'}

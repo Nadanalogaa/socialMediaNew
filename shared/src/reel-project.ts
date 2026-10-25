@@ -78,6 +78,10 @@ export interface MagicBrief {
   logoPosition?: string;
   brandColor: string;
   accentColor: string;
+  /** The description the story was written from, when it was. */
+  description?: string;
+  /** The changes asked for so far, so the conversation continues after a rebuild. */
+  conversation?: { role: 'user' | 'assistant'; text: string }[];
 }
 
 export interface ReelProject {
