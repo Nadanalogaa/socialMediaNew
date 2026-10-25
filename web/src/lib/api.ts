@@ -581,10 +581,19 @@ export interface SavedBrief {
     photoLayout?: Record<string, 'background' | 'blocks'>;
     logo?: string;
     logoPosition?: string;
+    /** The plain description the story was written from, if it was. */
+    description?: string;
   };
   brandColor: string;
   accentColor: string;
   updatedAt: string;
+}
+
+export interface MagicStory {
+  title: string;
+  language: string;
+  brief: string;
+  needs: { photoScenes: number[] };
 }
 
 export interface DesignSummary {
@@ -771,6 +780,14 @@ export const api = {
   }) => request<SavedBrief>('/creatives/briefs', { method: 'POST', body: JSON.stringify(input) }),
 
   deleteBrief: (id: string) => request<void>(`/creatives/briefs/${id}`, { method: 'DELETE' }),
+
+  writeMagicStory: (input: {
+    description: string;
+    sceneCount?: number;
+    language?: string;
+    currentBrief?: string;
+    instruction?: string;
+  }) => request<MagicStory>('/creatives/magic/story', { method: 'POST', body: JSON.stringify(input) }),
 
   // --- Analytics ---
   getAnalytics: (days: number) => request<AnalyticsPayload>(`/analytics?days=${days}`),

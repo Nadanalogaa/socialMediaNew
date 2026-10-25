@@ -6,7 +6,9 @@ import {
   CREATIVE_KINDS,
   autofillTemplateSchema,
   findTemplate,
+  briefFromPlan,
   generateCaptionSchema,
+  magicStorySchema,
 } from '@socialboost/shared';
 import {
   asyncHandler,
@@ -83,6 +85,30 @@ creativesRouter.post(
 );
 
 
+/**
+ * Magic Design from a plain description: the story is written as scenes and
+ * returned as brief text, plus what the user still has to supply.
+ */
+creativesRouter.post(
+  '/magic/story',
+  validate(magicStorySchema),
+  asyncHandler(async (req, res) => {
+    const organizationId = req.tenant!.organizationId;
+    await assertWithinQuota(organizationId, 'ai_text');
+
+    const plan = await gemini.writeMagicStory(await loadBrand(organizationId), req.body);
+    await recordUsage(organizationId, 'ai_text', 1, { kind: 'magic_story' });
+    res.json({
+      title: plan.title,
+      language: plan.language,
+      brief: briefFromPlan(plan),
+      needs: {
+        photoScenes: plan.scenes.flatMap((scene, index) => (scene.photo ? [index] : [])),
+      },
+    });
+  }),
+);
+
 // --- Saved designs --------------------------------------------------------
 
 const saveDesignSchema = z.object({
@@ -155,6 +181,7 @@ const saveBriefSchema = z.object({
       photoLayout: z.record(z.string(), z.enum(['background', 'blocks'])).optional(),
       logo: z.string().url().optional(),
       logoPosition: z.string().max(20).optional(),
+      description: z.string().max(4000).optional(),
     })
     .default({}),
   brandColor: z.string().max(32),

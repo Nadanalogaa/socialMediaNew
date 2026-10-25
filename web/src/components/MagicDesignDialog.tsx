@@ -10,7 +10,7 @@ import {
   type ProjectAudio,
   type ReelProject,
 } from '@socialboost/shared';
-import { api, uploadAudio, uploadToCloudinary, type BrandKit, type MediaAsset, type SavedBrief } from '../lib/api';
+import { api, getFeatures, uploadAudio, uploadToCloudinary, type BrandKit, type MediaAsset, type SavedBrief } from '../lib/api';
 import { applyBrandPlaceholders, brandFooter } from '../lib/brand';
 import { GUEST_LIMITS, useGuest } from '../lib/guest';
 import { Alert, Button, Spinner } from './ui';
@@ -47,6 +47,10 @@ const INSTRUCTION_GROUPS: { title: string; words: string }[] = [
       'Above Scene 1: Logo: top right · QR: https://… · Footer: your text. Written inside a scene, QR: and Footer: apply to that scene only.',
   },
 ];
+
+const DESCRIBE_EXAMPLE = `I run an educational institution named Sree Annai Fine Arts in Chennai. We teach Bharatanatyam, Carnatic vocal and keyboard for children from age 5 and for adults, with 15 years of experience and more than 400 students trained. Admissions for the July batch are open, weekend classes available. Mention a free demo class.`;
+
+const STORY_LANGUAGES = ['English', 'Tamil', 'Tanglish', 'Hindi', 'Telugu', 'Kannada', 'Malayalam'];
 
 const LOGO_POSITIONS: { value: LogoPosition; label: string }[] = [
   { value: 'top-right', label: 'Top right' },
@@ -93,6 +97,17 @@ export function MagicDesignDialog({
 }) {
   const { guest, lock } = useGuest();
   const [brief, setBrief] = useState(initial?.brief ?? presetBrief ?? '');
+  // "Describe" lets the story be written for the user; "Write" is scene by scene.
+  const [mode, setMode] = useState<'describe' | 'write'>(initial || presetBrief ? 'write' : 'describe');
+  const [aiAvailable, setAiAvailable] = useState<boolean | null>(null);
+  const [description, setDescription] = useState('');
+  const [language, setLanguage] = useState('English');
+  const [sceneCount, setSceneCount] = useState(5);
+  const [writing, setWriting] = useState(false);
+  /** Set once a story was written: the scenes the story wants a photo in. */
+  const [storyPhotoScenes, setStoryPhotoScenes] = useState<number[] | null>(null);
+  /** Checklist items the user chose to go without. */
+  const [skipped, setSkipped] = useState<Set<string>>(() => new Set());
   const [brand, setBrand] = useState<BrandKit | null>(null);
   const [brandColor, setBrandColor] = useState(initial?.brandColor ?? '#4f46e5');
   const [accentColor, setAccentColor] = useState(initial?.accentColor ?? '#0f172a');
@@ -121,6 +136,15 @@ export function MagicDesignDialog({
   /** The history entry this brief came from, so a rebuild updates it. */
   const [briefId, setBriefId] = useState<string | undefined>(initial?.id);
   const audioInput = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    void getFeatures().then((features) => {
+      setAiAvailable(features.ai);
+      // Without a model there is nothing to describe to.
+      if (!features.ai && !guest) setMode('write');
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (guest) {
@@ -157,8 +181,43 @@ export function MagicDesignDialog({
     );
     setLogo(saved.options?.logo);
     setLogoPosition(saved.options?.logoPosition ?? '');
+    setDescription(saved.options?.description ?? '');
     setBriefId(saved.id);
     setShowHistory(false);
+    setMode('write');
+  }
+
+  async function writeStory(instruction?: string) {
+    if (guest) {
+      lock('Writing the story for you');
+      return;
+    }
+    if (description.trim().length < 10) {
+      setError('Tell us a little more about the business first — a few sentences is enough.');
+      return;
+    }
+    setWriting(true);
+    setError(null);
+    try {
+      const story = await api.writeMagicStory({
+        description: description.trim(),
+        sceneCount,
+        language,
+        ...(instruction && brief.trim() ? { currentBrief: brief, instruction } : {}),
+      });
+      setBrief(story.brief);
+      setStoryPhotoScenes(story.needs.photoScenes);
+      setSkipped(new Set());
+      setMode('write');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not write the story. Please try again.');
+    } finally {
+      setWriting(false);
+    }
+  }
+
+  function skip(item: string) {
+    setSkipped((prev) => new Set(prev).add(item));
   }
 
   function togglePhoto(sceneIndex: number, url: string) {
@@ -213,7 +272,12 @@ export function MagicDesignDialog({
   const expanded = useMemo(() => applyBrandPlaceholders(brief, brand), [brief, brand]);
   const parsedScenes = useMemo(() => (expanded.trim() ? parseBrief(expanded) : []), [expanded]);
   // A guest's reel is three scenes; the rest of the brief waits for an account.
-  const scenes = useMemo(() => (guest ? parsedScenes.slice(0, GUEST_LIMITS.scenes) : parsedScenes), [guest, parsedScenes]);
+  const scenes = useMemo(() => {
+    const visible = guest ? parsedScenes.slice(0, GUEST_LIMITS.scenes) : parsedScenes;
+    return visible.map((scene, index) =>
+      scene.wantsPhoto && skipped.has(`photo-${index}`) ? { ...scene, wantsPhoto: false } : scene,
+    );
+  }, [guest, parsedScenes, skipped]);
   const scenesHeld = parsedScenes.length - scenes.length;
   const directives = useMemo(() => parseBriefDirectives(expanded), [expanded]);
   const totalSeconds = scenes.reduce((total, scene) => total + sceneDurationFor(scene), 0);
@@ -288,6 +352,7 @@ export function MagicDesignDialog({
       ) as Record<string, PhotoLayout>,
       ...(logo ? { logo } : {}),
       ...(logoPosition ? { logoPosition } : {}),
+      ...(description.trim() ? { description: description.trim() } : {}),
     };
     try {
       if (guest) throw new Error('guest');
@@ -383,7 +448,9 @@ export function MagicDesignDialog({
             <p className="mt-0.5 text-sm text-slate-600">
               {initial
                 ? 'Edit the brief and the reel is rebuilt. Hand-made changes to scenes are replaced.'
-                : 'Write what each scene should say. The reel is built for you, and you can change anything afterwards.'}
+                : mode === 'describe'
+                  ? 'Describe your business in your own words. The story, scenes and layout are written for you.'
+                  : 'Write what each scene should say. The reel is built for you, and you can change anything afterwards.'}
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-1">
@@ -471,13 +538,104 @@ export function MagicDesignDialog({
           </div>
         )}
 
-        <textarea
-          value={brief}
-          onChange={(e) => setBrief(e.target.value)}
-          rows={11}
-          placeholder={EXAMPLE}
-          className="w-full rounded-xl border border-slate-300 px-3 py-2 font-mono text-sm leading-relaxed outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20"
-        />
+        {(aiAvailable || guest) && (
+          <div className="mb-2 flex flex-wrap items-center gap-1">
+            {(
+              [
+                ['describe', '✨ Describe your business'],
+                ['write', '✍️ Write the scenes yourself'],
+              ] as const
+            ).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                onClick={() => setMode(value)}
+                className={`rounded-full border px-3 py-1 text-xs font-medium ${
+                  mode === value
+                    ? 'border-brand-500 bg-brand-50 text-brand-700'
+                    : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+            {mode === 'write' && brief.trim() && description.trim() && (
+              <span className="ml-auto text-xs text-slate-500">
+                Written from your description ·{' '}
+                <button type="button" onClick={() => setMode('describe')} className="font-medium text-brand-600 hover:underline">
+                  change it
+                </button>
+              </span>
+            )}
+          </div>
+        )}
+
+        {mode === 'describe' ? (
+          <div className="rounded-xl border border-brand-200 bg-brand-50/40 p-3">
+            <textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              rows={6}
+              placeholder={DESCRIBE_EXAMPLE}
+              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm leading-relaxed outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20"
+            />
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+              <label className="text-slate-600">Language</label>
+              <select
+                value={language}
+                onChange={(e) => setLanguage(e.target.value)}
+                className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs"
+              >
+                {STORY_LANGUAGES.map((item) => (
+                  <option key={item}>{item}</option>
+                ))}
+              </select>
+              <label className="ml-1 text-slate-600">Scenes</label>
+              <select
+                value={sceneCount}
+                onChange={(e) => setSceneCount(Number(e.target.value))}
+                className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs"
+              >
+                {[3, 4, 5, 6, 7].map((n) => (
+                  <option key={n} value={n}>
+                    {n}
+                  </option>
+                ))}
+              </select>
+              {description.trim() === '' && (
+                <button
+                  type="button"
+                  onClick={() => setDescription(DESCRIBE_EXAMPLE)}
+                  className="font-medium text-brand-600 hover:underline"
+                >
+                  Use the example
+                </button>
+              )}
+              <Button
+                className="ml-auto !py-1.5 !text-xs"
+                onClick={() => void writeStory()}
+                disabled={writing}
+              >
+                {writing ? 'Writing the story…' : brief.trim() ? '✨ Write it again' : '✨ Write the story'}
+              </Button>
+            </div>
+            <p className="mt-2 text-xs text-slate-500">
+              Say what you do, where you are, who it is for, what makes you good at it, and what you
+              are offering now. Your brand kit's name, phone and website are used as they are; nothing
+              else is invented. Change any line afterwards.
+            </p>
+          </div>
+        ) : (
+          <textarea
+            value={brief}
+            onChange={(e) => setBrief(e.target.value)}
+            rows={11}
+            placeholder={EXAMPLE}
+            className="w-full rounded-xl border border-slate-300 px-3 py-2 font-mono text-sm leading-relaxed outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20"
+          />
+        )}
+
+        {mode === 'write' && (
 
         <div className="mt-1 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
           <span>
@@ -515,8 +673,9 @@ export function MagicDesignDialog({
             </button>
           )}
         </div>
+        )}
 
-        {showInstructions && (
+        {mode === 'write' && showInstructions && (
           <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
             {INSTRUCTION_GROUPS.map((group) => (
               <Fragment key={group.title}>
@@ -530,6 +689,64 @@ export function MagicDesignDialog({
             </dd>
           </dl>
         )}
+
+        {storyPhotoScenes !== null && mode === 'write' && scenes.length > 0 && (() => {
+          const photoScenes = scenes
+            .map((_, index) => index)
+            .filter((index) => scenes[index]!.wantsPhoto && !scenePhotos[index]?.length);
+          const wantLogo = !logo && !skipped.has('logo');
+          const wantAudio = !audio && !skipped.has('audio');
+          const open = (wantLogo ? 1 : 0) + photoScenes.length + (wantAudio ? 1 : 0);
+          return (
+            <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3">
+              <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-amber-800">
+                {open > 0 ? 'Before we build — a few quick questions' : 'All set — create the reel below'}
+              </p>
+              {open > 0 && (
+                <ul className="space-y-1.5 text-sm text-slate-800">
+                  {wantLogo && (
+                    <li className="flex flex-wrap items-center gap-2">
+                      <span className="flex-1">Do you want your logo on every scene?</span>
+                      <button type="button" onClick={() => setPickingFor('logo')} className="rounded-md bg-brand-600 px-2 py-0.5 text-xs font-medium text-white hover:bg-brand-700">
+                        Add logo
+                      </button>
+                      <button type="button" onClick={() => skip('logo')} className="text-xs text-slate-600 hover:underline">
+                        No logo
+                      </button>
+                    </li>
+                  )}
+                  {photoScenes.length > 0 && (
+                    <li className="flex flex-wrap items-center gap-2">
+                      <span className="flex-1">
+                        Scene{photoScenes.length === 1 ? '' : 's'} {photoScenes.map((i) => i + 1).join(', ')} would look better
+                        with a photo of your business.
+                      </span>
+                      {photoScenes.map((index) => (
+                        <button key={index} type="button" onClick={() => setPickingFor(index)} className="rounded-md bg-brand-600 px-2 py-0.5 text-xs font-medium text-white hover:bg-brand-700">
+                          Photo for scene {index + 1}
+                        </button>
+                      ))}
+                      <button type="button" onClick={() => photoScenes.forEach((index) => skip(`photo-${index}`))} className="text-xs text-slate-600 hover:underline">
+                        Use colour backgrounds
+                      </button>
+                    </li>
+                  )}
+                  {wantAudio && (
+                    <li className="flex flex-wrap items-center gap-2">
+                      <span className="flex-1">Do you want music or a voice-over? You can add it later too.</span>
+                      <button type="button" onClick={() => audioInput.current?.click()} className="rounded-md bg-brand-600 px-2 py-0.5 text-xs font-medium text-white hover:bg-brand-700">
+                        Add audio
+                      </button>
+                      <button type="button" onClick={() => skip('audio')} className="text-xs text-slate-600 hover:underline">
+                        Not now
+                      </button>
+                    </li>
+                  )}
+                </ul>
+              )}
+            </div>
+          );
+        })()}
 
         {scenes.length > 0 && (
           <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">

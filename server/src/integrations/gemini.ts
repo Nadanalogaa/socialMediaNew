@@ -6,6 +6,7 @@
  * free provider is configured (see ai.ts).
  */
 
+import type { MagicStoryPlan, StoryScene } from '@socialboost/shared';
 import { generateText, parseJson } from './ai.js';
 
 export interface BrandContext {
@@ -148,4 +149,82 @@ export function templateCommentReply(brand: BrandContext, comment: { authorName:
     return `Hi ${first}, we'd love to see you — message us and we'll share the exact location and directions.`;
   }
   return `Thank you, ${first}! 😊 Feel free to message us if you'd like to know more about ${brand.name}.`;
+}
+
+// --- Magic Design stories --------------------------------------------------
+
+const STORY_SHAPE = `{
+  "title": "a short name for this reel, under 60 characters",
+  "language": "the language the lines are written in",
+  "footer": "website · phone, from the allowed contact details only; empty string if there are none",
+  "scenes": [
+    {
+      "label": "what this scene is for, 1-3 words, e.g. Opening, What we offer, Proof, Offer, Call to action",
+      "headline": "the one line that carries the scene, under 50 characters",
+      "headlineStyle": ["0-3 words from: bold, huge, big, caps, gap, pop, rise, fade, letters, wave, typewriter, yellow, gold, orange, green, blue, pink, white, cream"],
+      "body": ["0-3 supporting lines, each under 60 characters"],
+      "contact": ["0-2 contact lines, only on the final scene, only from the allowed contact details"],
+      "photo": true
+    }
+  ]
+}`;
+
+const STORY_RULES = [
+  'You are a video storyteller for small businesses. You write short vertical reels (15-30 seconds) as a sequence of scenes.',
+  'Story arc: hook the viewer, say who the business is, what it offers, why to trust it (years, students, awards, results that the description gives), then the offer or invitation, then a closing call to action with contact details.',
+  'Every line must be short enough to read in a glance. Each body line is a separate line on screen, never a paragraph.',
+  'Set "photo": true on scenes that would be stronger with a real picture of the business (people, place, work); not on the pure text scenes.',
+  'Use only the facts in the description and the allowed contact details. Never invent fees, dates, numbers, awards, phone numbers or addresses.',
+  'Write every headline and body line in the language asked for, not in English, unless English is asked for. Tamil, Hindi, Telugu, Kannada and Malayalam are written in their own script. "Tanglish" is spoken Tamil in Latin letters mixed with English words, the way people text — for example "Unga kuzhandhaikku Bharatanatyam kattrukka vaanga!" or "Free demo class indha Saturday". Keep brand names, numbers and contact details as given.',
+  'Return only the JSON object, nothing else.',
+].join('\n');
+
+export interface StoryRequest {
+  description: string;
+  sceneCount?: number;
+  language?: string;
+  currentBrief?: string;
+  instruction?: string;
+}
+
+/**
+ * Writes (or revises) the scenes of a reel from a plain description of the
+ * business. The result is validated and clamped before it becomes a brief.
+ */
+export async function writeMagicStory(brand: BrandContext, input: StoryRequest): Promise<MagicStoryPlan> {
+  const count = input.sceneCount ?? 5;
+  const language = input.language?.trim() || 'English';
+  const task = input.currentBrief && input.instruction
+    ? [
+        `Here is the current reel, scene by scene:\n${input.currentBrief}`,
+        `The business described itself as: "${input.description}"`,
+        `Revise the reel according to this instruction: "${input.instruction}". Keep everything the instruction does not touch, including the scene count unless it asks otherwise.`,
+      ]
+    : [
+        `The business described itself as: "${input.description}"`,
+        `Write a reel of exactly ${count} scenes in ${language}.`,
+      ];
+  task.push(`Return JSON in exactly this shape:\n${STORY_SHAPE}`);
+
+  const text = await generateText(`${brandInstruction(brand)}\n${STORY_RULES}`, task.join('\n\n'), { json: true });
+  const raw = parseJson<Partial<MagicStoryPlan>>(text);
+  const scenes = (Array.isArray(raw.scenes) ? raw.scenes : [])
+    .filter((scene): scene is StoryScene => !!scene && typeof scene === 'object' && typeof (scene as StoryScene).headline === 'string')
+    .slice(0, 8)
+    .map((scene) => ({
+      label: typeof scene.label === 'string' ? scene.label.slice(0, 40) : undefined,
+      headline: scene.headline.slice(0, 90),
+      headlineStyle: Array.isArray(scene.headlineStyle) ? scene.headlineStyle.filter((w): w is string => typeof w === 'string').slice(0, 3) : [],
+      body: (Array.isArray(scene.body) ? scene.body : []).filter((l): l is string => typeof l === 'string').slice(0, 3).map((l) => l.slice(0, 120)),
+      contact: (Array.isArray(scene.contact) ? scene.contact : []).filter((l): l is string => typeof l === 'string').slice(0, 2).map((l) => l.slice(0, 120)),
+      photo: scene.photo === true,
+    }));
+  if (scenes.length < 2) throw new Error('The AI did not return enough scenes. Please try again.');
+
+  return {
+    title: typeof raw.title === 'string' && raw.title.trim() ? raw.title.trim().slice(0, 80) : scenes[0]!.headline,
+    language: typeof raw.language === 'string' ? raw.language.slice(0, 40) : language,
+    footer: typeof raw.footer === 'string' ? raw.footer.slice(0, 160) : undefined,
+    scenes,
+  };
 }

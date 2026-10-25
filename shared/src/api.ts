@@ -228,6 +228,19 @@ export const generateCaptionSchema = z.object({
 });
 export type GenerateCaptionInput = z.infer<typeof generateCaptionSchema>;
 
+/**
+ * Magic Design, from a plain description. With `currentBrief` and
+ * `instruction` the story is revised instead of written afresh.
+ */
+export const magicStorySchema = z.object({
+  description: z.string().min(10).max(4000),
+  sceneCount: z.number().int().min(2).max(8).optional(),
+  language: z.string().max(40).optional(),
+  currentBrief: z.string().max(20000).optional(),
+  instruction: z.string().max(1000).optional(),
+});
+export type MagicStoryInput = z.infer<typeof magicStorySchema>;
+
 // --- WhatsApp -------------------------------------------------------------
 
 /**

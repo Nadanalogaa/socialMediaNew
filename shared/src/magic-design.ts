@@ -847,3 +847,77 @@ function buildScene(
     layers,
   };
 }
+
+// --- Story plans ------------------------------------------------------------
+
+/**
+ * One scene of a story written for the user, from a plain description of
+ * their business. The AI produces this shape; `briefFromPlan` turns it into
+ * the same brief text a person would have written, so everything downstream
+ * — parsing, editing, history — is unchanged.
+ */
+export interface StoryScene {
+  label?: string;
+  headline: string;
+  /** Instruction words for the headline, e.g. ["bold", "yellow", "pop"]. */
+  headlineStyle?: string[];
+  body: string[];
+  contact: string[];
+  /** The scene is better with a picture; the user is asked for one. */
+  photo: boolean;
+}
+
+export interface MagicStoryPlan {
+  title: string;
+  /** The language the lines are written in, as the user asked. */
+  language: string;
+  /** Small line along the bottom of every scene: usually website · phone. */
+  footer?: string;
+  scenes: StoryScene[];
+}
+
+/** Instruction words the serialiser lets through; anything else is dropped. */
+const PLAN_STYLE_WORDS = new Set([
+  'bold', 'light', 'huge', 'big', 'small', 'caps', 'left', 'right', 'centre', 'gap',
+  'fade', 'rise', 'pop', 'typewriter', 'letters', 'wave', 'slide', 'still',
+  ...Object.keys(BRIEF_COLORS),
+  ...Object.keys(BRIEF_FONTS),
+]);
+
+/** A line of plan text, safe to drop into a brief: one line, no brackets. */
+function planLine(text: string): string {
+  return text.replace(/\s*\n\s*/g, ' ').replace(/[\[\]]/g, '').trim();
+}
+
+/** Writes a plan as brief text, exactly as the parser expects it. */
+export function briefFromPlan(plan: MagicStoryPlan): string {
+  const out: string[] = [];
+  const footer = plan.footer ? planLine(plan.footer) : '';
+  if (footer) out.push(`Footer: ${footer}`, '');
+
+  plan.scenes.forEach((scene, index) => {
+    const label = scene.label ? planLine(scene.label) : '';
+    out.push(`Scene ${index + 1}${label ? ` - ${label}` : ''}`);
+    const headline = planLine(scene.headline);
+    if (headline) {
+      const words = (scene.headlineStyle ?? [])
+        .map((word) => word.toLowerCase().trim())
+        .filter((word) => PLAN_STYLE_WORDS.has(word));
+      out.push(words.length > 0 ? `${headline} [${words.join(', ')}]` : headline);
+    }
+    for (const line of scene.body) {
+      const text = planLine(line);
+      if (text) out.push(text);
+    }
+    if (scene.photo) out.push('And add a photo');
+    for (const line of scene.contact) {
+      const text = planLine(line);
+      if (!text) continue;
+      // Already set apart by the parser? Leave it; otherwise mark it.
+      out.push(isContactLine(text) ? text : `Contact: ${text}`);
+    }
+    out.push('');
+  });
+
+  return out.join('\n').trim() + '\n';
+}
