@@ -865,6 +865,8 @@ export interface StoryScene {
   contact: string[];
   /** The scene is better with a picture; the user is asked for one. */
   photo: boolean;
+  /** What that picture should show, as a short stock-photo search. */
+  imageQuery?: string;
 }
 
 export interface MagicStoryPlan {

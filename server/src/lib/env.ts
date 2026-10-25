@@ -35,6 +35,8 @@ const envSchema = z.object({
   GEMINI_API_KEY: z.string().optional(),
   /** Groq's free tier (Llama); used before Gemini when both exist. */
   GROQ_API_KEY: z.string().optional(),
+  /** Free stock photos for Magic Design scenes (pexels.com/api). */
+  PEXELS_API_KEY: z.string().optional(),
 
   META_APP_ID: z.string().optional(),
   META_APP_SECRET: z.string().optional(),
@@ -90,4 +92,5 @@ export const features = {
   billing: Boolean(env.RAZORPAY_KEY_ID && env.RAZORPAY_KEY_SECRET),
   places: Boolean(env.GOOGLE_PLACES_API_KEY),
   email: Boolean(env.BREVO_API_KEY),
+  stockPhotos: Boolean(env.PEXELS_API_KEY),
 } as const;

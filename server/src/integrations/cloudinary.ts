@@ -86,3 +86,46 @@ export function videoThumbnailUrl(url: string): string | undefined {
   if (!url.includes('res.cloudinary.com') || !url.includes('/video/upload')) return undefined;
   return url.replace('/upload/', '/upload/so_0,w_640,c_limit/').replace(/\.[^./]+$/, '.jpg');
 }
+
+/**
+ * Copies an image from a public URL into the organization's folder, so a
+ * stock photo becomes a normal library asset: same host as uploads, no
+ * cross-origin trouble on the canvas, and still there if the source moves.
+ */
+export async function importImageFromUrl(
+  organizationId: string,
+  sourceUrl: string,
+): Promise<{ url: string; width: number | null; height: number | null; bytes: number | null; publicId: string }> {
+  const config = requireConfig();
+  const { folder, timestamp, signature } = createUploadSignature(organizationId);
+  const body = new URLSearchParams({
+    file: sourceUrl,
+    folder,
+    timestamp: String(timestamp),
+    api_key: config.CLOUDINARY_API_KEY,
+    signature,
+  });
+  const response = await fetch(`https://api.cloudinary.com/v1_1/${config.CLOUDINARY_CLOUD_NAME}/image/upload`, {
+    method: 'POST',
+    body,
+    signal: AbortSignal.timeout(30_000),
+  });
+  const data = (await response.json()) as {
+    secure_url?: string;
+    width?: number;
+    height?: number;
+    bytes?: number;
+    public_id?: string;
+    error?: { message?: string };
+  };
+  if (!response.ok || !data.secure_url) {
+    throw serviceUnavailable(`Could not import that photo: ${data.error?.message ?? response.status}`);
+  }
+  return {
+    url: data.secure_url,
+    width: data.width ?? null,
+    height: data.height ?? null,
+    bytes: data.bytes ?? null,
+    publicId: data.public_id ?? '',
+  };
+}

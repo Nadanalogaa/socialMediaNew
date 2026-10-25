@@ -20,6 +20,9 @@ import { db } from '../../db/client.js';
 import { brandProfiles } from '../../db/schema.js';
 import { badRequest } from '../../lib/errors.js';
 import * as gemini from '../../integrations/gemini.js';
+import { importImageFromUrl } from '../../integrations/cloudinary.js';
+import { firstStockPhotos, searchStockPhotos, stockPhotosConfigured, type StockPhoto } from '../../integrations/pexels.js';
+import * as mediaService from '../media/service.js';
 import { assertWithinQuota, recordUsage } from '../usage/service.js';
 import * as designs from './service.js';
 
@@ -98,14 +101,94 @@ creativesRouter.post(
 
     const plan = await gemini.writeMagicStory(await loadBrand(organizationId), req.body);
     await recordUsage(organizationId, 'ai_text', 1, { kind: 'magic_story' });
+
+    // Pictures for the scenes that want one: found and imported in parallel,
+    // so the story arrives with photos already in place. Any miss leaves the
+    // scene for the user to fill; it never fails the story.
+    const photoScenes = await Promise.all(
+      plan.scenes.flatMap((scene, index) => {
+        if (!scene.photo) return [];
+        const query = scene.imageQuery || scene.headline;
+        return [
+          (async () => {
+            const alternatives = stockPhotosConfigured() ? await firstStockPhotos(query) : [];
+            const first = alternatives[0];
+            const chosen = first ? await importStockPhoto(organizationId, first).catch(() => null) : null;
+            return { index, query, chosen, alternatives };
+          })(),
+        ];
+      }),
+    );
+
     res.json({
       title: plan.title,
       language: plan.language,
       brief: briefFromPlan(plan),
-      needs: {
-        photoScenes: plan.scenes.flatMap((scene, index) => (scene.photo ? [index] : [])),
-      },
+      needs: { photoScenes: photoScenes.map((scene) => scene.index) },
+      photoScenes,
     });
+  }),
+);
+
+/** A stock photo becomes a library asset of the tenant's own. */
+async function importStockPhoto(organizationId: string, photo: StockPhoto) {
+  const imported = await importImageFromUrl(organizationId, photo.url);
+  return mediaService.registerMedia(organizationId, {
+    kind: 'image',
+    url: imported.url,
+    width: imported.width ?? photo.width,
+    height: imported.height ?? photo.height,
+    bytes: imported.bytes ?? undefined,
+    source: 'pexels',
+    providerRef: photo.id,
+  });
+}
+
+const stockSearchSchema = z.object({
+  query: z.string().min(2).max(80),
+  page: z.number().int().min(1).max(10).optional(),
+});
+
+/** Alternatives for a scene, hot-linked for the chooser only. */
+creativesRouter.post(
+  '/magic/photos',
+  validate(stockSearchSchema),
+  asyncHandler(async (req, res) => {
+    if (!stockPhotosConfigured()) {
+      res.json({ photos: [], configured: false });
+      return;
+    }
+    const photos = await searchStockPhotos(req.body.query, { perPage: 12, page: req.body.page });
+    res.json({ photos, configured: true });
+  }),
+);
+
+const stockPickSchema = z.object({
+  id: z.string().max(40),
+  url: z.string().url(),
+  width: z.number().int().optional(),
+  height: z.number().int().optional(),
+  photographer: z.string().max(200).optional(),
+  photographerUrl: z.string().max(500).optional(),
+  alt: z.string().max(500).optional(),
+});
+
+/** The user chose a stock photo: import it so it behaves like an upload. */
+creativesRouter.post(
+  '/magic/photos/pick',
+  validate(stockPickSchema),
+  asyncHandler(async (req, res) => {
+    const asset = await importStockPhoto(req.tenant!.organizationId, {
+      ...req.body,
+      width: req.body.width ?? 0,
+      height: req.body.height ?? 0,
+      thumbnailUrl: req.body.url,
+      photographer: req.body.photographer ?? '',
+      photographerUrl: req.body.photographerUrl ?? '',
+      alt: req.body.alt ?? '',
+      source: 'pexels',
+    });
+    res.status(201).json(asset);
   }),
 );
 

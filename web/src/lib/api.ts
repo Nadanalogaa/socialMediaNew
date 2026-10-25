@@ -589,11 +589,32 @@ export interface SavedBrief {
   updatedAt: string;
 }
 
+export interface StockPhoto {
+  id: string;
+  url: string;
+  thumbnailUrl: string;
+  width: number;
+  height: number;
+  photographer: string;
+  photographerUrl: string;
+  alt: string;
+  source: 'pexels';
+}
+
+export interface MagicStoryPhotoScene {
+  index: number;
+  query: string;
+  /** Already imported into the library, when a stock photo was found. */
+  chosen: MediaAsset | null;
+  alternatives: StockPhoto[];
+}
+
 export interface MagicStory {
   title: string;
   language: string;
   brief: string;
   needs: { photoScenes: number[] };
+  photoScenes: MagicStoryPhotoScene[];
 }
 
 export interface DesignSummary {
@@ -666,6 +687,7 @@ export interface ServerFeatures {
   meta: boolean;
   cloudinary: boolean;
   billing: boolean;
+  stockPhotos?: boolean;
 }
 
 /** Cached for the session: configuration does not change between requests. */
@@ -788,6 +810,26 @@ export const api = {
     currentBrief?: string;
     instruction?: string;
   }) => request<MagicStory>('/creatives/magic/story', { method: 'POST', body: JSON.stringify(input) }),
+
+  searchStockPhotos: (query: string, page = 1) =>
+    request<{ photos: StockPhoto[]; configured: boolean }>('/creatives/magic/photos', {
+      method: 'POST',
+      body: JSON.stringify({ query, page }),
+    }),
+
+  pickStockPhoto: (photo: StockPhoto) =>
+    request<MediaAsset>('/creatives/magic/photos/pick', {
+      method: 'POST',
+      body: JSON.stringify({
+        id: photo.id,
+        url: photo.url,
+        width: photo.width,
+        height: photo.height,
+        photographer: photo.photographer,
+        photographerUrl: photo.photographerUrl,
+        alt: photo.alt,
+      }),
+    }),
 
   // --- Analytics ---
   getAnalytics: (days: number) => request<AnalyticsPayload>(`/analytics?days=${days}`),

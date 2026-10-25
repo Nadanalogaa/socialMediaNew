@@ -10,7 +10,7 @@ import {
   type ProjectAudio,
   type ReelProject,
 } from '@socialboost/shared';
-import { api, getFeatures, uploadAudio, uploadToCloudinary, type BrandKit, type MediaAsset, type SavedBrief } from '../lib/api';
+import { api, getFeatures, uploadAudio, uploadToCloudinary, type BrandKit, type MediaAsset, type SavedBrief, type StockPhoto } from '../lib/api';
 import { applyBrandPlaceholders, brandFooter } from '../lib/brand';
 import { GUEST_LIMITS, useGuest } from '../lib/guest';
 import { Alert, Button, Spinner } from './ui';
@@ -107,6 +107,12 @@ export function MagicDesignDialog({
   const [storyPhotoScenes, setStoryPhotoScenes] = useState<number[] | null>(null);
   /** Checklist items the user chose to go without. */
   const [skipped, setSkipped] = useState<Set<string>>(() => new Set());
+  const [stockPhotos, setStockPhotos] = useState(false);
+  /** Stock alternatives per scene: the search that found them and its results. */
+  const [suggestions, setSuggestions] = useState<Record<number, { query: string; photos: StockPhoto[] }>>({});
+  const [stockQuery, setStockQuery] = useState('');
+  const [searching, setSearching] = useState(false);
+  const [importing, setImporting] = useState<string | null>(null);
   const [brand, setBrand] = useState<BrandKit | null>(null);
   const [brandColor, setBrandColor] = useState(initial?.brandColor ?? '#4f46e5');
   const [accentColor, setAccentColor] = useState(initial?.accentColor ?? '#0f172a');
@@ -145,6 +151,7 @@ export function MagicDesignDialog({
 
   /** Opens a scene's photo chooser and scrolls to it. */
   function focusScene(index: number) {
+    setStockQuery('');
     setPickingFor(index);
     setTimeout(() => document.getElementById(`magic-scene-${index}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 0);
   }
@@ -152,6 +159,7 @@ export function MagicDesignDialog({
   useEffect(() => {
     void getFeatures().then((features) => {
       setAiAvailable(features.ai);
+      setStockPhotos(Boolean(features.stockPhotos));
       // Without a model there is nothing to describe to.
       if (!features.ai && !guest) setMode('write');
     });
@@ -220,6 +228,22 @@ export function MagicDesignDialog({
       setBrief(story.brief);
       setStoryPhotoScenes(story.needs.photoScenes);
       setSkipped(new Set());
+      // Pictures found for the story go straight into their scenes; the
+      // alternatives wait in the chooser for anyone who wants a different one.
+      const picked: Record<number, string[]> = {};
+      const found: Record<number, { query: string; photos: StockPhoto[] }> = {};
+      const imported: MediaAsset[] = [];
+      for (const scene of story.photoScenes) {
+        found[scene.index] = { query: scene.query, photos: scene.alternatives };
+        if (scene.chosen) {
+          picked[scene.index] = [scene.chosen.url];
+          imported.push(scene.chosen);
+        }
+      }
+      setScenePhotos(picked);
+      setPhotoLayout({});
+      setSuggestions(found);
+      if (imported.length > 0) setLibrary((prev) => [...imported, ...(prev ?? [])]);
       setMode('write');
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not write the story. Please try again.');
@@ -230,6 +254,37 @@ export function MagicDesignDialog({
 
   function skip(item: string) {
     setSkipped((prev) => new Set(prev).add(item));
+  }
+
+  /** Looks for stock photos for one scene, from the chooser's search box. */
+  async function findStockPhotos(sceneIndex: number, query: string) {
+    if (query.trim().length < 2) return;
+    setSearching(true);
+    setError(null);
+    try {
+      const { photos } = await api.searchStockPhotos(query.trim());
+      setSuggestions((prev) => ({ ...prev, [sceneIndex]: { query: query.trim(), photos } }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not search for photos.');
+    } finally {
+      setSearching(false);
+    }
+  }
+
+  /** A stock photo picked for a scene is imported first, so it is the tenant's own. */
+  async function useStockPhoto(sceneIndex: number, photo: StockPhoto) {
+    setImporting(photo.id);
+    setError(null);
+    try {
+      const asset = await api.pickStockPhoto(photo);
+      setLibrary((prev) => [asset, ...(prev ?? []).filter((item) => item.id !== asset.id)]);
+      setScenePhotos((prev) => ({ ...prev, [sceneIndex]: [asset.url] }));
+      setPhotoLayout((prev) => ({ ...prev, [sceneIndex]: 'background' }));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not use that photo.');
+    } finally {
+      setImporting(null);
+    }
   }
 
   function togglePhoto(sceneIndex: number, url: string) {
@@ -506,6 +561,54 @@ export function MagicDesignDialog({
           </div>
         )}
 
+        {!forLogo && stockPhotos && !guest && (() => {
+          const found = suggestions[target];
+          const query = stockQuery || found?.query || scenes[target]?.headline || '';
+          return (
+            <div className="mb-2 rounded-lg bg-slate-50 p-2">
+              <form
+                className="flex items-center gap-1.5"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void findStockPhotos(target, query);
+                }}
+              >
+                <input
+                  value={query}
+                  onChange={(event) => setStockQuery(event.target.value)}
+                  placeholder="What should the photo show? e.g. dance class children"
+                  className="min-w-0 flex-1 rounded-md border border-slate-300 bg-white px-2 py-1 text-xs outline-none focus:border-brand-500"
+                />
+                <button type="submit" disabled={searching} className="rounded-md border border-slate-300 bg-white px-2 py-1 text-xs font-medium text-slate-700 hover:bg-slate-100 disabled:opacity-50">
+                  {searching ? 'Finding…' : '🔍 Find photos'}
+                </button>
+              </form>
+              {found && found.photos.length > 0 && (
+                <ul className="mt-1.5 grid grid-cols-6 gap-1 sm:grid-cols-8">
+                  {found.photos.map((photo) => (
+                    <li key={photo.id}>
+                      <button
+                        type="button"
+                        onClick={() => void useStockPhoto(target, photo)}
+                        disabled={importing !== null}
+                        title={photo.alt || `Photo by ${photo.photographer}`}
+                        className={`relative block w-full overflow-hidden rounded border-2 border-transparent hover:border-slate-300 disabled:opacity-60 ${importing === photo.id ? 'border-brand-500' : ''}`}
+                      >
+                        <img src={photo.thumbnailUrl} alt={photo.alt} className="aspect-square w-full object-cover" loading="lazy" />
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {found && found.photos.length === 0 && <p className="mt-1 text-xs text-slate-500">No photos for that — try other words.</p>}
+              <p className="mt-1 text-[10px] text-slate-400">
+                Free photos by <a href="https://www.pexels.com" target="_blank" rel="noreferrer" className="underline">Pexels</a>. Tap one to use it in this scene.
+              </p>
+            </div>
+          );
+        })()}
+
+        {!forLogo && <p className="mb-1 text-[11px] font-medium text-slate-500">Your library</p>}
         {grid === null ? (
           <Spinner className="h-4 w-4 text-slate-400" />
         ) : grid.length === 0 ? (
@@ -769,7 +872,9 @@ export function MagicDesignDialog({
                     {photoScenesOpen.length > 0 && (
                       <li className="flex flex-wrap items-center gap-2">
                         <span className="flex-1">
-                          Scene{photoScenesOpen.length === 1 ? '' : 's'} {photoScenesOpen.map((i) => i + 1).join(', ')} would look better with a photo of your business.
+                          {stockPhotos
+                            ? `No photo could be found for scene${photoScenesOpen.length === 1 ? '' : 's'} ${photoScenesOpen.map((i) => i + 1).join(', ')} — pick one or go without.`
+                            : `Scene${photoScenesOpen.length === 1 ? '' : 's'} ${photoScenesOpen.map((i) => i + 1).join(', ')} would look better with a photo of your business.`}
                         </span>
                         {photoScenesOpen.map((index) => (
                           <button key={index} type="button" onClick={() => focusScene(index)} className="rounded-md bg-brand-600 px-2 py-0.5 text-xs font-medium text-white hover:bg-brand-700">
@@ -811,7 +916,9 @@ export function MagicDesignDialog({
                       🔒 {scenesHeld} more scene{scenesHeld === 1 ? '' : 's'} with a free account
                     </button>
                   )}
-                  <span className="ml-auto text-xs text-slate-500">Tap a photo box to add pictures to that scene.</span>
+                  <span className="ml-auto text-xs text-slate-500">
+                    {storyPhotoScenes !== null && stockPhotos ? 'Photos were chosen for you — tap one to change it.' : 'Tap a photo box to add pictures to that scene.'}
+                  </span>
                 </div>
                 <ul className="space-y-2">
                   {scenes.map((scene, index) => (
@@ -837,7 +944,10 @@ export function MagicDesignDialog({
                         </span>
                         <button
                           type="button"
-                          onClick={() => setPickingFor(pickingFor === index ? null : index)}
+                          onClick={() => {
+                            setStockQuery('');
+                            setPickingFor(pickingFor === index ? null : index);
+                          }}
                           className={`shrink-0 overflow-hidden rounded-lg border-2 transition ${pickingFor === index ? 'border-brand-500' : 'border-slate-200 hover:border-slate-400'}`}
                           title="Choose photos for this scene"
                         >

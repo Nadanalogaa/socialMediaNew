@@ -164,7 +164,8 @@ const STORY_SHAPE = `{
       "headlineStyle": ["0-3 words from: bold, huge, big, caps, gap, pop, rise, fade, letters, wave, typewriter, yellow, gold, orange, green, blue, pink, white, cream"],
       "body": ["0-3 supporting lines, each under 60 characters"],
       "contact": ["0-2 contact lines, only on the final scene, only from the allowed contact details"],
-      "photo": true
+      "photo": true,
+      "imageQuery": "when photo is true: 2-4 English words for a stock photo that fits the scene, e.g. bharatanatyam dancer stage, children music class, cake shop counter"
     }
   ]
 }`;
@@ -241,6 +242,7 @@ export async function writeMagicStory(brand: BrandContext, input: StoryRequest):
       body: (Array.isArray(scene.body) ? scene.body : []).filter((l): l is string => typeof l === 'string').slice(0, 3).map((l) => l.slice(0, 120)),
       contact: (Array.isArray(scene.contact) ? scene.contact : []).filter((l): l is string => typeof l === 'string').slice(0, 2).map((l) => cleanContactLine(l).slice(0, 120)),
       photo: scene.photo === true,
+      imageQuery: typeof scene.imageQuery === 'string' ? scene.imageQuery.trim().slice(0, 60) : undefined,
     }));
   if (scenes.length < 2) throw new Error('The AI did not return enough scenes. Please try again.');
 
