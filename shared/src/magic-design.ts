@@ -474,10 +474,23 @@ function blockFor(name: string, lines: BriefLine[], base: RoleSpec, gapBefore?: 
  * width for a bold sans. It errs slightly wide, which produces a little
  * breathing room rather than a collision.
  */
-function estimateLines(text: string, fontSizePct: number, weight: number): number {
+/** Average glyph width for the font size; capitals run about a sixth wider. */
+function glyphWidthFor(fontSizePct: number, weight: number, uppercase?: boolean): number {
   const fontPx = (fontSizePct / 100) * CANVAS_H;
-  const glyphWidth = fontPx * (weight >= 700 ? 0.6 : 0.54);
-  const boxWidth = CANVAS_W * (1 - (TEXT_MARGIN_PCT * 2) / 100);
+  return fontPx * (weight >= 700 ? 0.6 : 0.54) * (uppercase ? 1.17 : 1);
+}
+
+const BOX_WIDTH = CANVAS_W * (1 - (TEXT_MARGIN_PCT * 2) / 100);
+
+/** The widest single word: it cannot wrap, so it must fit on its own. */
+function longestWordWidth(text: string, fontSizePct: number, weight: number, uppercase?: boolean): number {
+  const longest = text.split(/\s+/).reduce((max, word) => Math.max(max, word.length), 0);
+  return longest * glyphWidthFor(fontSizePct, weight, uppercase);
+}
+
+function estimateLines(text: string, fontSizePct: number, weight: number, uppercase?: boolean): number {
+  const glyphWidth = glyphWidthFor(fontSizePct, weight, uppercase);
+  const boxWidth = BOX_WIDTH;
 
   return text.split('\n').reduce((lines, paragraph) => {
     const words = paragraph.split(/\s+/).filter(Boolean);
@@ -518,11 +531,18 @@ function fitBlock(
   const budget = spec.keepLines ? authored : spec.maxLines;
 
   let fontSizePct = spec.fontSizePct;
-  let lines = estimateLines(spec.text, fontSizePct, spec.weight);
+  let lines = estimateLines(spec.text, fontSizePct, spec.weight, spec.uppercase);
+  const tooWide = () => longestWordWidth(spec.text, fontSizePct, spec.weight, spec.uppercase) > BOX_WIDTH;
 
-  while (lines > budget && fontSizePct > spec.minFontSizePct) {
+  while ((lines > budget || tooWide()) && fontSizePct > spec.minFontSizePct) {
     fontSizePct = Math.max(spec.minFontSizePct, fontSizePct - 0.2);
-    lines = estimateLines(spec.text, fontSizePct, spec.weight);
+    lines = estimateLines(spec.text, fontSizePct, spec.weight, spec.uppercase);
+  }
+  // A word wider than the frame is cut off, whatever the minimum says: one
+  // long word in capitals ("TECHNOLOGY") keeps shrinking until it fits.
+  while (tooWide() && fontSizePct > 1.5) {
+    fontSizePct -= 0.2;
+    lines = estimateLines(spec.text, fontSizePct, spec.weight, spec.uppercase);
   }
 
   const { minFontSizePct: _min, maxLines: _max, keepLines: _keep, ...rest } = spec;
