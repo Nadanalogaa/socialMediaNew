@@ -3,8 +3,10 @@ import { MAGIC_TEMPLATES, PLANS, PLAN_ORDER } from '@socialboost/shared';
 import { rupees } from '../lib/money';
 
 /**
- * The public website: what SocialBoost does, for whom, at what price —
- * and the two doors in: Start free and Sign in.
+ * The public website. The top band is Magic Design's conversation box: a
+ * visitor describes the business and lands in the studio with the reel
+ * written. Everything under it says what happens next — publishing,
+ * Google, analytics, team — in as little space as it takes.
  */
 export function LandingScreen({
   signedIn,
@@ -26,12 +28,13 @@ export function LandingScreen({
   return (
     <div className="min-h-full bg-white text-slate-900">
       <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/90 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl items-center gap-3 px-4 py-3">
+        <div className="mx-auto flex max-w-7xl items-center gap-3 px-4 py-2.5">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-600 text-sm font-bold text-white">SB</div>
           <span className="text-base font-semibold">SocialBoost</span>
           <nav className="ml-6 hidden gap-5 text-sm text-slate-600 md:flex">
+            <a href="#publish" className="hover:text-slate-900">Publish</a>
+            <a href="#google" className="hover:text-slate-900">Google</a>
             <a href="#features" className="hover:text-slate-900">Features</a>
-            <a href="#how" className="hover:text-slate-900">How it works</a>
             <a href="#pricing" className="hover:text-slate-900">Pricing</a>
             <a href="#faq" className="hover:text-slate-900">FAQ</a>
           </nav>
@@ -48,44 +51,58 @@ export function LandingScreen({
         </div>
       </header>
 
-      <section className="mx-auto max-w-6xl px-4 pb-16 pt-10 md:pt-16">
-        <div className="mx-auto max-w-3xl text-center">
-          <p className="mb-3 inline-block rounded-full bg-brand-50 px-3 py-1 text-xs font-medium text-brand-700">Made for Indian businesses · ₹ pricing · UPI</p>
-          <h1 className="text-4xl font-semibold leading-tight tracking-tight md:text-5xl">
-            Describe your business.<br />Get a reel in a minute.
-          </h1>
-          <p className="mt-4 text-lg text-slate-600">
-            Tell Magic Design what you do and what you want to announce. It writes the story, lays out the scenes, picks the photos and animates the text. No account needed to try.
-          </p>
-        </div>
-        <MagicBox onTry={onTry} />
-        <div className="mt-5 flex flex-wrap items-center justify-center gap-3 text-sm text-slate-500">
-          <span>Already have an account?</span>
-          <button onClick={signedIn ? onOpenApp : onSignIn} className="font-medium text-brand-600 hover:underline">
-            {signedIn ? 'Open the app' : 'Sign in'}
-          </button>
-          <span>·</span>
-          <button onClick={() => onTry()} className="font-medium text-brand-600 hover:underline">
-            Open the editor without describing
-          </button>
+      {/* ---- Top band: full width, the box and what follows it ------------ */}
+      <section className="bg-gradient-to-br from-slate-900 via-indigo-950 to-fuchsia-950 text-white">
+        <div className="mx-auto grid max-w-7xl items-center gap-8 px-4 py-10 lg:grid-cols-[1fr_1.1fr] lg:py-14">
+          <div>
+            <p className="mb-3 inline-block rounded-full bg-white/10 px-3 py-1 text-xs font-medium text-white/90">Made for Indian businesses · ₹ pricing · UPI · no card to start</p>
+            <h1 className="text-4xl font-semibold leading-[1.1] tracking-tight md:text-5xl">
+              Describe your business. Get a reel. Post it everywhere.
+            </h1>
+            <p className="mt-4 max-w-xl text-lg text-white/80">
+              Magic Design writes the story, lays out the scenes and picks the photos. Then one tap publishes it to Facebook, Instagram, YouTube and your Google Business Profile at the best time, and you see what it earned.
+            </p>
+            <ol className="mt-6 grid gap-3 sm:grid-cols-3">
+              {PIPELINE.map((step, i) => (
+                <li key={step.title} className="rounded-xl border border-white/10 bg-white/5 p-3">
+                  <span className="text-xs font-semibold text-fuchsia-300">{i + 1} · {step.title}</span>
+                  <p className="mt-1 text-sm text-white/80">{step.body}</p>
+                </li>
+              ))}
+            </ol>
+            <div className="mt-6 flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-white/70">
+              <span className="text-white/50">Publishes to</span>
+              {CHANNELS.map((c) => (
+                <span key={c.name} className="inline-flex items-center gap-1.5"><span className="text-base">{c.icon}</span>{c.name}</span>
+              ))}
+            </div>
+          </div>
+          <div>
+            <MagicBox onTry={onTry} />
+            <p className="mt-3 text-center text-xs text-white/60">
+              Free preview: 3 scenes, 720p with a small watermark.{' '}
+              <button onClick={signedIn ? onOpenApp : onRegister} className="font-medium text-white underline-offset-2 hover:underline">
+                {signedIn ? 'Open the app' : 'Start free for full HD, photos, your logo and publishing'}
+              </button>
+            </p>
+          </div>
         </div>
       </section>
 
-      <section className="border-t border-slate-100 py-14">
-        <div className="mx-auto grid max-w-6xl items-center gap-8 px-4 md:grid-cols-2">
+      {/* ---- Publish ------------------------------------------------------- */}
+      <section id="publish" className="border-b border-slate-100">
+        <div className="mx-auto grid max-w-7xl items-center gap-8 px-4 py-12 lg:grid-cols-2">
           <div>
-            <h2 className="text-2xl font-semibold">From a few sentences to a finished reel</h2>
+            <p className="text-xs font-semibold uppercase tracking-wide text-brand-600">Publish &amp; schedule</p>
+            <h2 className="mt-1 text-2xl font-semibold md:text-3xl">Made is not posted. We post it.</h2>
             <p className="mt-3 text-slate-600">
-              Magic Design turns your words into a story: an opening that hooks, what you offer, why to trust you, the offer, and how to reach you. Photos that fit each scene are placed for you, your logo sits on every scene, and every line stays editable.
+              Connect your Facebook Page, Instagram, YouTube channel and Google Business Profile once. Write one caption, pick the channels, and the reel goes out now, at your posting slots, or at the time your own results say works best. Repeat posts, first comments, a drag-and-drop calendar and approvals for teams are built in.
             </p>
-            <ul className="mt-4 space-y-1.5 text-sm text-slate-700">
-              <li>✓ English, Tamil, Hindi and more</li>
-              <li>✓ Templates for {new Set(MAGIC_TEMPLATES.map((t) => t.industry)).size} industries to start from</li>
-              <li>✓ Change anything by hand, or ask for a rewrite</li>
-              <li>✓ Free preview: 3 scenes, 720p with a small watermark</li>
-              <li>✓ Sign up free for full HD, photos, your logo, saving and publishing</li>
+            <ul className="mt-4 grid gap-2 text-sm text-slate-700 sm:grid-cols-2">
+              {PUBLISH_POINTS.map((p) => (
+                <li key={p} className="flex gap-2"><span className="text-emerald-600">✓</span>{p}</li>
+              ))}
             </ul>
-            <button onClick={() => onTry()} className={`${primary} mt-6 !px-6 !py-3 !text-base`}>Open the editor</button>
           </div>
           <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 shadow-sm">
             <Mockup />
@@ -93,13 +110,36 @@ export function LandingScreen({
         </div>
       </section>
 
-      <section id="features" className="border-t border-slate-100 bg-slate-50 py-16">
-        <div className="mx-auto max-w-6xl px-4">
-          <h2 className="text-2xl font-semibold">Everything a small business needs to be seen</h2>
-          <p className="mt-2 max-w-2xl text-slate-600">One simple app instead of five tools and a designer.</p>
-          <ul className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      {/* ---- Google -------------------------------------------------------- */}
+      <section id="google" className="bg-slate-50">
+        <div className="mx-auto max-w-7xl px-4 py-12">
+          <div className="max-w-2xl">
+            <p className="text-xs font-semibold uppercase tracking-wide text-brand-600">Google, in the same app</p>
+            <h2 className="mt-1 text-2xl font-semibold md:text-3xl">Get found on Google and know what it brings in</h2>
+            <p className="mt-3 text-slate-600">
+              Most customers in India search Google and Maps before they call. SocialBoost connects your Google account once and shows you, in plain words, what to fix and what is working.
+            </p>
+          </div>
+          <ul className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            {GOOGLE.map((g) => (
+              <li key={g.title} className="rounded-xl border border-slate-200 bg-white p-5">
+                <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-lg bg-brand-50 text-lg">{g.icon}</div>
+                <h3 className="font-semibold">{g.title}</h3>
+                <p className="mt-1 text-sm text-slate-600">{g.body}</p>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </section>
+
+      {/* ---- Everything else ---------------------------------------------- */}
+      <section id="features">
+        <div className="mx-auto max-w-7xl px-4 py-12">
+          <h2 className="text-2xl font-semibold md:text-3xl">Everything a small business needs to be seen</h2>
+          <p className="mt-2 max-w-2xl text-slate-600">One app instead of a designer, a scheduler, an analytics tool and an agency.</p>
+          <ul className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {FEATURES.map((f) => (
-              <li key={f.title} className="rounded-xl border border-slate-200 bg-white p-5">
+              <li key={f.title} className="rounded-xl border border-slate-200 p-5">
                 <div className="mb-3 flex h-9 w-9 items-center justify-center rounded-lg bg-brand-50 text-lg">{f.icon}</div>
                 <h3 className="font-semibold">{f.title}</h3>
                 <p className="mt-1 text-sm text-slate-600">{f.body}</p>
@@ -109,26 +149,12 @@ export function LandingScreen({
         </div>
       </section>
 
-      <section id="how" className="py-16">
-        <div className="mx-auto max-w-6xl px-4">
-          <h2 className="text-2xl font-semibold">How it works</h2>
-          <ol className="mt-8 grid gap-6 md:grid-cols-3">
-            {STEPS.map((s, i) => (
-              <li key={s.title} className="relative rounded-xl border border-slate-200 p-5">
-                <span className="absolute -top-3 left-5 rounded-full bg-brand-600 px-2.5 py-0.5 text-xs font-semibold text-white">{i + 1}</span>
-                <h3 className="mt-2 font-semibold">{s.title}</h3>
-                <p className="mt-1 text-sm text-slate-600">{s.body}</p>
-              </li>
-            ))}
-          </ol>
-        </div>
-      </section>
-
-      <section id="pricing" className="border-t border-slate-100 bg-slate-50 py-16">
-        <div className="mx-auto max-w-6xl px-4">
-          <h2 className="text-2xl font-semibold">Simple prices, in rupees</h2>
+      {/* ---- Pricing ------------------------------------------------------- */}
+      <section id="pricing" className="border-t border-slate-100 bg-slate-50">
+        <div className="mx-auto max-w-7xl px-4 py-12">
+          <h2 className="text-2xl font-semibold md:text-3xl">Simple prices, in rupees</h2>
           <p className="mt-2 text-slate-600">Per business, per month. Pay yearly and get two months free. Every new account starts with 14 days of Growth.</p>
-          <ul className="mt-8 grid gap-4 md:grid-cols-4">
+          <ul className="mt-6 grid gap-4 md:grid-cols-4">
             {PLAN_ORDER.map((code) => {
               const plan = PLANS[code]!;
               const featured = code === 'growth';
@@ -156,12 +182,13 @@ export function LandingScreen({
         </div>
       </section>
 
-      <section id="faq" className="py-16">
-        <div className="mx-auto max-w-3xl px-4">
-          <h2 className="text-2xl font-semibold">Questions</h2>
-          <dl className="mt-6 divide-y divide-slate-200">
+      {/* ---- FAQ ----------------------------------------------------------- */}
+      <section id="faq">
+        <div className="mx-auto max-w-7xl px-4 py-12">
+          <h2 className="text-2xl font-semibold md:text-3xl">Questions</h2>
+          <dl className="mt-4 grid gap-x-10 md:grid-cols-2">
             {FAQ.map((f) => (
-              <div key={f.q} className="py-4">
+              <div key={f.q} className="border-b border-slate-200 py-4">
                 <dt className="font-medium">{f.q}</dt>
                 <dd className="mt-1 text-sm text-slate-600">{f.a}</dd>
               </div>
@@ -170,17 +197,23 @@ export function LandingScreen({
         </div>
       </section>
 
-      <section className="bg-brand-600 py-14 text-white">
-        <div className="mx-auto max-w-6xl px-4 text-center">
-          <h2 className="text-2xl font-semibold">Your next post could be done in five minutes.</h2>
-          <button onClick={signedIn ? onOpenApp : onRegister} className="mt-6 rounded-lg bg-white px-6 py-3 text-base font-medium text-brand-700 hover:bg-brand-50">
-            {signedIn ? 'Open app' : 'Start free'}
-          </button>
+      <section className="bg-brand-600 text-white">
+        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-4 px-4 py-10">
+          <div>
+            <h2 className="text-2xl font-semibold">Your next reel could be posted in five minutes.</h2>
+            <p className="mt-1 text-white/80">Describe, approve, publish. Then watch it work.</p>
+          </div>
+          <div className="flex gap-3">
+            <button onClick={() => onTry()} className="rounded-lg border border-white/40 px-6 py-3 text-base font-medium text-white hover:bg-white/10">Try it free</button>
+            <button onClick={signedIn ? onOpenApp : onRegister} className="rounded-lg bg-white px-6 py-3 text-base font-medium text-brand-700 hover:bg-brand-50">
+              {signedIn ? 'Open app' : 'Start free'}
+            </button>
+          </div>
         </div>
       </section>
 
-      <footer className="border-t border-slate-200 py-8 text-sm text-slate-500">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3 px-4">
+      <footer className="border-t border-slate-200 py-6 text-sm text-slate-500">
+        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4">
           <span>© {new Date().getFullYear()} SocialBoost · Nadanaloga Fine Arts Academy, Chennai</span>
           <nav className="flex gap-4">
             <a href="/privacy-policy.html" className="hover:text-slate-900">Privacy</a>
@@ -194,25 +227,52 @@ export function LandingScreen({
   );
 }
 
-const FEATURES = [
-  { icon: '📅', title: 'Publish & schedule', body: 'One caption to every channel, a calendar you can drag posts around, a queue with your posting times, and the best time to post from your own results.' },
-  { icon: '✨', title: 'Magic Design', body: 'Type what each scene should say, pick photos, and get a finished reel with your logo, colours and a QR code — no designer, no AI bill.' },
-  { icon: '🎬', title: 'Reels & posters', body: 'An editor made for phones: scenes, animations, effects, music with trim, and templates for offers, festivals and announcements.' },
-  { icon: '◆', title: 'Brand kit', body: 'Set your logo, colours, font and contact details once. Every reel, poster and caption uses them.' },
-  { icon: '👥', title: 'Team & approvals', body: 'Invite staff by WhatsApp link. Members draft, you approve. Clients can see and approve their own posts.' },
-  { icon: '◳', title: 'Analytics & reports', body: 'See what worked, which channel brings engagement, and send clients a branded PDF report.' },
+const PIPELINE = [
+  { title: 'Create', body: 'Describe your business; Magic Design writes the scenes and places the photos. Edit anything.' },
+  { title: 'Publish', body: 'One tap to Facebook, Instagram, YouTube and Google Business Profile, now or at the best time.' },
+  { title: 'Grow', body: 'See reach, engagement, Google rankings and reviews. Home tells you what to do next.' },
 ];
 
-const STEPS = [
-  { title: 'Connect your pages', body: 'Sign in with Facebook once. Your Page and Instagram account are connected in a minute.' },
-  { title: 'Create', body: 'Write a post, or describe a reel in a few lines and let Magic Design build it. Add it to the queue.' },
-  { title: 'Grow', body: 'Posts go out at the best times. Home shows you what to do next and what is working.' },
+const CHANNELS = [
+  { icon: '📘', name: 'Facebook' },
+  { icon: '📸', name: 'Instagram' },
+  { icon: '▶️', name: 'YouTube Shorts' },
+  { icon: '📍', name: 'Google Business Profile' },
+];
+
+const PUBLISH_POINTS = [
+  'Facebook Pages and Instagram reels, photos and carousels',
+  'YouTube Shorts and Google Business Profile posts',
+  'Best time to post, from your own results',
+  'Calendar, queue slots and repeat posts',
+  'First comment for hashtags',
+  'Approvals: members draft, you approve',
+];
+
+const GOOGLE = [
+  { icon: '📍', title: 'Business Profile', body: 'Post offers and updates to Maps, reply to reviews with a suggested answer, and see a score of what your listing is missing.' },
+  { icon: '🔎', title: 'Search rankings', body: 'Which searches bring people to your website, where you rank, and keyword ideas to write about next.' },
+  { icon: '📈', title: 'Analytics', body: 'Visitors, where they came from and what they did, with the tracking tag checked for you.' },
+  { icon: '📣', title: 'Google Ads', body: 'Spend, clicks and cost per lead for your campaigns, next to the organic numbers, so you know what pays.' },
+];
+
+const FEATURES = [
+  { icon: '✨', title: 'Magic Design', body: 'Describe the business, or pick an industry template, and get a reel with story, photos, logo, QR code and animated text. In English, Tamil, Hindi and more.' },
+  { icon: '🎬', title: 'Reels & posters', body: 'A phone-friendly editor: scenes, animations, effects, music with trim, and templates for offers, festivals and announcements.' },
+  { icon: '📅', title: 'Publish & schedule', body: 'One caption to every channel, a calendar, posting slots and the best time to post from your own results.' },
+  { icon: '💬', title: 'Inbox & replies', body: 'Comments from every channel and Google reviews in one list, with a suggested reply in your brand voice.' },
+  { icon: '👥', title: 'Team & clients', body: 'Invite staff or clients by link at a role. Approvals keep anything unchecked from going out. Agencies manage many businesses.' },
+  { icon: '📄', title: 'Reports', body: 'See what worked, which channel brings engagement, and send clients a branded PDF report.' },
+  { icon: '◆', title: 'Brand kit', body: 'Logo, colours, font and contact details set once and used in every reel, poster and caption.' },
+  { icon: '🔔', title: 'Nudges', body: 'Home shows what to do today: a channel to reconnect, a review to answer, a quiet week, an empty queue.' },
+  { icon: '📱', title: 'Works on your phone', body: 'Any browser, installs to the home screen, and the editor records video right on the device.' },
 ];
 
 const FAQ = [
-  { q: 'Which networks are supported?', a: 'Facebook Pages and Instagram business accounts today. YouTube Shorts and Google Business Profile are next.' },
-  { q: 'Do I need a designer or an AI subscription?', a: 'No. Reels and posters are made inside the app from your own text and photos; nothing is sent to a paid AI service.' },
-  { q: 'Can my team or my clients use it?', a: 'Yes. Invite people with a link at a role: admin, member, or client. Turn on approvals so nothing goes out unchecked.' },
+  { q: 'Which networks are supported?', a: 'Facebook Pages, Instagram business accounts, YouTube channels and Google Business Profile. Search Console, Analytics and Google Ads connect for reporting.' },
+  { q: 'Do I need a designer or an AI subscription?', a: 'No. Magic Design is included in every plan, and there is no separate AI bill.' },
+  { q: 'Can I try it without signing up?', a: 'Yes. Describe your business in the box above and you get a three-scene reel in your browser, no account. Sign up free to save, add photos automatically and publish.' },
+  { q: 'Can my team or my clients use it?', a: 'Yes. Invite people with a link at a role: admin, member or client. Turn on approvals so nothing goes out unchecked.' },
   { q: 'How do I pay?', a: 'By UPI, card or net banking through Razorpay, monthly or yearly. There is a free plan with no time limit.' },
   { q: 'Is it an app?', a: 'It works in any browser and installs on Android and iPhone from the browser menu ("Add to Home Screen").' },
 ];
@@ -239,7 +299,7 @@ function MagicBox({ onTry }: { onTry: (describe?: string, language?: string) => 
   }
 
   return (
-    <div className="mx-auto mt-8 max-w-3xl rounded-2xl border border-slate-200 bg-white p-3 shadow-xl shadow-brand-600/10 sm:p-4">
+    <div className="rounded-2xl bg-white p-3 text-slate-900 shadow-2xl shadow-black/30 sm:p-4">
       <div className="flex items-start gap-3">
         <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-600 to-fuchsia-500 text-base text-white">✨</span>
         <div className="rounded-2xl rounded-tl-sm bg-slate-100 px-4 py-2.5 text-sm text-slate-800">
@@ -289,38 +349,37 @@ function MagicBox({ onTry }: { onTry: (describe?: string, language?: string) => 
   );
 }
 
-/** A stylised screenshot, so the hero has something to look at without an image file. */
+
+/** A stylised screenshot of publishing, so the section has something to look at without an image file. */
 function Mockup() {
   return (
     <div className="space-y-3 text-xs">
       <div className="flex items-center gap-2 rounded-lg bg-white p-2 shadow-sm">
-        <span className="h-6 w-6 rounded bg-brand-600" />
-        <span className="font-medium">Good morning, Priya</span>
-        <span className="ml-auto rounded-full bg-emerald-100 px-2 py-0.5 text-emerald-800">6 days scheduled</span>
+        <span className="h-6 w-6 rounded bg-gradient-to-br from-indigo-600 to-fuchsia-500" />
+        <span className="font-medium">Admissions open ✨ · reel</span>
+        <span className="ml-auto rounded-full bg-emerald-100 px-2 py-0.5 text-emerald-800">Scheduled · Tue 19:00</span>
       </div>
-      <div className="grid grid-cols-3 gap-2">
-        {['Posts this week 5 · +25%', 'Engagement 1.2k · +40%', 'Best time Tue 19:00'].map((t) => (
-          <div key={t} className="rounded-lg bg-white p-2 shadow-sm text-slate-700">{t}</div>
+      <div className="grid grid-cols-4 gap-2">
+        {CHANNELS.map((c) => (
+          <div key={c.name} className="rounded-lg bg-white p-2 text-center shadow-sm">
+            <div className="text-base">{c.icon}</div>
+            <div className="mt-0.5 truncate text-[10px] text-slate-600">{c.name}</div>
+            <div className="mt-1 rounded bg-emerald-50 py-0.5 text-[10px] text-emerald-700">published</div>
+          </div>
         ))}
       </div>
       <div className="rounded-lg bg-white p-2 shadow-sm">
-        <div className="mb-1 flex justify-between text-slate-500"><span>October</span><span>Calendar</span></div>
+        <div className="mb-1 flex justify-between text-slate-500"><span>This month</span><span>Calendar</span></div>
         <div className="grid grid-cols-7 gap-1">
           {Array.from({ length: 21 }, (_, i) => (
-            <div key={i} className={`h-7 rounded ${[2, 5, 9, 12, 16, 19].includes(i) ? 'bg-brand-100' : 'bg-slate-100'}`} />
+            <div key={i} className={`h-6 rounded ${[2, 5, 9, 12, 16, 19].includes(i) ? 'bg-brand-100' : 'bg-slate-100'}`} />
           ))}
         </div>
       </div>
-      <div className="flex gap-2">
-        <div className="flex-1 rounded-lg bg-gradient-to-br from-indigo-600 to-fuchsia-500 p-3 text-white shadow-sm">
-          <p className="font-semibold">Admissions open ✨</p>
-          <p className="opacity-80">Magic Design · 3 scenes</p>
-        </div>
-        <div className="flex-1 rounded-lg bg-white p-3 shadow-sm text-slate-700">
-          <p className="font-medium">Needs approval</p>
-          <p className="text-slate-500">Diwali offer — by Arjun</p>
-          <span className="mt-1 inline-block rounded bg-brand-600 px-2 py-0.5 text-white">Approve</span>
-        </div>
+      <div className="grid grid-cols-3 gap-2">
+        {['Reach 8.4k · +32%', 'Engagement 1.2k · +40%', 'Google calls 27 · +9'].map((t) => (
+          <div key={t} className="rounded-lg bg-white p-2 text-slate-700 shadow-sm">{t}</div>
+        ))}
       </div>
     </div>
   );
