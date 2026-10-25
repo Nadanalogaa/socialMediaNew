@@ -77,7 +77,8 @@ export function LandingScreen({
               ))}
             </div>
           </div>
-          <div>
+          {/* On a phone the box comes first; the steps follow it. */}
+          <div className="order-first lg:order-none">
             <MagicBox onTry={onTry} />
             <p className="mt-3 text-center text-xs text-white/60">
               Free preview: 3 scenes, 720p with a small watermark.{' '}
@@ -329,7 +330,7 @@ function MagicBox({ onTry }: { onTry: (describe?: string, language?: string) => 
             disabled={!ready}
             className="ml-auto rounded-xl bg-brand-600 px-5 py-2 text-sm font-medium text-white transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50"
           >
-            ✨ Create my reel — free, no account
+            ✨ Create my reel<span className="hidden sm:inline"> — free, no account</span>
           </button>
         </div>
       </div>
