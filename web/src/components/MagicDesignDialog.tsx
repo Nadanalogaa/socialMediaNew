@@ -76,11 +76,10 @@ function toPhotoLists(
 }
 
 /**
- * Builds a whole reel from a written brief.
- *
- * The scene structure is read from the text itself — "Scene 1", then its
- * lines — so nothing is guessed and no language model is involved. A brief
- * without markers is split on paragraphs, then sentences.
+ * Builds a whole reel from a description or a written brief: a full-screen
+ * page with the story on the left and the look (logo, colours, sound) on the
+ * right. The scene structure is read from the brief text itself, so what is
+ * on screen is exactly what gets built.
  */
 export function MagicDesignDialog({
   onClose,
@@ -136,6 +135,19 @@ export function MagicDesignDialog({
   /** The history entry this brief came from, so a rebuild updates it. */
   const [briefId, setBriefId] = useState<string | undefined>(initial?.id);
   const audioInput = useRef<HTMLInputElement>(null);
+  const logoCardRef = useRef<HTMLDivElement>(null);
+
+  /** Opens the logo chooser and brings it into view, from wherever it was asked. */
+  function focusLogo() {
+    setPickingFor('logo');
+    setTimeout(() => logoCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 0);
+  }
+
+  /** Opens a scene's photo chooser and scrolls to it. */
+  function focusScene(index: number) {
+    setPickingFor(index);
+    setTimeout(() => document.getElementById(`magic-scene-${index}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 0);
+  }
 
   useEffect(() => {
     void getFeatures().then((features) => {
@@ -398,7 +410,7 @@ export function MagicDesignDialog({
         // Photos chosen for a scene win; "add a photo" draws on the library.
         scenePhotos: scenes.map((_, index) => scenePhotos[index]),
         photoLayout: scenes.map((_, index) => photoLayout[index]),
-        photos: (library ?? []).map((asset) => asset.url),
+        photos: [],
         logo: guest ? undefined : logo,
         logoPosition: (logoPosition || undefined) as LogoPosition | undefined,
         qrImages: guest ? {} : qrImages,
@@ -430,105 +442,181 @@ export function MagicDesignDialog({
     );
   }
 
-  return (
-    <div
-      role="dialog"
-      aria-modal="true"
-      aria-label="Magic Design"
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-900/60 p-3 sm:p-6"
-      onClick={onClose}
-    >
-      <div
-        onClick={(event) => event.stopPropagation()}
-        className="w-full max-w-3xl rounded-2xl bg-white p-4 shadow-2xl sm:p-5"
-      >
-        <div className="mb-3 flex items-start justify-between gap-3">
-          <div>
-            <h2 className="text-lg font-semibold text-slate-900">✨ Magic Design</h2>
-            <p className="mt-0.5 text-sm text-slate-600">
-              {initial
-                ? 'Edit the brief and the reel is rebuilt. Hand-made changes to scenes are replaced.'
-                : mode === 'describe'
-                  ? 'Describe your business in your own words. The story, scenes and layout are written for you.'
-                  : 'Write what each scene should say. The reel is built for you, and you can change anything afterwards.'}
-            </p>
-          </div>
-          <div className="flex shrink-0 items-center gap-1">
+  /** The photo or logo chooser, drawn where the choice is being made. */
+  function renderPicker(target: number | 'logo') {
+    const forLogo = target === 'logo';
+    const chosen = forLogo ? [] : (scenePhotos[target] ?? []);
+    const grid = forLogo ? library : (library ?? []).filter((asset) => asset.url !== logo);
+    return (
+      <div className="mt-2 rounded-lg border border-brand-200 bg-white p-2">
+        <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
+          <span className="text-xs font-medium text-slate-700">
+            {forLogo ? 'Pick your logo' : `Photos for scene ${target + 1} — tap to add or remove`}
+          </span>
+          <div className="flex gap-2">
             <button
               type="button"
-              onClick={() => setShowHistory((v) => !v)}
-              className={`rounded-lg border px-2.5 py-1 text-sm ${
-                showHistory
-                  ? 'border-brand-500 bg-brand-50 text-brand-700'
-                  : 'border-slate-200 text-slate-600 hover:bg-slate-50'
-              }`}
-              title="Briefs you have built before"
+              onClick={() => photoInput.current?.click()}
+              disabled={uploading}
+              className="rounded-md bg-brand-600 px-2 py-0.5 text-xs font-medium text-white hover:bg-brand-700 disabled:opacity-50"
             >
-              🕘 History{history && history.length > 0 ? ` (${history.length})` : ''}
+              {uploading ? 'Uploading…' : 'Upload from device'}
             </button>
-            <button
-              onClick={onClose}
-              aria-label="Close"
-              className="rounded-lg px-2 py-1 text-slate-400 hover:bg-slate-100"
-            >
-              ✕
+            {!forLogo && chosen.length > 0 && (
+              <button
+                type="button"
+                onClick={() =>
+                  setScenePhotos((prev) => {
+                    const next = { ...prev };
+                    delete next[target];
+                    return next;
+                  })
+                }
+                className="text-xs text-red-600 hover:underline"
+              >
+                Remove all
+              </button>
+            )}
+            <button type="button" onClick={() => setPickingFor(null)} className="text-xs font-medium text-slate-600 hover:underline">
+              Done
             </button>
           </div>
         </div>
 
+        {!forLogo && chosen.length > 0 && (
+          <div className="mb-2 flex flex-wrap items-center gap-1.5 text-xs">
+            {chosen.length === 1 ? (
+              (['background', 'blocks'] as const).map((layoutMode) => (
+                <button
+                  key={layoutMode}
+                  type="button"
+                  onClick={() => setPhotoLayout((prev) => ({ ...prev, [target]: layoutMode }))}
+                  className={`rounded-full border px-2.5 py-0.5 ${
+                    (photoLayout[target] ?? 'background') === layoutMode
+                      ? 'border-brand-500 bg-brand-50 text-brand-700'
+                      : 'border-slate-300 text-slate-600 hover:bg-slate-50'
+                  }`}
+                >
+                  {layoutMode === 'background' ? 'Full background' : 'Photo block with text'}
+                </button>
+              ))
+            ) : (
+              <span className="text-slate-500">{chosen.length} photos — equal blocks under the headline (up to 6).</span>
+            )}
+          </div>
+        )}
+
+        {grid === null ? (
+          <Spinner className="h-4 w-4 text-slate-400" />
+        ) : grid.length === 0 ? (
+          <p className="text-xs text-slate-500">
+            Nothing in your library yet — upload {forLogo ? 'your logo' : 'a photo'} from your device.
+          </p>
+        ) : (
+          <ul className="grid grid-cols-6 gap-1 sm:grid-cols-8">
+            {grid.slice(0, 24).map((asset) => {
+              const selected = forLogo ? logo === asset.url : chosen.includes(asset.url);
+              return (
+                <li key={asset.id}>
+                  <button
+                    type="button"
+                    onClick={() => choosePicked(asset.url)}
+                    className={`relative block w-full overflow-hidden rounded border-2 ${
+                      selected ? 'border-brand-500' : 'border-transparent hover:border-slate-300'
+                    }`}
+                  >
+                    {!forLogo && selected && (
+                      <span className="absolute left-0.5 top-0.5 rounded bg-brand-600 px-1 text-[10px] font-medium text-white">
+                        {chosen.indexOf(asset.url) + 1}
+                      </span>
+                    )}
+                    <img src={asset.thumbnailUrl ?? asset.url} alt="" className="aspect-square w-full object-cover" />
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+        )}
+      </div>
+    );
+  }
+
+  const photoScenesOpen =
+    storyPhotoScenes === null
+      ? []
+      : scenes.map((_, index) => index).filter((index) => scenes[index]!.wantsPhoto && !scenePhotos[index]?.length);
+  const wantLogo = storyPhotoScenes !== null && !logo && !skipped.has('logo');
+  const wantAudio = storyPhotoScenes !== null && !audio && !skipped.has('audio');
+  const openQuestions = (wantLogo ? 1 : 0) + photoScenesOpen.length + (wantAudio ? 1 : 0);
+  const createLabel = busy
+    ? 'Building…'
+    : initial
+      ? `Rebuild ${scenes.length} scene reel`
+      : `Create ${scenes.length || ''} scene reel`;
+
+  const createButton = (
+    <Button onClick={handleCreate} disabled={busy || scenes.length === 0}>
+      {createLabel}
+    </Button>
+  );
+
+  return (
+    <div role="dialog" aria-modal="true" aria-label="Magic Design" className="fixed inset-0 z-50 overflow-y-auto bg-slate-50">
+      {/* Top bar: way back, title, history and the one button that matters. */}
+      <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/95 backdrop-blur">
+        <div className="mx-auto flex max-w-6xl items-center gap-3 px-4 py-2.5">
+          <button type="button" onClick={onClose} className="rounded-lg px-2 py-1 text-sm text-slate-600 hover:bg-slate-100">
+            ← Back
+          </button>
+          <div className="min-w-0 flex-1">
+            <h2 className="truncate text-base font-semibold text-slate-900">✨ Magic Design</h2>
+            <p className="hidden truncate text-xs text-slate-500 sm:block">
+              {initial
+                ? 'Edit the brief and the reel is rebuilt. Hand-made changes to scenes are replaced.'
+                : 'Describe your business, or write the scenes yourself. The reel is built for you; change anything afterwards.'}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowHistory((v) => !v)}
+            className={`rounded-lg border px-2.5 py-1 text-sm ${
+              showHistory ? 'border-brand-500 bg-brand-50 text-brand-700' : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+            }`}
+            title="Briefs you have built before"
+          >
+            🕘 History{history && history.length > 0 ? ` (${history.length})` : ''}
+          </button>
+          <span className="hidden sm:block">{createButton}</span>
+        </div>
+      </header>
+
+      <div className="mx-auto max-w-6xl px-4 py-4 pb-24 sm:pb-8">
         {error && <Alert>{error}</Alert>}
 
         {showHistory && (
-          <div className="mb-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
-            <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">
-              Previous briefs
-            </p>
+          <div className="mb-4 rounded-xl border border-slate-200 bg-white p-3">
+            <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">Previous briefs</p>
             {history === null ? (
               <Spinner />
             ) : history.length === 0 ? (
-              <p className="text-sm text-slate-500">
-                Nothing yet — every brief you build from is kept here, so you can come back and
-                change it.
-              </p>
+              <p className="text-sm text-slate-500">Nothing yet — every brief you build from is kept here, so you can come back and change it.</p>
             ) : (
               <ul className="max-h-64 space-y-1 overflow-y-auto">
                 {history.map((entry) => (
-                  <li
-                    key={entry.id}
-                    className={`flex items-center gap-2 rounded-lg border bg-white p-2 ${
-                      entry.id === briefId ? 'border-brand-400' : 'border-slate-200'
-                    }`}
-                  >
-                    <button
-                      type="button"
-                      onClick={() => loadFromHistory(entry)}
-                      className="min-w-0 flex-1 text-left"
-                      title="Load this brief"
-                    >
-                      <span className="block truncate text-sm font-medium text-slate-900">
-                        {entry.name}
-                      </span>
+                  <li key={entry.id} className={`flex items-center gap-2 rounded-lg border p-2 ${entry.id === briefId ? 'border-brand-400' : 'border-slate-200'}`}>
+                    <button type="button" onClick={() => loadFromHistory(entry)} className="min-w-0 flex-1 text-left" title="Load this brief">
+                      <span className="block truncate text-sm font-medium text-slate-900">{entry.name}</span>
                       <span className="block truncate text-xs text-slate-500">
-                        {new Date(entry.updatedAt).toLocaleString()} ·{' '}
-                        {parseBrief(entry.brief).length} scenes
+                        {new Date(entry.updatedAt).toLocaleString()} · {parseBrief(entry.brief).length} scenes
                         {Object.values(toPhotoLists(entry.scenePhotos)).flat().length > 0
                           ? ` · ${Object.values(toPhotoLists(entry.scenePhotos)).flat().length} photos`
                           : ''}
                       </span>
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => loadFromHistory(entry)}
-                      className="shrink-0 rounded-md bg-brand-600 px-2 py-1 text-xs font-medium text-white hover:bg-brand-700"
-                    >
+                    <button type="button" onClick={() => loadFromHistory(entry)} className="shrink-0 rounded-md bg-brand-600 px-2 py-1 text-xs font-medium text-white hover:bg-brand-700">
                       Open
                     </button>
-                    <button
-                      type="button"
-                      onClick={() => removeFromHistory(entry.id)}
-                      aria-label="Delete this brief"
-                      className="shrink-0 rounded-md px-1.5 py-1 text-slate-400 hover:bg-slate-100 hover:text-red-600"
-                    >
+                    <button type="button" onClick={() => removeFromHistory(entry.id)} aria-label="Delete this brief" className="shrink-0 rounded-md px-1.5 py-1 text-slate-400 hover:bg-slate-100 hover:text-red-600">
                       🗑
                     </button>
                   </li>
@@ -538,532 +626,357 @@ export function MagicDesignDialog({
           </div>
         )}
 
-        {(aiAvailable || guest) && (
-          <div className="mb-2 flex flex-wrap items-center gap-1">
-            {(
-              [
-                ['describe', '✨ Describe your business'],
-                ['write', '✍️ Write the scenes yourself'],
-              ] as const
-            ).map(([value, label]) => (
-              <button
-                key={value}
-                type="button"
-                onClick={() => setMode(value)}
-                className={`rounded-full border px-3 py-1 text-xs font-medium ${
-                  mode === value
-                    ? 'border-brand-500 bg-brand-50 text-brand-700'
-                    : 'border-slate-200 text-slate-600 hover:bg-slate-50'
-                }`}
-              >
-                {label}
-              </button>
-            ))}
-            {mode === 'write' && brief.trim() && description.trim() && (
-              <span className="ml-auto text-xs text-slate-500">
-                Written from your description ·{' '}
-                <button type="button" onClick={() => setMode('describe')} className="font-medium text-brand-600 hover:underline">
-                  change it
-                </button>
-              </span>
-            )}
-          </div>
-        )}
-
-        {mode === 'describe' ? (
-          <div className="rounded-xl border border-brand-200 bg-brand-50/40 p-3">
-            <textarea
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
-              rows={6}
-              placeholder={DESCRIBE_EXAMPLE}
-              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm leading-relaxed outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20"
-            />
-            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
-              <label className="text-slate-600">Language</label>
-              <select
-                value={language}
-                onChange={(e) => setLanguage(e.target.value)}
-                className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs"
-              >
-                {STORY_LANGUAGES.map((item) => (
-                  <option key={item}>{item}</option>
-                ))}
-              </select>
-              <label className="ml-1 text-slate-600">Scenes</label>
-              <select
-                value={sceneCount}
-                onChange={(e) => setSceneCount(Number(e.target.value))}
-                className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs"
-              >
-                {[3, 4, 5, 6, 7].map((n) => (
-                  <option key={n} value={n}>
-                    {n}
-                  </option>
-                ))}
-              </select>
-              {description.trim() === '' && (
-                <button
-                  type="button"
-                  onClick={() => setDescription(DESCRIBE_EXAMPLE)}
-                  className="font-medium text-brand-600 hover:underline"
-                >
-                  Use the example
-                </button>
-              )}
-              <Button
-                className="ml-auto !py-1.5 !text-xs"
-                onClick={() => void writeStory()}
-                disabled={writing}
-              >
-                {writing ? 'Writing the story…' : brief.trim() ? '✨ Write it again' : '✨ Write the story'}
-              </Button>
-            </div>
-            <p className="mt-2 text-xs text-slate-500">
-              Say what you do, where you are, who it is for, what makes you good at it, and what you
-              are offering now. Your brand kit's name, phone and website are used as they are; nothing
-              else is invented. Change any line afterwards.
-            </p>
-          </div>
-        ) : (
-          <textarea
-            value={brief}
-            onChange={(e) => setBrief(e.target.value)}
-            rows={11}
-            placeholder={EXAMPLE}
-            className="w-full rounded-xl border border-slate-300 px-3 py-2 font-mono text-sm leading-relaxed outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20"
-          />
-        )}
-
-        {mode === 'write' && (
-
-        <div className="mt-1 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
-          <span>
-            {brand && (brand.phone || brand.website) && !/^\s*footer\s*:/im.test(brief) && (
-              <button
-                type="button"
-                onClick={() => setBrief((b) => `Footer: ${brandFooter(brand)}\n${b}`)}
-                className="mr-2 font-medium text-brand-600 hover:underline"
-              >
-                + Add your contact footer
-              </button>
-            )}
-            Start a line with <strong>Scene 1</strong> — a name after it, like{' '}
-            <strong>Scene 1 - Opening</strong>, is used as the scene's title. Write{' '}
-            <strong>add a photo</strong> on its own line where you want a picture. Lines starting
-            with <strong>Contact:</strong> or <strong>Website:</strong> are set apart. Above
-            Scene 1, <strong>Logo:</strong>, <strong>QR: https://…</strong> and{' '}
-            <strong>Footer:</strong> go on every scene. Style any line with brackets at its
-            end, like <strong>[bold, big, yellow]</strong> —{' '}
-            <button
-              type="button"
-              onClick={() => setShowInstructions((v) => !v)}
-              className="font-medium text-brand-600 hover:underline"
-            >
-              {showInstructions ? 'hide the list' : 'see all'}
-            </button>
-            .
-          </span>
-          {brief.trim() === '' && (
-            <button
-              onClick={() => setBrief(EXAMPLE)}
-              className="shrink-0 font-medium text-brand-600 hover:underline"
-            >
-              Use the example
-            </button>
-          )}
-        </div>
-        )}
-
-        {mode === 'write' && showInstructions && (
-          <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
-            {INSTRUCTION_GROUPS.map((group) => (
-              <Fragment key={group.title}>
-                <dt className="font-medium text-slate-900">{group.title}</dt>
-                <dd>{group.words}</dd>
-              </Fragment>
-            ))}
-            <dd className="col-span-2 pt-1 text-slate-500">
-              Combine them in one bracket: <strong>Admissions open [gap, bold, gold, pop]</strong>.
-              Each line in the brief stays as one line in the reel.
-            </dd>
-          </dl>
-        )}
-
-        {storyPhotoScenes !== null && mode === 'write' && scenes.length > 0 && (() => {
-          const photoScenes = scenes
-            .map((_, index) => index)
-            .filter((index) => scenes[index]!.wantsPhoto && !scenePhotos[index]?.length);
-          const wantLogo = !logo && !skipped.has('logo');
-          const wantAudio = !audio && !skipped.has('audio');
-          const open = (wantLogo ? 1 : 0) + photoScenes.length + (wantAudio ? 1 : 0);
-          return (
-            <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3">
-              <p className="mb-1.5 text-xs font-medium uppercase tracking-wide text-amber-800">
-                {open > 0 ? 'Before we build — a few quick questions' : 'All set — create the reel below'}
-              </p>
-              {open > 0 && (
-                <ul className="space-y-1.5 text-sm text-slate-800">
-                  {wantLogo && (
-                    <li className="flex flex-wrap items-center gap-2">
-                      <span className="flex-1">Do you want your logo on every scene?</span>
-                      <button type="button" onClick={() => setPickingFor('logo')} className="rounded-md bg-brand-600 px-2 py-0.5 text-xs font-medium text-white hover:bg-brand-700">
-                        Add logo
-                      </button>
-                      <button type="button" onClick={() => skip('logo')} className="text-xs text-slate-600 hover:underline">
-                        No logo
-                      </button>
-                    </li>
-                  )}
-                  {photoScenes.length > 0 && (
-                    <li className="flex flex-wrap items-center gap-2">
-                      <span className="flex-1">
-                        Scene{photoScenes.length === 1 ? '' : 's'} {photoScenes.map((i) => i + 1).join(', ')} would look better
-                        with a photo of your business.
-                      </span>
-                      {photoScenes.map((index) => (
-                        <button key={index} type="button" onClick={() => setPickingFor(index)} className="rounded-md bg-brand-600 px-2 py-0.5 text-xs font-medium text-white hover:bg-brand-700">
-                          Photo for scene {index + 1}
-                        </button>
-                      ))}
-                      <button type="button" onClick={() => photoScenes.forEach((index) => skip(`photo-${index}`))} className="text-xs text-slate-600 hover:underline">
-                        Use colour backgrounds
-                      </button>
-                    </li>
-                  )}
-                  {wantAudio && (
-                    <li className="flex flex-wrap items-center gap-2">
-                      <span className="flex-1">Do you want music or a voice-over? You can add it later too.</span>
-                      <button type="button" onClick={() => audioInput.current?.click()} className="rounded-md bg-brand-600 px-2 py-0.5 text-xs font-medium text-white hover:bg-brand-700">
-                        Add audio
-                      </button>
-                      <button type="button" onClick={() => skip('audio')} className="text-xs text-slate-600 hover:underline">
-                        Not now
-                      </button>
-                    </li>
-                  )}
-                </ul>
-              )}
-            </div>
-          );
-        })()}
-
-        {scenes.length > 0 && (
-          <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-3">
-            <p className="mb-2 text-xs font-medium uppercase tracking-wide text-slate-500">
-              {scenes.length} scene{scenes.length === 1 ? '' : 's'} · {totalSeconds.toFixed(1)}s
-              {scenesHeld > 0 && (
-                <button type="button" onClick={() => lock('More than 3 scenes')} className="ml-2 normal-case tracking-normal text-brand-600 hover:underline">
-                  🔒 {scenesHeld} more scene{scenesHeld === 1 ? '' : 's'} with a free account
-                </button>
-              )}
-            </p>
-            <ul className="space-y-2">
-              {scenes.map((scene, index) => (
-                <li
-                  key={index}
-                  className="flex items-start gap-2 rounded-lg border border-slate-200 bg-white p-2"
-                >
-                  <span className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded bg-brand-600 text-xs font-medium text-white">
-                    {index + 1}
-                  </span>
-
-                  <span className="min-w-0 flex-1 text-sm">
-                    <span className="block font-medium text-slate-900">
-                      {scene.headline || <em className="text-slate-400">No headline</em>}
-                    </span>
-                    {scene.label && (
-                      <span className="block text-xs text-slate-400">{scene.label}</span>
-                    )}
-                    {scene.body.length > 0 && (
-                      <span className="block text-xs text-slate-500">{scene.body.join(' · ')}</span>
-                    )}
-                    {scene.contact.length > 0 && (
-                      <span className="block text-xs text-slate-500">
-                        {scene.contact.join(' · ')}
-                      </span>
-                    )}
-                    {(scene.qr || scene.footer.length > 0) && (
-                      <span className="mt-0.5 flex flex-wrap gap-1">
-                        {scene.qr && (
-                          <span className="rounded bg-slate-100 px-1 text-[10px] text-slate-600">
-                            QR · {scene.qr}
-                          </span>
-                        )}
-                        {scene.footer.map((line) => (
-                          <span
-                            key={line}
-                            className="rounded bg-slate-100 px-1 text-[10px] text-slate-600"
-                          >
-                            Footer · {line}
-                          </span>
-                        ))}
-                      </span>
-                    )}
-                  </span>
-
-                  {/* Photos per scene, chosen or uploaded right here. */}
-                  <button
-                    onClick={() => setPickingFor(pickingFor === index ? null : index)}
-                    className={`shrink-0 overflow-hidden rounded-lg border-2 transition ${
-                      pickingFor === index ? 'border-brand-500' : 'border-slate-200'
-                    }`}
-                    title="Choose photos for this scene"
-                  >
-                    {scenePhotos[index]?.length ? (
-                      scenePhotos[index].length === 1 ? (
-                        <img src={scenePhotos[index][0]} alt="" className="h-12 w-12 object-cover" />
-                      ) : (
-                        <span className="grid h-12 w-12 grid-cols-2 gap-px bg-slate-200">
-                          {scenePhotos[index].slice(0, 4).map((url, n) => (
-                            <img key={url + n} src={url} alt="" className="h-full w-full object-cover" />
-                          ))}
-                        </span>
-                      )
-                    ) : (
-                      <span className="flex h-12 w-12 flex-col items-center justify-center bg-slate-50 text-[10px] leading-tight text-slate-400">
-                        <span className="text-base leading-none">＋</span>
-                        photo
-                      </span>
-                    )}
-                  </button>
-                </li>
-              ))}
-            </ul>
-
-            {pickingFor !== null && (
-              <div className="mt-2 rounded-lg border border-brand-200 bg-white p-2">
-                <div className="mb-1.5 flex flex-wrap items-center justify-between gap-2">
-                  <span className="text-xs font-medium text-slate-700">
-                    {pickingFor === 'logo'
-                      ? 'Logo — shown on every scene'
-                      : `Photos for scene ${pickingFor + 1} — tap to add or remove`}
-                  </span>
-                  <div className="flex gap-2">
-                    <button
-                      onClick={() => photoInput.current?.click()}
-                      disabled={uploading}
-                      className="text-xs font-medium text-brand-600 hover:underline disabled:opacity-50"
-                    >
-                      {uploading ? 'Uploading…' : 'Upload new'}
-                    </button>
-                    {pickingFor !== 'logo' && scenePhotos[pickingFor]?.length ? (
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
+          {/* ---- Left: the story ---------------------------------------- */}
+          <div className="space-y-4">
+            <section className="rounded-2xl border border-slate-200 bg-white p-4">
+              <div className="mb-3 flex flex-wrap items-center gap-2">
+                <h3 className="text-sm font-semibold text-slate-900">1 · Your story</h3>
+                {(aiAvailable || guest) && (
+                  <div className="ml-auto flex flex-wrap items-center gap-1">
+                    {(
+                      [
+                        ['describe', '✨ Describe your business'],
+                        ['write', '✍️ Write the scenes'],
+                      ] as const
+                    ).map(([value, label]) => (
                       <button
-                        onClick={() =>
-                          setScenePhotos((prev) => {
-                            const next = { ...prev };
-                            delete next[pickingFor];
-                            return next;
-                          })
-                        }
-                        className="text-xs text-red-600 hover:underline"
+                        key={value}
+                        type="button"
+                        onClick={() => setMode(value)}
+                        className={`rounded-full border px-3 py-1 text-xs font-medium ${
+                          mode === value ? 'border-brand-500 bg-brand-50 text-brand-700' : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+                        }`}
                       >
-                        Remove all
+                        {label}
                       </button>
-                    ) : null}
-                    {pickingFor === 'logo' && logo && (
-                      <button
-                        onClick={() => {
-                          setLogo(undefined);
-                          setPickingFor(null);
-                        }}
-                        className="text-xs text-red-600 hover:underline"
-                      >
-                        Remove
-                      </button>
-                    )}
-                    <button
-                      onClick={() => setPickingFor(null)}
-                      className="text-xs font-medium text-slate-600 hover:underline"
-                    >
-                      Done
-                    </button>
-                  </div>
-                </div>
-
-                {pickingFor !== 'logo' && (scenePhotos[pickingFor]?.length ?? 0) > 0 && (
-                  <div className="mb-2 flex flex-wrap items-center gap-1.5 text-xs">
-                    {scenePhotos[pickingFor]!.length === 1 ? (
-                      (['background', 'blocks'] as const).map((mode) => (
-                        <button
-                          key={mode}
-                          onClick={() =>
-                            setPhotoLayout((prev) => ({ ...prev, [pickingFor]: mode }))
-                          }
-                          className={`rounded-full border px-2.5 py-0.5 ${
-                            (photoLayout[pickingFor] ?? 'background') === mode
-                              ? 'border-brand-500 bg-brand-50 text-brand-700'
-                              : 'border-slate-300 text-slate-600 hover:bg-slate-50'
-                          }`}
-                        >
-                          {mode === 'background' ? 'Full background' : 'Photo block with text'}
-                        </button>
-                      ))
-                    ) : (
-                      <span className="text-slate-500">
-                        {scenePhotos[pickingFor]!.length} photos — shown as equal blocks under the
-                        headline (up to 6).
-                      </span>
-                    )}
+                    ))}
                   </div>
                 )}
+              </div>
 
-                {library === null ? (
-                  <Spinner className="h-4 w-4 text-slate-400" />
-                ) : library.length === 0 ? (
-                  <p className="text-xs text-slate-500">
-                    No photos yet — upload one, or leave it and this scene gets a colour
-                    background.
+              {mode === 'describe' ? (
+                <div>
+                  <textarea
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    rows={7}
+                    placeholder={DESCRIBE_EXAMPLE}
+                    className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm leading-relaxed outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20"
+                  />
+                  <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                    <label className="text-slate-600">Language</label>
+                    <select value={language} onChange={(e) => setLanguage(e.target.value)} className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs">
+                      {STORY_LANGUAGES.map((item) => (
+                        <option key={item}>{item}</option>
+                      ))}
+                    </select>
+                    <label className="ml-1 text-slate-600">Scenes</label>
+                    <select value={sceneCount} onChange={(e) => setSceneCount(Number(e.target.value))} className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs">
+                      {[3, 4, 5, 6, 7].map((n) => (
+                        <option key={n} value={n}>
+                          {n}
+                        </option>
+                      ))}
+                    </select>
+                    {description.trim() === '' && (
+                      <button type="button" onClick={() => setDescription(DESCRIBE_EXAMPLE)} className="font-medium text-brand-600 hover:underline">
+                        Use the example
+                      </button>
+                    )}
+                    <Button className="ml-auto !py-1.5 !text-xs" onClick={() => void writeStory()} disabled={writing}>
+                      {writing ? 'Writing the story…' : brief.trim() ? '✨ Write it again' : '✨ Write the story'}
+                    </Button>
+                  </div>
+                  <p className="mt-2 text-xs text-slate-500">
+                    Say what you do, where you are, who it is for, what makes you good at it, and what you are offering now.
+                    Your brand kit's name, phone and website are used as they are; nothing else is invented.
                   </p>
-                ) : (
-                  <ul className="grid grid-cols-8 gap-1">
-                    {library.slice(0, 16).map((asset) => (
-                      <li key={asset.id}>
-                        <button
-                          onClick={() => choosePicked(asset.url)}
-                          className={`relative block w-full overflow-hidden rounded border-2 ${
-                            (
-                              pickingFor === 'logo'
-                                ? logo === asset.url
-                                : scenePhotos[pickingFor]?.includes(asset.url)
-                            )
-                              ? 'border-brand-500'
-                              : 'border-transparent hover:border-slate-300'
-                          }`}
-                        >
-                          {pickingFor !== 'logo' && scenePhotos[pickingFor]?.includes(asset.url) && (
-                            <span className="absolute left-0.5 top-0.5 rounded bg-brand-600 px-1 text-[10px] font-medium text-white">
-                              {scenePhotos[pickingFor]!.indexOf(asset.url) + 1}
-                            </span>
-                          )}
-                          <img
-                            src={asset.thumbnailUrl ?? asset.url}
-                            alt=""
-                            className="aspect-square w-full object-cover"
-                          />
+                </div>
+              ) : (
+                <div>
+                  <textarea
+                    value={brief}
+                    onChange={(e) => setBrief(e.target.value)}
+                    rows={12}
+                    placeholder={EXAMPLE}
+                    className="w-full rounded-xl border border-slate-300 px-3 py-2 font-mono text-sm leading-relaxed outline-none focus:border-brand-500 focus:ring-2 focus:ring-brand-500/20"
+                  />
+                  <div className="mt-1 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-500">
+                    <span>
+                      {description.trim() && brief.trim() && (
+                        <>
+                          Written from your description ·{' '}
+                          <button type="button" onClick={() => setMode('describe')} className="font-medium text-brand-600 hover:underline">
+                            change it
+                          </button>
+                          {' · '}
+                        </>
+                      )}
+                      {brand && (brand.phone || brand.website) && !/^\s*footer\s*:/im.test(brief) && (
+                        <button type="button" onClick={() => setBrief((b) => `Footer: ${brandFooter(brand)}\n${b}`)} className="mr-2 font-medium text-brand-600 hover:underline">
+                          + Add your contact footer
+                        </button>
+                      )}
+                      One line per scene line. <strong>Scene 1 - Opening</strong> starts a scene, <strong>add a photo</strong> asks for a picture,{' '}
+                      <strong>[bold, big, yellow]</strong> styles a line —{' '}
+                      <button type="button" onClick={() => setShowInstructions((v) => !v)} className="font-medium text-brand-600 hover:underline">
+                        {showInstructions ? 'hide the list' : 'see all'}
+                      </button>
+                      .
+                    </span>
+                    {brief.trim() === '' && (
+                      <button type="button" onClick={() => setBrief(EXAMPLE)} className="shrink-0 font-medium text-brand-600 hover:underline">
+                        Use the example
+                      </button>
+                    )}
+                  </div>
+                  {showInstructions && (
+                    <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
+                      {INSTRUCTION_GROUPS.map((group) => (
+                        <Fragment key={group.title}>
+                          <dt className="font-medium text-slate-900">{group.title}</dt>
+                          <dd>{group.words}</dd>
+                        </Fragment>
+                      ))}
+                      <dd className="col-span-2 pt-1 text-slate-500">
+                        Combine them in one bracket: <strong>Admissions open [gap, bold, gold, pop]</strong>. Each line in the brief stays as one line in the reel.
+                      </dd>
+                    </dl>
+                  )}
+                </div>
+              )}
+            </section>
+
+            {storyPhotoScenes !== null && mode === 'write' && scenes.length > 0 && (
+              <section className={`rounded-2xl border p-4 ${openQuestions > 0 ? 'border-amber-200 bg-amber-50' : 'border-emerald-200 bg-emerald-50'}`}>
+                <h3 className={`text-sm font-semibold ${openQuestions > 0 ? 'text-amber-900' : 'text-emerald-900'}`}>
+                  {openQuestions > 0 ? '2 · A few quick questions' : '2 · All set — create the reel when you are ready'}
+                </h3>
+                {openQuestions > 0 && (
+                  <ul className="mt-2 space-y-2 text-sm text-slate-800">
+                    {wantLogo && (
+                      <li className="flex flex-wrap items-center gap-2">
+                        <span className="flex-1">Your logo on every scene?</span>
+                        <button type="button" onClick={focusLogo} className="rounded-md bg-brand-600 px-2 py-0.5 text-xs font-medium text-white hover:bg-brand-700">
+                          Add logo
+                        </button>
+                        <button type="button" onClick={() => skip('logo')} className="text-xs text-slate-600 hover:underline">
+                          No logo
                         </button>
                       </li>
-                    ))}
+                    )}
+                    {photoScenesOpen.length > 0 && (
+                      <li className="flex flex-wrap items-center gap-2">
+                        <span className="flex-1">
+                          Scene{photoScenesOpen.length === 1 ? '' : 's'} {photoScenesOpen.map((i) => i + 1).join(', ')} would look better with a photo of your business.
+                        </span>
+                        {photoScenesOpen.map((index) => (
+                          <button key={index} type="button" onClick={() => focusScene(index)} className="rounded-md bg-brand-600 px-2 py-0.5 text-xs font-medium text-white hover:bg-brand-700">
+                            Scene {index + 1}
+                          </button>
+                        ))}
+                        <button type="button" onClick={() => photoScenesOpen.forEach((index) => skip(`photo-${index}`))} className="text-xs text-slate-600 hover:underline">
+                          Colour backgrounds
+                        </button>
+                      </li>
+                    )}
+                    {wantAudio && (
+                      <li className="flex flex-wrap items-center gap-2">
+                        <span className="flex-1">Music or a voice-over? You can add it later too.</span>
+                        <button type="button" onClick={() => audioInput.current?.click()} className="rounded-md bg-brand-600 px-2 py-0.5 text-xs font-medium text-white hover:bg-brand-700">
+                          Add audio
+                        </button>
+                        <button type="button" onClick={() => skip('audio')} className="text-xs text-slate-600 hover:underline">
+                          Not now
+                        </button>
+                      </li>
+                    )}
                   </ul>
                 )}
-              </div>
+              </section>
             )}
-          </div>
-        )}
 
-        <div className="mt-3">
-          <div>
-            <p className="mb-1.5 text-xs font-medium text-slate-700">Sound</p>
-            {audio ? (
-              <div className="flex items-center gap-2">
-                <span className="min-w-0 flex-1 truncate text-xs text-slate-700">{audio.name}</span>
-                <button
-                  onClick={() => setAudio(undefined)}
-                  className="text-xs text-red-600 hover:underline"
-                >
-                  Remove
-                </button>
-              </div>
-            ) : (
-              <Button
-                variant="secondary"
-                className="!py-1 !text-xs"
-                onClick={() => audioInput.current?.click()}
-              >
-                Add music or a voiceover
-              </Button>
-            )}
-            <p className="mt-1 text-xs text-slate-500">
-              Use audio you have the rights to. You can add or change it later.
-            </p>
-
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              <label className="text-xs text-slate-600">Logo</label>
-              <button
-                onClick={() => setPickingFor(pickingFor === 'logo' ? null : 'logo')}
-                className={`overflow-hidden rounded-lg border-2 ${
-                  pickingFor === 'logo' ? 'border-brand-500' : 'border-slate-200'
-                }`}
-                title="A logo shown on every scene"
-              >
-                {logo ? (
-                  <img src={logo} alt="" className="h-9 w-16 bg-slate-100 object-contain" />
-                ) : (
-                  <span className="flex h-9 w-16 items-center justify-center bg-slate-50 text-[10px] text-slate-400">
-                    ＋ logo
+            {scenes.length > 0 && (
+              <section className="rounded-2xl border border-slate-200 bg-white p-4">
+                <div className="mb-2 flex flex-wrap items-center gap-2">
+                  <h3 className="text-sm font-semibold text-slate-900">
+                    {storyPhotoScenes !== null ? '3' : '2'} · Scenes
+                  </h3>
+                  <span className="text-xs text-slate-500">
+                    {scenes.length} scene{scenes.length === 1 ? '' : 's'} · {totalSeconds.toFixed(1)}s
                   </span>
-                )}
-              </button>
-              {logo && (
-                <select
-                  value={logoPosition || directives.logoPosition || 'top-right'}
-                  onChange={(e) => setLogoPosition(e.target.value)}
-                  className="rounded-lg border border-slate-300 px-2 py-1 text-xs"
-                  title="Where the logo sits"
-                >
-                  {LOGO_POSITIONS.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
+                  {scenesHeld > 0 && (
+                    <button type="button" onClick={() => lock('More than 3 scenes')} className="text-xs text-brand-600 hover:underline">
+                      🔒 {scenesHeld} more scene{scenesHeld === 1 ? '' : 's'} with a free account
+                    </button>
+                  )}
+                  <span className="ml-auto text-xs text-slate-500">Tap a photo box to add pictures to that scene.</span>
+                </div>
+                <ul className="space-y-2">
+                  {scenes.map((scene, index) => (
+                    <li key={index} id={`magic-scene-${index}`} className={`rounded-xl border p-2 ${pickingFor === index ? 'border-brand-400 bg-brand-50/30' : 'border-slate-200'}`}>
+                      <div className="flex items-start gap-2">
+                        <span className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded bg-brand-600 text-xs font-medium text-white">{index + 1}</span>
+                        <span className="min-w-0 flex-1 text-sm">
+                          <span className="block font-medium text-slate-900">{scene.headline || <em className="text-slate-400">No headline</em>}</span>
+                          {scene.label && <span className="block text-xs text-slate-400">{scene.label}</span>}
+                          {scene.body.length > 0 && <span className="block text-xs text-slate-500">{scene.body.join(' · ')}</span>}
+                          {scene.contact.length > 0 && <span className="block text-xs text-slate-500">{scene.contact.join(' · ')}</span>}
+                          {(scene.qr || scene.footer.length > 0 || scene.wantsPhoto) && (
+                            <span className="mt-0.5 flex flex-wrap gap-1">
+                              {scene.wantsPhoto && !scenePhotos[index]?.length && (
+                                <span className="rounded bg-amber-100 px-1 text-[10px] text-amber-800">wants a photo</span>
+                              )}
+                              {scene.qr && <span className="rounded bg-slate-100 px-1 text-[10px] text-slate-600">QR · {scene.qr}</span>}
+                              {scene.footer.map((line) => (
+                                <span key={line} className="rounded bg-slate-100 px-1 text-[10px] text-slate-600">Footer · {line}</span>
+                              ))}
+                            </span>
+                          )}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setPickingFor(pickingFor === index ? null : index)}
+                          className={`shrink-0 overflow-hidden rounded-lg border-2 transition ${pickingFor === index ? 'border-brand-500' : 'border-slate-200 hover:border-slate-400'}`}
+                          title="Choose photos for this scene"
+                        >
+                          {scenePhotos[index]?.length ? (
+                            scenePhotos[index].length === 1 ? (
+                              <img src={scenePhotos[index][0]} alt="" className="h-12 w-12 object-cover" />
+                            ) : (
+                              <span className="grid h-12 w-12 grid-cols-2 gap-px bg-slate-200">
+                                {scenePhotos[index].slice(0, 4).map((url, n) => (
+                                  <img key={url + n} src={url} alt="" className="h-full w-full object-cover" />
+                                ))}
+                              </span>
+                            )
+                          ) : (
+                            <span className="flex h-12 w-12 flex-col items-center justify-center bg-slate-50 text-[10px] leading-tight text-slate-500">
+                              <span className="text-base leading-none">＋</span>
+                              photo
+                            </span>
+                          )}
+                        </button>
+                      </div>
+                      {pickingFor === index && renderPicker(index)}
+                    </li>
                   ))}
-                </select>
-              )}
-              <label className="ml-2 text-xs text-slate-600">Colours</label>
-              <input
-                type="color"
-                value={brandColor}
-                onChange={(e) => setBrandColor(e.target.value)}
-                title="Main colour"
-                className="h-7 w-10 cursor-pointer rounded border border-slate-300"
-              />
-              <input
-                type="color"
-                value={accentColor}
-                onChange={(e) => setAccentColor(e.target.value)}
-                title="Alternate colour"
-                className="h-7 w-10 cursor-pointer rounded border border-slate-300"
-              />
-            </div>
+                </ul>
+              </section>
+            )}
           </div>
+
+          {/* ---- Right: look and sound ---------------------------------- */}
+          <aside className="space-y-4">
+            <section ref={logoCardRef} className={`rounded-2xl border bg-white p-4 ${pickingFor === 'logo' ? 'border-brand-400' : 'border-slate-200'}`}>
+              <h3 className="text-sm font-semibold text-slate-900">Logo</h3>
+              <p className="mt-0.5 text-xs text-slate-500">Shown small on every scene, never as a background.</p>
+              <div className="mt-2 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setPickingFor(pickingFor === 'logo' ? null : 'logo')}
+                  className={`overflow-hidden rounded-lg border-2 ${pickingFor === 'logo' ? 'border-brand-500' : 'border-slate-200 hover:border-slate-400'}`}
+                  title="Choose or upload a logo"
+                >
+                  {logo ? (
+                    <img src={logo} alt="" className="h-12 w-24 bg-slate-100 object-contain" />
+                  ) : (
+                    <span className="flex h-12 w-24 items-center justify-center bg-slate-50 text-xs text-slate-500">＋ Add logo</span>
+                  )}
+                </button>
+                {logo ? (
+                  <div className="flex flex-col gap-1">
+                    <select value={logoPosition || directives.logoPosition || 'top-right'} onChange={(e) => setLogoPosition(e.target.value)} className="rounded-lg border border-slate-300 px-2 py-1 text-xs" title="Where the logo sits">
+                      {LOGO_POSITIONS.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                    <div className="flex gap-2 text-xs">
+                      <button type="button" onClick={() => setPickingFor('logo')} className="font-medium text-brand-600 hover:underline">
+                        Change
+                      </button>
+                      <button type="button" onClick={() => { setLogo(undefined); setPickingFor(null); }} className="text-red-600 hover:underline">
+                        Remove
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <button type="button" onClick={() => setPickingFor('logo')} className="text-xs font-medium text-brand-600 hover:underline">
+                    Choose or upload
+                  </button>
+                )}
+              </div>
+              {pickingFor === 'logo' && renderPicker('logo')}
+            </section>
+
+            <section className="rounded-2xl border border-slate-200 bg-white p-4">
+              <h3 className="text-sm font-semibold text-slate-900">Colours</h3>
+              <div className="mt-2 flex items-center gap-3 text-xs text-slate-600">
+                <label className="flex items-center gap-1.5">
+                  <input type="color" value={brandColor} onChange={(e) => setBrandColor(e.target.value)} title="Main colour" className="h-8 w-12 cursor-pointer rounded border border-slate-300" />
+                  Main
+                </label>
+                <label className="flex items-center gap-1.5">
+                  <input type="color" value={accentColor} onChange={(e) => setAccentColor(e.target.value)} title="Alternate colour" className="h-8 w-12 cursor-pointer rounded border border-slate-300" />
+                  Alternate
+                </label>
+              </div>
+              <p className="mt-1.5 text-xs text-slate-500">Scenes alternate between the two. They start from your brand kit.</p>
+            </section>
+
+            <section className="rounded-2xl border border-slate-200 bg-white p-4">
+              <h3 className="text-sm font-semibold text-slate-900">Sound</h3>
+              {audio ? (
+                <div className="mt-2 flex items-center gap-2">
+                  <span className="min-w-0 flex-1 truncate text-xs text-slate-700">🎵 {audio.name}</span>
+                  <button type="button" onClick={() => setAudio(undefined)} className="text-xs text-red-600 hover:underline">
+                    Remove
+                  </button>
+                </div>
+              ) : (
+                <Button variant="secondary" className="mt-2 !py-1 !text-xs" onClick={() => audioInput.current?.click()}>
+                  Add music or a voice-over
+                </Button>
+              )}
+              <p className="mt-1.5 text-xs text-slate-500">Use audio you have the rights to. You can add or change it later.</p>
+            </section>
+          </aside>
         </div>
-
-        <div className="mt-4 flex justify-end gap-2">
-          <Button variant="secondary" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button onClick={handleCreate} disabled={busy || scenes.length === 0}>
-            {busy
-              ? 'Building…'
-              : initial
-                ? `Rebuild ${scenes.length} scene reel`
-                : `Create ${scenes.length || ''} scene reel`}
-          </Button>
-        </div>
-
-        <input
-          ref={photoInput}
-          type="file"
-          accept="image/*"
-          hidden
-          onChange={(e) => {
-            const file = e.target.files?.[0];
-            if (file && pickingFor !== null) void handlePhotoFile(file, pickingFor);
-            e.target.value = '';
-          }}
-        />
-
-        <input
-          ref={audioInput}
-          type="file"
-          accept="audio/*"
-          hidden
-          onChange={(e) => {
-            const file = e.target.files?.[0];
-            if (file) void handleAudioFile(file);
-            e.target.value = '';
-          }}
-        />
       </div>
+
+      {/* Phones: the Create button rides along the bottom. */}
+      <div className="fixed inset-x-0 bottom-0 z-10 flex justify-end gap-2 border-t border-slate-200 bg-white/95 px-4 py-2 backdrop-blur sm:hidden">
+        <Button variant="secondary" onClick={onClose}>
+          Cancel
+        </Button>
+        {createButton}
+      </div>
+
+      <input
+        ref={photoInput}
+        type="file"
+        accept="image/*"
+        hidden
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file && pickingFor !== null) void handlePhotoFile(file, pickingFor);
+          e.target.value = '';
+        }}
+      />
+      <input
+        ref={audioInput}
+        type="file"
+        accept="audio/*"
+        hidden
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) void handleAudioFile(file);
+          e.target.value = '';
+        }}
+      />
     </div>
   );
 }

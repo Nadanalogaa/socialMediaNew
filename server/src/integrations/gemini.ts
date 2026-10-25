@@ -156,7 +156,7 @@ export function templateCommentReply(brand: BrandContext, comment: { authorName:
 const STORY_SHAPE = `{
   "title": "a short name for this reel, under 60 characters",
   "language": "the language the lines are written in",
-  "footer": "website · phone, from the allowed contact details only; empty string if there are none",
+  "footer": "the website and the phone number from the allowed contact details, separated by · , without the words phone/email/website; empty string if there are none",
   "scenes": [
     {
       "label": "what this scene is for, 1-3 words, e.g. Opening, What we offer, Proof, Offer, Call to action",
@@ -174,10 +174,33 @@ const STORY_RULES = [
   'Story arc: hook the viewer, say who the business is, what it offers, why to trust it (years, students, awards, results that the description gives), then the offer or invitation, then a closing call to action with contact details.',
   'Every line must be short enough to read in a glance. Each body line is a separate line on screen, never a paragraph.',
   'Set "photo": true on scenes that would be stronger with a real picture of the business (people, place, work); not on the pure text scenes.',
-  'Use only the facts in the description and the allowed contact details. Never invent fees, dates, numbers, awards, phone numbers or addresses.',
+  'Use only the facts in the description and the allowed contact details. Never invent fees, dates, numbers, counts (students, batches, branches), awards, phone numbers or addresses. If the description gives no number for something, say it without a number ("experienced teachers", not "500 students"). Proof scenes use only the proof the description gives.',
   'Write every headline and body line in the language asked for, not in English, unless English is asked for. Tamil, Hindi, Telugu, Kannada and Malayalam are written in their own script. "Tanglish" is spoken Tamil in Latin letters mixed with English words, the way people text — for example "Unga kuzhandhaikku Bharatanatyam kattrukka vaanga!" or "Free demo class indha Saturday". Keep brand names, numbers and contact details as given.',
   'Return only the JSON object, nothing else.',
 ].join('\n');
+
+/** "phone 98765 43210" → "98765 43210": the labels come from our own instruction, not the user. */
+function cleanContactLine(line: string): string {
+  return line
+    .split(/\s*[·|•]\s*/)
+    .map((part) => part.replace(/^(phone|mobile|call|whatsapp|email|e-mail|website|web|site)\s*[:\-]?\s*/i, '').trim())
+    .filter(Boolean)
+    .join(' · ');
+}
+
+/**
+ * A line is kept only if every number in it was given by the user: a count
+ * the model made up ("Thousands of students") is worse than no line.
+ */
+function statedInSource(line: string, source: string): boolean {
+  const digits = line.match(/\d[\d,]*\+?/g) ?? [];
+  const words = line.match(/\b(hundreds?|thousands?|lakhs?|crores?|millions?)\b/gi) ?? [];
+  const haystack = source.toLowerCase();
+  return (
+    digits.every((n) => haystack.includes(n.replace(/[,+]/g, '').toLowerCase()) || haystack.includes(n.toLowerCase())) &&
+    words.every((w) => haystack.includes(w.toLowerCase()))
+  );
+}
 
 export interface StoryRequest {
   description: string;
@@ -216,15 +239,20 @@ export async function writeMagicStory(brand: BrandContext, input: StoryRequest):
       headline: scene.headline.slice(0, 90),
       headlineStyle: Array.isArray(scene.headlineStyle) ? scene.headlineStyle.filter((w): w is string => typeof w === 'string').slice(0, 3) : [],
       body: (Array.isArray(scene.body) ? scene.body : []).filter((l): l is string => typeof l === 'string').slice(0, 3).map((l) => l.slice(0, 120)),
-      contact: (Array.isArray(scene.contact) ? scene.contact : []).filter((l): l is string => typeof l === 'string').slice(0, 2).map((l) => l.slice(0, 120)),
+      contact: (Array.isArray(scene.contact) ? scene.contact : []).filter((l): l is string => typeof l === 'string').slice(0, 2).map((l) => cleanContactLine(l).slice(0, 120)),
       photo: scene.photo === true,
     }));
   if (scenes.length < 2) throw new Error('The AI did not return enough scenes. Please try again.');
 
+  const source = [input.description, input.currentBrief ?? '', input.instruction ?? '', brand.phone ?? '', brand.website ?? '', brand.email ?? '', brand.description ?? '']
+    .join('\n')
+    .replace(/[,\s]+/g, ' ');
+  for (const scene of scenes) scene.body = scene.body.filter((line) => statedInSource(line, source));
+
   return {
     title: typeof raw.title === 'string' && raw.title.trim() ? raw.title.trim().slice(0, 80) : scenes[0]!.headline,
     language: typeof raw.language === 'string' ? raw.language.slice(0, 40) : language,
-    footer: typeof raw.footer === 'string' ? raw.footer.slice(0, 160) : undefined,
+    footer: typeof raw.footer === 'string' ? cleanContactLine(raw.footer).slice(0, 160) : undefined,
     scenes,
   };
 }
