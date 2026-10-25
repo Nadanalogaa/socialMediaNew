@@ -8,6 +8,11 @@ import { createContext, useCallback, useContext, useMemo, useState, type ReactNo
  * visible, so the upgrade is a tap away and the reason for it is obvious.
  */
 export const GUEST_LIMITS = {
+  /**
+   * Off for now: visitors get the whole studio, full HD and no watermark, so
+   * the first reel is the real thing. Flip to true to bring the caps back.
+   */
+  enforce: false,
   scenes: 3,
   /** Template slugs a guest can start from. */
   templates: ['reel-offer'],

@@ -40,9 +40,9 @@ export function GuestStudioScreen({
         </header>
         <main className="mx-auto w-full max-w-[1700px] flex-1 px-4 py-3">
           <p className="mb-3 rounded-xl border border-slate-200 bg-white px-3 py-2 text-xs text-slate-600">
-            Your photos and sound stay on this device and the reel downloads here. In this free preview:{' '}
-            {GUEST_LIMITS.scenes} scenes, {GUEST_LIMITS.effects.length} effects, {GUEST_LIMITS.fonts.length} fonts, 720p export with a small
-            watermark. Anything with a 🔒 opens up with a free account.
+            {GUEST_LIMITS.enforce
+              ? `Your photos and sound stay on this device and the reel downloads here. In this free preview: ${GUEST_LIMITS.scenes} scenes, ${GUEST_LIMITS.effects.length} effects, ${GUEST_LIMITS.fonts.length} fonts, 720p export with a small watermark. Anything with a 🔒 opens up with a free account.`
+              : 'Your reel downloads right here, full HD, no watermark. Sign up free to save it, publish it to your channels and add your logo.'}
           </p>
           <ReelsScreen initialDescription={describe} initialLanguage={lang} />
         </main>

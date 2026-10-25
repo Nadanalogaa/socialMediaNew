@@ -111,6 +111,8 @@ export function MagicDesignDialog({
   const [showTemplates, setShowTemplates] = useState(false);
   const [industry, setIndustry] = useState<string>('All');
   const autoWritten = useRef(false);
+  /** Set when the website sent the description: the reel is built as soon as the story is in. */
+  const autoCreate = useRef(false);
   const [sceneCount, setSceneCount] = useState(5);
   const [writing, setWriting] = useState(false);
   /** Set once a story was written: the scenes the story wants a photo in. */
@@ -227,7 +229,7 @@ export function MagicDesignDialog({
     setShowTemplates(false);
     try {
       const story = guest
-        ? await api.writeMagicStoryAsGuest({ description: text.trim(), language })
+        ? await api.writeMagicStoryAsGuest({ description: text.trim(), language, sceneCount })
         : await api.writeMagicStory({
             description: text.trim(),
             sceneCount,
@@ -255,6 +257,8 @@ export function MagicDesignDialog({
       if (imported.length > 0) setLibrary((prev) => [...imported, ...(prev ?? [])]);
       setMode('write');
     } catch (err) {
+      // The page stays open for the user to try again; nothing builds on its own.
+      autoCreate.current = false;
       setError(err instanceof Error ? err.message : 'Could not write the story. Please try again.');
     } finally {
       setWriting(false);
@@ -291,6 +295,7 @@ export function MagicDesignDialog({
     if (!presetDescription || autoWritten.current || aiAvailable === null) return;
     if (!aiAvailable && !guest) return;
     autoWritten.current = true;
+    autoCreate.current = true;
     void writeStory(undefined, presetDescription);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [presetDescription, aiAvailable, guest]);
@@ -379,7 +384,7 @@ export function MagicDesignDialog({
   const parsedScenes = useMemo(() => (expanded.trim() ? parseBrief(expanded) : []), [expanded]);
   // A guest's reel is three scenes; the rest of the brief waits for an account.
   const scenes = useMemo(() => {
-    const visible = guest ? parsedScenes.slice(0, GUEST_LIMITS.scenes) : parsedScenes;
+    const visible = guest && GUEST_LIMITS.enforce ? parsedScenes.slice(0, GUEST_LIMITS.scenes) : parsedScenes;
     return visible.map((scene, index) =>
       scene.wantsPhoto && skipped.has(`photo-${index}`) ? { ...scene, wantsPhoto: false } : scene,
     );
@@ -499,15 +504,15 @@ export function MagicDesignDialog({
     }
 
     // Logo and QR are part of the paid-for polish; a guest's brief builds without them.
-    const effectiveDirectives = guest ? { ...directives, qr: undefined, logoPosition: undefined } : directives;
+    const effectiveDirectives = guest && GUEST_LIMITS.enforce ? { ...directives, qr: undefined, logoPosition: undefined } : directives;
     const built = buildProjectFromBrief(scenes, {
         // Photos chosen for a scene win; "add a photo" draws on the library.
         scenePhotos: scenes.map((_, index) => scenePhotos[index]),
         photoLayout: scenes.map((_, index) => photoLayout[index]),
         photos: [],
-        logo: guest ? undefined : logo,
+        logo: guest && GUEST_LIMITS.enforce ? undefined : logo,
         logoPosition: (logoPosition || undefined) as LogoPosition | undefined,
-        qrImages: guest ? {} : qrImages,
+        qrImages: guest && GUEST_LIMITS.enforce ? {} : qrImages,
         directives: effectiveDirectives,
         brandColor,
         accentColor,
@@ -535,6 +540,14 @@ export function MagicDesignDialog({
       audio,
     );
   }
+
+  // The story from the website's description is here: straight to the reel.
+  useEffect(() => {
+    if (!autoCreate.current || writing || busy || storyPhotoScenes === null || scenes.length === 0) return;
+    autoCreate.current = false;
+    void handleCreate();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [writing, busy, storyPhotoScenes, scenes.length]);
 
   /** The photo or logo chooser, drawn where the choice is being made. */
   function renderPicker(target: number | 'logo') {
@@ -871,7 +884,7 @@ export function MagicDesignDialog({
                       ))}
                     </select>
                     <label className="ml-1 text-slate-600">Scenes</label>
-                    <select value={guest ? 3 : sceneCount} disabled={guest} onChange={(e) => setSceneCount(Number(e.target.value))} className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs disabled:opacity-60" title={guest ? 'Three scenes in the free preview' : undefined}>
+                    <select value={sceneCount} onChange={(e) => setSceneCount(Number(e.target.value))} className="rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs">
                       {[3, 4, 5, 6, 7].map((n) => (
                         <option key={n} value={n}>
                           {n}

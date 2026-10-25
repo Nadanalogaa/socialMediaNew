@@ -31,8 +31,8 @@ export function LayerProperties({
   const setStyle = (patch: Partial<ProjectLayer['style']>) =>
     onChange({ style: { ...style, ...patch } });
   const { guest, lock } = useGuest();
-  const fontLocked = (label: string) => guest && !(GUEST_LIMITS.fonts as readonly string[]).includes(label);
-  const effectLocked = (effect: string) => guest && !(GUEST_LIMITS.effects as readonly string[]).includes(effect);
+  const fontLocked = (label: string) => guest && GUEST_LIMITS.enforce && !(GUEST_LIMITS.fonts as readonly string[]).includes(label);
+  const effectLocked = (effect: string) => guest && GUEST_LIMITS.enforce && !(GUEST_LIMITS.effects as readonly string[]).includes(effect);
 
   return (
     <div className="space-y-3 text-sm">

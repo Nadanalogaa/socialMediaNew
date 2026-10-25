@@ -129,7 +129,7 @@ function ReelPicker({
   onMagic: () => void;
 }) {
   const { guest, lock } = useGuest();
-  const templateLocked = (slug: string) => guest && !(GUEST_LIMITS.templates as readonly string[]).includes(slug);
+  const templateLocked = (slug: string) => guest && GUEST_LIMITS.enforce && !(GUEST_LIMITS.templates as readonly string[]).includes(slug);
 
   function start(template: VideoTemplateDefinition) {
     if (templateLocked(template.slug)) return void lock('This template');
@@ -452,7 +452,7 @@ function ReelEditor({
   }
 
   function addScene() {
-    if (guest && project.scenes.length >= GUEST_LIMITS.scenes) return void lock(`More than ${GUEST_LIMITS.scenes} scenes`);
+    if (guest && GUEST_LIMITS.enforce && project.scenes.length >= GUEST_LIMITS.scenes) return void lock(`More than ${GUEST_LIMITS.scenes} scenes`);
     const scenes = [
       ...project.scenes,
       {
@@ -759,7 +759,7 @@ function ReelEditor({
       const video = await recordProject(
         project,
         setProgress,
-        guest ? { scale: GUEST_LIMITS.exportScale, watermark: GUEST_LIMITS.watermark } : {},
+        guest && GUEST_LIMITS.enforce ? { scale: GUEST_LIMITS.exportScale, watermark: GUEST_LIMITS.watermark } : {},
       );
       const extension = video.mimeType.includes('mp4') ? 'mp4' : 'webm';
       const file = new File([video.blob], `reel.${extension}`, { type: video.mimeType });
@@ -1243,7 +1243,7 @@ function ReelEditor({
                 variant="secondary"
                 className="flex-1"
                 onClick={() => {
-                  if (guest && project.scenes.length >= GUEST_LIMITS.scenes) return void lock(`More than ${GUEST_LIMITS.scenes} scenes`);
+                  if (guest && GUEST_LIMITS.enforce && project.scenes.length >= GUEST_LIMITS.scenes) return void lock(`More than ${GUEST_LIMITS.scenes} scenes`);
                   const copy = duplicateScene(scene);
                   setProject({
                     ...project,
@@ -1619,7 +1619,7 @@ function ReelEditor({
                 <Button
                   variant="secondary"
                   onClick={() => {
-                    if (guest && project.scenes.length >= GUEST_LIMITS.scenes) return void lock(`More than ${GUEST_LIMITS.scenes} scenes`);
+                    if (guest && GUEST_LIMITS.enforce && project.scenes.length >= GUEST_LIMITS.scenes) return void lock(`More than ${GUEST_LIMITS.scenes} scenes`);
                     const copy = duplicateScene(scene);
                     setProject({
                       ...project,
