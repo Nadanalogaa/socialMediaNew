@@ -151,8 +151,6 @@ export function MagicDesignDialog({
   const [pickingFor, setPickingFor] = useState<number | 'logo' | null>(null);
   /** The chooser opened from the picture strip at the top, not from the scene list. */
   const [pickInStrip, setPickInStrip] = useState(false);
-  /** The strip pulses until the user has touched a picture once. */
-  const [stripSeen, setStripSeen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const photoInput = useRef<HTMLInputElement>(null);
   const [audio, setAudio] = useState<ProjectAudio | undefined>();
@@ -660,7 +658,6 @@ export function MagicDesignDialog({
                 <button
                   type="button"
                   onClick={() => {
-                    setStripSeen(true);
                     setPickInStrip(false);
                     openUpload(index, true);
                   }}
@@ -686,8 +683,7 @@ export function MagicDesignDialog({
                   <button
                     type="button"
                     onClick={() => {
-                      setStripSeen(true);
-                      setStockQuery('');
+                        setStockQuery('');
                       setPickInStrip(!(open === index));
                       setPickingFor(index);
                     }}
