@@ -177,12 +177,6 @@ export function MagicDesignDialog({
   const audioInput = useRef<HTMLInputElement>(null);
   const logoCardRef = useRef<HTMLDivElement>(null);
 
-  /** Opens the logo chooser and brings it into view, from wherever it was asked. */
-  function focusLogo() {
-    setPickingFor('logo');
-    setTimeout(() => logoCardRef.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 0);
-  }
-
   /** Opens a scene's photo chooser and scrolls to it. */
   function focusScene(index: number) {
     setStockQuery('');
@@ -582,7 +576,10 @@ export function MagicDesignDialog({
       const url = URL.createObjectURL(file);
       const asset: MediaAsset = { id: url, kind: 'image', url, thumbnailUrl: null, width: null, height: null };
       setLibrary((prev) => [asset, ...(prev ?? [])]);
-      if (target === 'logo') lock('A logo on every scene');
+      if (target === 'logo') {
+        if (GUEST_LIMITS.enforce) lock('A logo on every scene');
+        else setLogo(url);
+      }
       else if (typeof target === 'number') placePhoto(target, url, replace);
       setUploading(false);
       return;
@@ -1198,61 +1195,6 @@ export function MagicDesignDialog({
           </div>
         )}
 
-        {/* Brand toolbar: logo, colours and sound in one slim row. */}
-        <div ref={logoCardRef} className={`mb-4 rounded-2xl border bg-white px-3 py-2 ${pickingFor === 'logo' ? 'border-brand-400' : 'border-slate-200'}`}>
-          <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
-            <div className="flex items-center gap-2">
-              <button
-                type="button"
-                onClick={() => setPickingFor(pickingFor === 'logo' ? null : 'logo')}
-                className={`overflow-hidden rounded-lg border-2 ${pickingFor === 'logo' ? 'border-brand-500' : 'border-slate-200 hover:border-brand-400'}`}
-                title="Logo on every scene"
-              >
-                {logo ? (
-                  <img src={logo} alt="" className="h-9 w-16 bg-slate-100 object-contain" />
-                ) : (
-                  <span className="flex h-9 w-20 items-center justify-center gap-1 bg-slate-50 text-xs font-medium text-slate-700">＋ Logo</span>
-                )}
-              </button>
-              {logo && (
-                <>
-                  <select value={logoPosition || directives.logoPosition || 'top-right'} onChange={(e) => setLogoPosition(e.target.value)} className="rounded-lg border border-slate-300 px-1.5 py-1 text-xs" title="Where the logo sits">
-                    {LOGO_POSITIONS.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                  <button type="button" onClick={() => { setLogo(undefined); setPickingFor(null); }} className="text-xs text-red-600 hover:underline">
-                    Remove
-                  </button>
-                </>
-              )}
-            </div>
-
-            <div className="flex items-center gap-2 text-xs text-slate-600">
-              <span className="font-medium text-slate-700">Colours</span>
-              <input type="color" value={brandColor} onChange={(e) => setBrandColor(e.target.value)} title="Main colour" className="h-8 w-10 cursor-pointer rounded-lg border border-slate-300" />
-              <input type="color" value={accentColor} onChange={(e) => setAccentColor(e.target.value)} title="Alternate colour" className="h-8 w-10 cursor-pointer rounded-lg border border-slate-300" />
-            </div>
-
-            <div className="flex min-w-0 items-center gap-2 text-xs">
-              {audio ? (
-                <>
-                  <span className="min-w-0 max-w-[16rem] truncate text-slate-700">🎵 {audio.name}</span>
-                  <button type="button" onClick={() => setAudio(undefined)} className="text-red-600 hover:underline">
-                    Remove
-                  </button>
-                </>
-              ) : (
-                <button type="button" onClick={() => audioInput.current?.click()} className="rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:border-brand-400 hover:bg-brand-50">
-                  🎵 Add voice-over or music
-                </button>
-              )}
-            </div>
-          </div>
-          {pickingFor === 'logo' && renderPicker('logo')}
-        </div>
 
         <div className="grid gap-4">
           <div className="space-y-4">
@@ -1260,7 +1202,7 @@ export function MagicDesignDialog({
               <div className="mb-3 flex flex-wrap items-center gap-2">
                 <h3 className="text-sm font-semibold text-slate-900">{brief.trim() ? '1 · What would you like to change?' : '1 · Your story'}</h3>
                 {(aiAvailable || guest) && (
-                  <div className="ml-auto flex flex-wrap items-center gap-1">
+                  <div className="ml-auto flex flex-wrap items-center gap-1.5">
                     {(
                       (brief.trim()
                         ? [
@@ -1288,6 +1230,59 @@ export function MagicDesignDialog({
                   </div>
                 )}
               </div>
+
+              {brief.trim() !== '' && (
+                <div ref={logoCardRef} className="mb-3 flex flex-wrap items-center gap-x-5 gap-y-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs">
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => openUpload('logo', true)}
+                      disabled={uploading}
+                      className={`overflow-hidden rounded-lg border-2 border-slate-200 bg-white hover:border-brand-400 disabled:opacity-50`}
+                      title={logo ? 'Upload a different logo' : 'Upload your logo — shown on every scene'}
+                    >
+                      {logo ? (
+                        <img src={logo} alt="" className="h-9 w-16 object-contain" />
+                      ) : (
+                        <span className="flex h-9 w-24 items-center justify-center gap-1 font-medium text-slate-700">＋ Add logo</span>
+                      )}
+                    </button>
+                    {logo && (
+                      <>
+                        <select value={logoPosition || directives.logoPosition || 'top-right'} onChange={(e) => setLogoPosition(e.target.value)} className="rounded-lg border border-slate-300 bg-white px-1.5 py-1 text-xs" title="Where the logo sits">
+                          {LOGO_POSITIONS.map((option) => (
+                            <option key={option.value} value={option.value}>
+                              {option.label}
+                            </option>
+                          ))}
+                        </select>
+                        <button type="button" onClick={() => setLogo(undefined)} className="text-red-600 hover:underline">
+                          Remove
+                        </button>
+                      </>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 text-slate-600">
+                    <span className="font-medium text-slate-700">Colours</span>
+                    <input type="color" value={brandColor} onChange={(e) => setBrandColor(e.target.value)} title="Main colour" className="h-8 w-10 cursor-pointer rounded-lg border border-slate-300" />
+                    <input type="color" value={accentColor} onChange={(e) => setAccentColor(e.target.value)} title="Alternate colour" className="h-8 w-10 cursor-pointer rounded-lg border border-slate-300" />
+                  </div>
+                  <div className="flex min-w-0 items-center gap-2">
+                    {audio ? (
+                      <>
+                        <span className="min-w-0 max-w-[16rem] truncate text-slate-700">🎵 {audio.name}</span>
+                        <button type="button" onClick={() => setAudio(undefined)} className="text-red-600 hover:underline">
+                          Remove
+                        </button>
+                      </>
+                    ) : (
+                      <button type="button" onClick={() => audioInput.current?.click()} className="rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 font-medium text-slate-700 hover:border-brand-400 hover:bg-brand-50">
+                        🎵 Add voice-over or music
+                      </button>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {mode === 'images' ? (
                 renderImagesTab()
@@ -1484,8 +1479,8 @@ export function MagicDesignDialog({
                     {wantLogo && (
                       <li className="flex flex-wrap items-center gap-2">
                         <span className="flex-1">Your logo on every scene?</span>
-                        <button type="button" onClick={focusLogo} className="rounded-md bg-brand-600 px-2 py-0.5 text-xs font-medium text-white hover:bg-brand-700">
-                          Add logo
+                        <button type="button" onClick={() => openUpload('logo', true)} className="rounded-md bg-brand-600 px-2 py-0.5 text-xs font-medium text-white hover:bg-brand-700">
+                          Upload logo
                         </button>
                         <button type="button" onClick={() => skip('logo')} className="text-xs text-slate-600 hover:underline">
                           No logo
