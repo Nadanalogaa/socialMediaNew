@@ -35,6 +35,40 @@ export const creativesRouter: Router = Router();
  */
 export const publicCreativesRouter: Router = Router();
 
+/**
+ * Pictures for the scenes that want one. Searches run in parallel; then each
+ * scene takes its best result that no earlier scene took, so two scenes never
+ * share a photo; then the picks are imported in parallel. A miss leaves the
+ * scene for the user to fill and never fails the story.
+ */
+async function pickScenePhotos<T>(
+  plan: { scenes: { photo: boolean; imageQuery?: string; headline: string; replacePhoto?: boolean }[] },
+  keep: Set<number>,
+  importPhoto: (photo: StockPhoto) => Promise<T>,
+) {
+  const wanted = plan.scenes.flatMap((scene, index) =>
+    scene.photo ? [{ index, query: scene.imageQuery || scene.headline, replace: scene.replacePhoto === true, skip: keep.has(index) && !scene.replacePhoto }] : [],
+  );
+  const results = await Promise.all(
+    wanted.map((w) => (w.skip || !stockPhotosConfigured() ? Promise.resolve([] as StockPhoto[]) : firstStockPhotos(w.query, 8))),
+  );
+  const taken = new Set<string>();
+  const picks = wanted.map((w, i) => {
+    const pick = results[i]!.find((photo) => !taken.has(photo.id));
+    if (pick) taken.add(pick.id);
+    return pick;
+  });
+  return Promise.all(
+    wanted.map(async (w, i) => ({
+      index: w.index,
+      query: w.query,
+      replace: w.skip ? false : w.replace,
+      alternatives: results[i]!,
+      chosen: picks[i] ? await importPhoto(picks[i]!).catch(() => null) : null,
+    })),
+  );
+}
+
 publicCreativesRouter.post(
   '/magic/story',
   validate(magicStorySchema),
@@ -42,25 +76,10 @@ publicCreativesRouter.post(
     const plan = await gemini.writeMagicStory({ name: 'the business' }, req.body);
     // Visitors get pictures too; they are kept in a shared guests folder and
     // not registered to any library.
-    const keep = new Set(req.body.keepPhotoScenes ?? []);
-    const photoScenes = await Promise.all(
-      plan.scenes.flatMap((scene, index) => {
-        if (!scene.photo) return [];
-        const query = scene.imageQuery || scene.headline;
-        if (keep.has(index) && !scene.replacePhoto) return [Promise.resolve({ index, query, chosen: null, replace: false, alternatives: [] as StockPhoto[] })];
-        return [
-          (async () => {
-            const alternatives = stockPhotosConfigured() ? await firstStockPhotos(query) : [];
-            const first = alternatives[0];
-            const imported = first ? await importImageFromUrl('guests', first.url).catch(() => null) : null;
-            const chosen = imported
-              ? { id: `guest-${first!.id}`, kind: 'image' as const, url: imported.url, thumbnailUrl: imported.url, width: imported.width, height: imported.height }
-              : null;
-            return { index, query, chosen, replace: scene.replacePhoto === true, alternatives };
-          })(),
-        ];
-      }),
-    );
+    const photoScenes = await pickScenePhotos(plan, new Set(req.body.keepPhotoScenes ?? []), async (photo) => {
+      const imported = await importImageFromUrl('guests', photo.url);
+      return { id: `guest-${photo.id}`, kind: 'image' as const, url: imported.url, thumbnailUrl: imported.url, width: imported.width, height: imported.height };
+    });
     res.json({
       title: plan.title,
       language: plan.language,
@@ -148,22 +167,7 @@ creativesRouter.post(
     // Pictures for the scenes that want one: found and imported in parallel,
     // so the story arrives with photos already in place. Any miss leaves the
     // scene for the user to fill; it never fails the story.
-    const keep = new Set(req.body.keepPhotoScenes ?? []);
-    const photoScenes = await Promise.all(
-      plan.scenes.flatMap((scene, index) => {
-        if (!scene.photo) return [];
-        const query = scene.imageQuery || scene.headline;
-        if (keep.has(index) && !scene.replacePhoto) return [Promise.resolve({ index, query, chosen: null, replace: false, alternatives: [] as StockPhoto[] })];
-        return [
-          (async () => {
-            const alternatives = stockPhotosConfigured() ? await firstStockPhotos(query) : [];
-            const first = alternatives[0];
-            const chosen = first ? await importStockPhoto(organizationId, first).catch(() => null) : null;
-            return { index, query, chosen, replace: scene.replacePhoto === true, alternatives };
-          })(),
-        ];
-      }),
-    );
+    const photoScenes = await pickScenePhotos(plan, new Set(req.body.keepPhotoScenes ?? []), (photo) => importStockPhoto(organizationId, photo));
 
     res.json({
       title: plan.title,

@@ -229,6 +229,23 @@ function ReelEditor({
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  // First time a built reel opens: a short guide, until it is dismissed once.
+  const [showGuide, setShowGuide] = useState(() => {
+    if (!initialProject.magic) return false;
+    try {
+      return localStorage.getItem('socialboost.reel-guide') !== 'seen';
+    } catch {
+      return true;
+    }
+  });
+  function closeGuide() {
+    setShowGuide(false);
+    try {
+      localStorage.setItem('socialboost.reel-guide', 'seen');
+    } catch {
+      // Private mode: it simply shows again next time.
+    }
+  }
   const [images, setImages] = useState<ImageCache>(new Map());
   const [result, setResult] = useState<MediaAsset | null>(null);
   /** The photo highlighted in the library, which the Use buttons act on. */
@@ -827,10 +844,10 @@ function ReelEditor({
 
         <button
           onClick={() => setMagicOpen(true)}
-          title={project.magic ? 'Edit the brief this reel was built from' : 'Write a brief and build the whole reel'}
+          title={project.magic ? 'Tell the AI what to change: words, pictures, effects' : 'Describe your business and build the whole reel'}
           className="min-h-11 shrink-0 rounded-lg border border-brand-300 bg-brand-50 px-3 text-sm font-medium text-brand-700 transition hover:bg-brand-100 lg:min-h-0 lg:py-1.5"
         >
-          ✨<span className="ml-1 hidden sm:inline">{project.magic ? 'Edit brief' : 'Magic Design'}</span>
+          ✨<span className="ml-1 hidden sm:inline">{project.magic ? 'Change with AI' : 'Magic Design'}</span>
         </button>
 
         {/* Scene selection belongs beside the title: it is the context, and
@@ -843,7 +860,7 @@ function ReelEditor({
                 setSceneIndex(index);
                 setSelectedLayerId(null);
               }}
-              title={`Scene ${index + 1} · ${item.durationSeconds.toFixed(1)}s`}
+              title={`${item.name} · ${item.durationSeconds.toFixed(1)}s — tap to see and edit this scene`}
               className={`h-8 w-8 rounded-lg text-sm transition ${
                 index === sceneIndex
                   ? 'bg-brand-600 font-medium text-white'
@@ -905,6 +922,16 @@ function ReelEditor({
           <Button onClick={() => void handleCreate()} disabled={recording}>
             {recording ? `Recording ${Math.round(progress * 100)}%` : '● Create reel'}
           </Button>
+          {project.magic && !showGuide && (
+            <button
+              onClick={() => setShowGuide(true)}
+              title="How to edit this reel"
+              aria-label="How to edit this reel"
+              className="rounded-lg border border-slate-300 px-3 text-slate-700 transition hover:bg-slate-100"
+            >
+              ?
+            </button>
+          )}
           <button
             onClick={() => setFullscreen((on) => !on)}
             title={fullscreen ? 'Leave full screen' : 'Full screen'}
@@ -915,6 +942,38 @@ function ReelEditor({
           </button>
         </div>
       </div>
+
+      {showGuide && (
+        <div className="rounded-2xl border border-brand-200 bg-gradient-to-r from-brand-50 to-fuchsia-50 p-3 sm:p-4">
+          <div className="flex flex-wrap items-start gap-3">
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold text-slate-900">🎉 Your reel is ready. Here is how to make it yours:</p>
+              <ol className="mt-2 grid gap-2 text-sm text-slate-700 sm:grid-cols-2 lg:grid-cols-4">
+                <li className="rounded-xl bg-white/80 p-2.5">
+                  <span className="font-semibold text-brand-700">1 · Watch it.</span> Press <strong>▶ Play</strong> to see every scene in order.
+                </li>
+                <li className="rounded-xl bg-white/80 p-2.5">
+                  <span className="font-semibold text-brand-700">2 · Pick a scene.</span> The numbers{' '}
+                  <span className="inline-flex h-5 w-5 items-center justify-center rounded bg-brand-600 text-[11px] text-white">1</span>{' '}
+                  <span className="inline-flex h-5 w-5 items-center justify-center rounded bg-slate-200 text-[11px]">2</span> at the top switch scenes.
+                </li>
+                <li className="rounded-xl bg-white/80 p-2.5">
+                  <span className="font-semibold text-brand-700">3 · Tap to change.</span> Tap any text or photo on the picture to edit it, drag to move it.
+                </li>
+                <li className="rounded-xl bg-white/80 p-2.5">
+                  <span className="font-semibold text-brand-700">4 · Or just ask.</span> <strong>✨ Change with AI</strong> — type “new photo on scene 2” or “add sparkles”.
+                </li>
+              </ol>
+              <p className="mt-2 text-xs text-slate-500">Happy with it? Press <strong>● Create reel</strong> to make the video.</p>
+            </div>
+            <div className="flex shrink-0 flex-col gap-1.5">
+              <Button onClick={() => { setPlaying(true); closeGuide(); }} className="!py-1.5 !text-xs">▶ Play it</Button>
+              <Button variant="secondary" onClick={() => { closeGuide(); setMagicOpen(true); }} className="!py-1.5 !text-xs">✨ Change with AI</Button>
+              <button type="button" onClick={closeGuide} className="text-xs text-slate-500 hover:underline">Got it</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div
         className={
@@ -1381,7 +1440,7 @@ function ReelEditor({
             setSceneIndex(0);
             setSelectedLayerId(null);
             setMagicOpen(false);
-            setNotice('Reel built from your brief. Change anything you like, then create it.');
+            setNotice('Reel updated. Tap a scene number to check it, then press Create reel.');
           }}
         />
       )}

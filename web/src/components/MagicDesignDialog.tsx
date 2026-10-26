@@ -788,7 +788,7 @@ export function MagicDesignDialog({
             <h2 className="truncate text-base font-semibold text-slate-900">✨ Magic Design</h2>
             <p className="hidden truncate text-xs text-slate-500 sm:block">
               {initial
-                ? 'Edit the brief and the reel is rebuilt. Hand-made changes to scenes are replaced.'
+                ? 'Say what to change, or use the buttons on each scene. The reel is rebuilt for you.'
                 : 'Describe your business, or write the scenes yourself. The reel is built for you; change anything afterwards.'}
             </p>
           </div>
@@ -904,15 +904,20 @@ export function MagicDesignDialog({
           <div className="space-y-4">
             <section className="rounded-2xl border border-slate-200 bg-white p-4">
               <div className="mb-3 flex flex-wrap items-center gap-2">
-                <h3 className="text-sm font-semibold text-slate-900">1 · Your story</h3>
+                <h3 className="text-sm font-semibold text-slate-900">{brief.trim() ? '1 · What would you like to change?' : '1 · Your story'}</h3>
                 {(aiAvailable || guest) && (
                   <div className="ml-auto flex flex-wrap items-center gap-1">
                     {(
-                      [
-                        ['describe', '✨ Describe'],
-                        ['chat', '💬 Ask for changes'],
-                        ['write', '✍️ Scene text'],
-                      ] as const
+                      (brief.trim()
+                        ? [
+                            ['chat', '💬 Change with AI'],
+                            ['write', '✍️ Edit the words myself'],
+                            ['describe', '↺ Start over'],
+                          ]
+                        : [
+                            ['describe', '✨ Describe your business'],
+                            ['write', '✍️ Write the scenes myself'],
+                          ]) as readonly (readonly ['describe' | 'chat' | 'write', string])[]
                     ).map(([value, label]) => (
                       <button
                         key={value}
@@ -951,7 +956,7 @@ export function MagicDesignDialog({
                         <div className="flex gap-2">
                           <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-600 to-fuchsia-500 text-xs text-white">✨</span>
                           <p className="rounded-2xl rounded-tl-sm bg-brand-50 px-3 py-2 text-sm text-slate-800">
-                            Here is your reel in {parsedScenes.length} scenes{parsedScenes[0]?.headline ? `, opening with “${parsedScenes[0].headline}”` : ''}. Tell me what to change: a scene, the tone, the language, the offer, the length.
+                            Here is your reel in {parsedScenes.length} scenes{parsedScenes[0]?.headline ? `, opening with “${parsedScenes[0].headline}”` : ''}. Tell me what to change in your own words — or use the buttons under each scene below.
                           </p>
                         </div>
                         {turns.map((turn, i) => (
@@ -1221,6 +1226,29 @@ export function MagicDesignDialog({
                           )}
                         </button>
                       </div>
+                      {(aiAvailable || guest) && brief.trim() && (
+                        <div className="mt-1.5 flex flex-wrap gap-1 pl-7">
+                          {[
+                            ['🖼 New picture', `Scene ${index + 1}: use a different picture that fits it better`],
+                            ['✏️ Rewrite words', `Scene ${index + 1}: rewrite the words, same message, more catchy`],
+                            ['✨ Add sparkle', `Scene ${index + 1}: add a sparkles effect`],
+                            ['🗑 Remove', `Remove scene ${index + 1}`],
+                          ].map(([label, ask]) => (
+                            <button
+                              key={label}
+                              type="button"
+                              disabled={writing}
+                              onClick={() => {
+                                setMode('chat');
+                                void sendChange(ask!);
+                              }}
+                              className="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[11px] text-slate-600 hover:border-brand-300 hover:bg-brand-50 disabled:opacity-50"
+                            >
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                      )}
                       {pickingFor === index && renderPicker(index)}
                     </li>
                   ))}

@@ -46,10 +46,47 @@ export async function searchStockPhotos(query: string, options: SearchOptions = 
   return source === 'pixabay' ? searchPixabay(query, options) : searchPexels(query, options);
 }
 
-/** The first results for a query, or none; a miss must not fail the story. */
+/** Words that say where a picture belongs; a match on these outweighs the rest. */
+const PLACE_WORDS = /^(india|indian|south|tamil|chennai|madurai|kerala|mumbai|delhi|bengaluru|bangalore|hyderabad|kolkata|goa|rajasthan|punjab|gujarat)$/;
+
+/**
+ * Stock search ranks loosely: "indian hotel exterior" can return a Paris
+ * facade first. Results are re-ordered by how many of the query's words
+ * their tags actually carry, place words counting triple; when the query
+ * names a place and nothing matches it, a broader search for the country
+ * is tried before giving up on the place.
+ */
+function rankByTags(photos: StockPhoto[], query: string): StockPhoto[] {
+  const words = query.toLowerCase().split(/\s+/).filter((w) => w.length > 2);
+  const score = (photo: StockPhoto) => {
+    const tags = photo.alt.toLowerCase();
+    return words.reduce((total, word) => {
+      const hit = tags.includes(word) || (word === 'indian' && tags.includes('india'));
+      return total + (hit ? (PLACE_WORDS.test(word) ? 3 : 1) : 0);
+    }, 0);
+  };
+  return photos
+    .map((photo, order) => ({ photo, order, score: score(photo) }))
+    .sort((a, b) => b.score - a.score || a.order - b.order)
+    .map((entry) => entry.photo);
+}
+
+const mentionsPlace = (photo: StockPhoto) => /india|indian|tamil|kerala|chennai|madurai|mumbai|delhi|bengal|rajasthan|punjab|goa|hindu|temple/i.test(photo.alt);
+
+/** The best results for a query, or none; a miss must not fail the story. */
 export async function firstStockPhotos(query: string, count = 6): Promise<StockPhoto[]> {
   try {
-    return await searchStockPhotos(query, { perPage: count });
+    const wantsPlace = query.toLowerCase().split(/\s+/).some((w) => PLACE_WORDS.test(w));
+    let photos = rankByTags(await searchStockPhotos(query, { perPage: Math.max(count, 20) }), query);
+    if (wantsPlace && !photos.some(mentionsPlace)) {
+      // Too specific: "indian madurai hotel exterior" → "india hotel".
+      const core = query.toLowerCase().split(/\s+/).filter((w) => !PLACE_WORDS.test(w)).slice(0, 2).join(' ');
+      const broader = rankByTags(await searchStockPhotos(`india ${core}`, { perPage: 20 }), `indian ${core}`);
+      if (broader.some(mentionsPlace)) photos = [...broader.filter(mentionsPlace), ...photos];
+    } else if (wantsPlace) {
+      photos = [...photos.filter(mentionsPlace), ...photos.filter((p) => !mentionsPlace(p))];
+    }
+    return photos.slice(0, count);
   } catch (error) {
     logger.warn({ err: error, query }, 'Stock photo lookup skipped');
     return [];
