@@ -606,6 +606,8 @@ export interface MagicStoryPhotoScene {
   query: string;
   /** Already imported into the library, when a stock photo was found. */
   chosen: MediaAsset | null;
+  /** When revising: the user asked for a different picture, so this one wins. */
+  replace?: boolean;
   alternatives: StockPhoto[];
 }
 

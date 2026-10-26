@@ -12,7 +12,7 @@ import {
   type ProjectAudio,
   type ReelProject,
 } from '@socialboost/shared';
-import { api, getFeatures, uploadAudio, uploadToCloudinary, type BrandKit, type MediaAsset, type SavedBrief, type StockPhoto } from '../lib/api';
+import { api, getFeatures, uploadAudio, uploadToCloudinary, type BrandKit, type MagicStory, type MediaAsset, type SavedBrief, type StockPhoto } from '../lib/api';
 import { applyBrandPlaceholders, brandFooter } from '../lib/brand';
 import { GUEST_LIMITS, useGuest } from '../lib/guest';
 import { Alert, Button, Spinner } from './ui';
@@ -227,12 +227,12 @@ export function MagicDesignDialog({
     setMode('chat');
   }
 
-  async function writeStory(instruction?: string, text: string = description): Promise<boolean> {
+  async function writeStory(instruction?: string, text: string = description): Promise<MagicStory | null> {
     // A reel written by hand has no description; the scenes themselves stand in.
     const source = text.trim().length >= 10 ? text.trim() : brief.trim();
     if (source.length < 10) {
       setError('Tell us a little more about the business first — a few sentences is enough.');
-      return false;
+      return null;
     }
     const revising = Boolean(instruction && brief.trim());
     setWriting(true);
@@ -255,18 +255,20 @@ export function MagicDesignDialog({
       // Pictures found for the story go straight into their scenes; the
       // alternatives wait in the chooser for anyone who wants a different one.
       const picked: Record<number, string[]> = {};
+      const replaced: Record<number, string[]> = {};
       const found: Record<number, { query: string; photos: StockPhoto[] }> = {};
       const imported: MediaAsset[] = [];
       for (const scene of story.photoScenes) {
-        found[scene.index] = { query: scene.query, photos: scene.alternatives };
+        if (scene.alternatives.length > 0) found[scene.index] = { query: scene.query, photos: scene.alternatives };
         if (scene.chosen) {
-          picked[scene.index] = [scene.chosen.url];
+          (scene.replace ? replaced : picked)[scene.index] = [scene.chosen.url];
           imported.push(scene.chosen);
         }
       }
       if (revising) {
-        // Photos already in place stay; only scenes without one take the new picks.
-        setScenePhotos((prev) => ({ ...picked, ...prev }));
+        // Photos already in place stay unless a new one was asked for; scenes
+        // without one take the new picks.
+        setScenePhotos((prev) => ({ ...picked, ...prev, ...replaced }));
         setSuggestions((prev) => ({ ...prev, ...found }));
       } else {
         setScenePhotos(picked);
@@ -275,12 +277,12 @@ export function MagicDesignDialog({
       }
       if (imported.length > 0) setLibrary((prev) => [...imported, ...(prev ?? [])]);
       setMode('chat');
-      return true;
+      return story;
     } catch (err) {
       // The page stays open for the user to try again; nothing builds on its own.
       autoCreate.current = false;
       setError(err instanceof Error ? err.message : 'Could not write the story. Please try again.');
-      return false;
+      return null;
     } finally {
       setWriting(false);
     }
@@ -420,34 +422,31 @@ export function MagicDesignDialog({
     const message = text.trim();
     if (!message || writing) return;
     setChatInput('');
-    const before = parsedScenes.map((scene) => scene.headline);
+    const before = parsedScenes;
     setTurns((prev) => [...prev, { role: 'user', text: message }]);
-    const ok = await writeStory(message);
-    if (!ok) {
+    const story = await writeStory(message);
+    if (!story) {
       setTurns((prev) => [...prev, { role: 'assistant', text: 'Sorry, that did not go through. Please try again.' }]);
       return;
     }
-    // Reported on the next render, once the new scenes are parsed.
-    pendingReport.current = before;
-    if (initial) autoCreate.current = true;
-  }
-  const pendingReport = useRef<string[] | null>(null);
-
-  useEffect(() => {
-    if (!pendingReport.current || writing) return;
-    const before = pendingReport.current;
-    pendingReport.current = null;
-    const after = parsedScenes.map((scene) => scene.headline);
-    const changed = after.map((h, i) => (h !== before[i] ? i + 1 : 0)).filter(Boolean);
-    const what =
-      after.length !== before.length
-        ? `Done — the reel now has ${after.length} scenes.`
-        : changed.length === 0
-          ? 'Done — the wording is adjusted.'
-          : `Done — scene${changed.length === 1 ? '' : 's'} ${changed.join(', ')} changed.`;
+    // What changed, read from the answer itself: words, pictures, effects.
+    const after = parseBrief(applyBrandPlaceholders(story.brief, brand));
+    const changedText = after.map((scene, i) => (scene.headline !== before[i]?.headline || scene.body.join('|') !== before[i]?.body.join('|') ? i + 1 : 0)).filter(Boolean);
+    const newEffects = after.map((scene, i) => (scene.effect && scene.effect !== before[i]?.effect ? i + 1 : 0)).filter(Boolean);
+    const globalEffect = parseBriefDirectives(story.brief).effect;
+    const newPhotos = story.photoScenes.filter((scene) => scene.replace && scene.chosen).map((scene) => scene.index + 1);
+    const askedPhotos = story.photoScenes.filter((scene) => scene.replace && !scene.chosen).map((scene) => scene.index + 1);
+    const parts: string[] = [];
+    if (after.length !== before.length) parts.push(`the reel now has ${after.length} scenes`);
+    else if (changedText.length > 0) parts.push(`the words on scene${changedText.length === 1 ? '' : 's'} ${changedText.join(', ')} changed`);
+    if (newPhotos.length > 0) parts.push(`new picture${newPhotos.length === 1 ? '' : 's'} on scene${newPhotos.length === 1 ? '' : 's'} ${newPhotos.join(', ')}`);
+    if (askedPhotos.length > 0) parts.push(`no stock photo matched for scene${askedPhotos.length === 1 ? '' : 's'} ${askedPhotos.join(', ')} — tap the photo box to search or upload`);
+    if (globalEffect) parts.push(`${globalEffect} effect on every scene`);
+    else if (newEffects.length > 0) parts.push(`${after[newEffects[0]! - 1]!.effect} effect on scene${newEffects.length === 1 ? '' : 's'} ${newEffects.join(', ')}`);
+    const what = parts.length > 0 ? `Done — ${parts.join('; ')}.` : 'Done — nothing needed to change for that; try saying which scene, or what the picture should show.';
     setTurns((prev) => [...prev, { role: 'assistant', text: initial ? `${what} Rebuilding the reel…` : `${what} Press Create when you are happy, or ask for more.` }]);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [writing, parsedScenes]);
+    if (initial && parts.length > 0) autoCreate.current = true;
+  }
 
   useEffect(() => {
     chatEnd.current?.scrollIntoView({ block: 'nearest' });

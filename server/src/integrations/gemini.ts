@@ -6,7 +6,7 @@
  * free provider is configured (see ai.ts).
  */
 
-import type { MagicStoryPlan, StoryScene } from '@socialboost/shared';
+import { PARTICLE_EFFECTS, readEffectName, type MagicStoryPlan, type StoryScene } from '@socialboost/shared';
 import { generateText, parseJson } from './ai.js';
 
 export interface BrandContext {
@@ -165,7 +165,9 @@ const STORY_SHAPE = `{
       "body": ["0-3 supporting lines, each under 60 characters"],
       "contact": ["0-2 contact lines, only on the final scene, only from the allowed contact details"],
       "photo": true,
-      "imageQuery": "when photo is true: 2-4 English words for a stock photo that fits the scene, e.g. bharatanatyam dancer stage, children music class, cake shop counter"
+      "imageQuery": "when photo is true: 2-4 English words for a stock photo that fits the scene, e.g. bharatanatyam dancer stage, children music class, cake shop counter",
+      "replacePhoto": "only when revising and the instruction asks for a different picture on this scene: true, with a new imageQuery for the picture wanted (e.g. indian man taxi driver)",
+      "effect": "only when the instruction asks for an effect, particles, sparkle, celebration or mood: one of ${PARTICLE_EFFECTS.join(', ')}"
     }
   ]
 }`;
@@ -222,7 +224,7 @@ export async function writeMagicStory(brand: BrandContext, input: StoryRequest):
     ? [
         `Here is the current reel, scene by scene:\n${input.currentBrief}`,
         `The business described itself as: "${input.description}"`,
-        `Revise the reel according to this instruction: "${input.instruction}". Keep everything the instruction does not touch, including the scene count unless it asks otherwise.`,
+        `Revise the reel according to this instruction: "${input.instruction}". Keep everything the instruction does not touch, including the scene count unless it asks otherwise. If the instruction is about the pictures or images, keep the words and instead set "replacePhoto": true with a new "imageQuery" on each scene it concerns (every photo scene when it says all images). If it asks for effects or particles, set "effect" on the scenes it concerns (all scenes when it does not say which). A scene already has an "Effect:" line when the reel shows one; keep it unless asked.`,
       ]
     : [
         `The business described itself as: "${input.description}"`,
@@ -243,6 +245,8 @@ export async function writeMagicStory(brand: BrandContext, input: StoryRequest):
       contact: (Array.isArray(scene.contact) ? scene.contact : []).filter((l): l is string => typeof l === 'string').slice(0, 2).map((l) => cleanContactLine(l).slice(0, 120)),
       photo: scene.photo === true,
       imageQuery: typeof scene.imageQuery === 'string' ? scene.imageQuery.trim().slice(0, 60) : undefined,
+      replacePhoto: scene.replacePhoto === true,
+      effect: typeof scene.effect === 'string' ? readEffectName(scene.effect) : undefined,
     }));
   if (scenes.length < 2) throw new Error('The AI did not return enough scenes. Please try again.');
 
@@ -251,10 +255,22 @@ export async function writeMagicStory(brand: BrandContext, input: StoryRequest):
     .replace(/[,\s]+/g, ' ');
   for (const scene of scenes) scene.body = scene.body.filter((line) => statedInSource(line, source));
 
+  // Contact details are copied from the brand kit, never typed by the model:
+  // a digit or a letter wrong in a phone number or a website is worse than none.
+  const contacts = [brand.website, brand.phone, brand.email].filter((v): v is string => Boolean(v && v.trim()));
+  const normalise = (v: string) => v.toLowerCase().replace(/[\s\-()]/g, '');
+  const isKnownContact = (line: string) => contacts.some((c) => normalise(line).includes(normalise(c)));
+  for (const scene of scenes) scene.contact = scene.contact.filter(isKnownContact);
+  if (contacts.length > 0) {
+    const last = scenes[scenes.length - 1]!;
+    if (last.contact.length === 0) last.contact = contacts.slice(0, 2);
+  }
+  const footer = contacts.length > 0 ? [brand.website, brand.phone].filter(Boolean).join(' · ') : undefined;
+
   return {
     title: typeof raw.title === 'string' && raw.title.trim() ? raw.title.trim().slice(0, 80) : scenes[0]!.headline,
     language: typeof raw.language === 'string' ? raw.language.slice(0, 40) : language,
-    footer: typeof raw.footer === 'string' ? cleanContactLine(raw.footer).slice(0, 160) : undefined,
+    footer,
     scenes,
   };
 }

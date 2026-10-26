@@ -47,7 +47,7 @@ publicCreativesRouter.post(
       plan.scenes.flatMap((scene, index) => {
         if (!scene.photo) return [];
         const query = scene.imageQuery || scene.headline;
-        if (keep.has(index)) return [Promise.resolve({ index, query, chosen: null, alternatives: [] as StockPhoto[] })];
+        if (keep.has(index) && !scene.replacePhoto) return [Promise.resolve({ index, query, chosen: null, replace: false, alternatives: [] as StockPhoto[] })];
         return [
           (async () => {
             const alternatives = stockPhotosConfigured() ? await firstStockPhotos(query) : [];
@@ -56,7 +56,7 @@ publicCreativesRouter.post(
             const chosen = imported
               ? { id: `guest-${first!.id}`, kind: 'image' as const, url: imported.url, thumbnailUrl: imported.url, width: imported.width, height: imported.height }
               : null;
-            return { index, query, chosen, alternatives };
+            return { index, query, chosen, replace: scene.replacePhoto === true, alternatives };
           })(),
         ];
       }),
@@ -153,13 +153,13 @@ creativesRouter.post(
       plan.scenes.flatMap((scene, index) => {
         if (!scene.photo) return [];
         const query = scene.imageQuery || scene.headline;
-        if (keep.has(index)) return [Promise.resolve({ index, query, chosen: null, alternatives: [] as StockPhoto[] })];
+        if (keep.has(index) && !scene.replacePhoto) return [Promise.resolve({ index, query, chosen: null, replace: false, alternatives: [] as StockPhoto[] })];
         return [
           (async () => {
             const alternatives = stockPhotosConfigured() ? await firstStockPhotos(query) : [];
             const first = alternatives[0];
             const chosen = first ? await importStockPhoto(organizationId, first).catch(() => null) : null;
-            return { index, query, chosen, alternatives };
+            return { index, query, chosen, replace: scene.replacePhoto === true, alternatives };
           })(),
         ];
       }),

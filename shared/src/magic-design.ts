@@ -8,7 +8,8 @@
  */
 
 import type { AspectRatioKey } from './domain.js';
-import { newId, type ProjectLayer, type ProjectScene, type ReelProject } from './reel-project.js';
+import { PARTICLE_EFFECTS, type ParticleEffect } from './particles.js';
+import { createParticleLayer, newId, type ProjectLayer, type ProjectScene, type ReelProject } from './reel-project.js';
 
 /**
  * Instructions written at the end of a line, in square brackets:
@@ -51,6 +52,8 @@ export interface BriefDirectives {
   logoPosition?: LogoPosition;
   qr?: string;
   footer: string[];
+  /** A particle effect on every scene: "Effect: sparkles" above Scene 1. */
+  effect?: ParticleEffect;
 }
 
 export interface ParsedScene {
@@ -68,6 +71,8 @@ export interface ParsedScene {
   contact: string[];
   /** The brief asked for a picture in this scene. */
   wantsPhoto: boolean;
+  /** A particle effect for this scene alone: "Effect: confetti" inside it. */
+  effect?: ParticleEffect;
   /** The same lines with their instructions, for the builder. */
   lines: {
     headline?: BriefLine;
@@ -190,12 +195,20 @@ const BARE_PHONE = /^\s*(\+?\d[\d\s\-().]{6,}\d)\s*$/;
 const BARE_URL = /^\s*(https?:\/\/\S+|www\.\S+|[a-z0-9-]+(\.[a-z0-9-]+)*\.(com|in|org|net|co|io|app|edu)(\/\S*)?)\s*$/i;
 const BARE_EMAIL = /^\s*[^\s@]+@[^\s@]+\.[a-z]{2,}\s*$/i;
 
-const DIRECTIVE = /^\s*(logo|qr\s*code|qr|footer|every\s+scene|all\s+scenes)\s*[:\-–]\s*(.*)$/i;
+const DIRECTIVE = /^\s*(logo|qr\s*code|qr|footer|every\s+scene|all\s+scenes|effect|effects|particles?)\s*[:\-–]\s*(.*)$/i;
 
 type Directive =
   | { kind: 'logo'; position?: LogoPosition }
   | { kind: 'qr'; text: string }
-  | { kind: 'footer'; text: string };
+  | { kind: 'footer'; text: string }
+  | { kind: 'effect'; effect: ParticleEffect };
+
+/** "Effect: sparkles" → sparkles; unknown names are ignored. */
+export function readEffectName(text: string): ParticleEffect | undefined {
+  const word = text.toLowerCase().trim().split(/[\s,]+/)[0] ?? '';
+  const known = PARTICLE_EFFECTS.find((effect) => effect === word || effect === word.replace(/s$/, '') || `${effect}s` === word);
+  return known;
+}
 
 function readDirective(line: string): Directive | null {
   const match = DIRECTIVE.exec(line);
@@ -205,6 +218,10 @@ function readDirective(line: string): Directive | null {
 
   if (name === 'logo') return { kind: 'logo', position: readLogoPosition(rest) };
   if (name.startsWith('qr')) return rest ? { kind: 'qr', text: rest } : null;
+  if (name.startsWith('effect') || name.startsWith('particle')) {
+    const effect = readEffectName(rest);
+    return effect ? { kind: 'effect', effect } : null;
+  }
   return rest ? { kind: 'footer', text: rest } : null;
 }
 
@@ -231,6 +248,7 @@ export function parseBriefDirectives(brief: string): BriefDirectives {
     if (!global) return;
     if (directive.kind === 'logo') directives.logoPosition = directive.position ?? directives.logoPosition;
     else if (directive.kind === 'qr') directives.qr = directive.text;
+    else if (directive.kind === 'effect') directives.effect = directive.effect;
     else directives.footer.push(directive.text);
   });
 
@@ -312,6 +330,7 @@ function toScene(block: string[], label?: string): ParsedScene {
   let headline: BriefLine | undefined;
   let wantsPhoto = false;
   let qr: string | undefined;
+  let effect: ParticleEffect | undefined;
   const footer: string[] = [];
 
   for (const raw of block) {
@@ -326,6 +345,10 @@ function toScene(block: string[], label?: string): ParsedScene {
     }
     if (directive?.kind === 'footer') {
       footer.push(directive.text);
+      continue;
+    }
+    if (directive?.kind === 'effect') {
+      effect = directive.effect;
       continue;
     }
     const line = readLineInstructions(raw);
@@ -352,6 +375,7 @@ function toScene(block: string[], label?: string): ParsedScene {
     body: body.map((line) => line.text),
     contact: contact.map((line) => line.text),
     wantsPhoto,
+    effect,
     lines: { headline, body, contact },
   };
 }
@@ -859,6 +883,9 @@ function buildScene(
     });
   }
 
+  const effect = scene.effect ?? directives.effect;
+  if (effect) layers.push(createParticleLayer({ effect }));
+
   return {
     id: newId('scene'),
     name: scene.label ? `${index + 1}. ${scene.label}` : `Scene ${index + 1}`,
@@ -888,6 +915,10 @@ export interface StoryScene {
   photo: boolean;
   /** What that picture should show, as a short stock-photo search. */
   imageQuery?: string;
+  /** When revising: the user asked for a different picture here. */
+  replacePhoto?: boolean;
+  /** A particle effect for the scene, when the user asked for one. */
+  effect?: ParticleEffect;
 }
 
 export interface MagicStoryPlan {
@@ -933,6 +964,7 @@ export function briefFromPlan(plan: MagicStoryPlan): string {
       if (text) out.push(text);
     }
     if (scene.photo) out.push('And add a photo');
+    if (scene.effect) out.push(`Effect: ${scene.effect}`);
     for (const line of scene.contact) {
       const text = planLine(line);
       if (!text) continue;
