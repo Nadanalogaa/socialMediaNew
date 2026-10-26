@@ -93,6 +93,7 @@ export function MagicDesignDialog({
   presetBrief,
   presetDescription,
   presetLanguage,
+  initialMode,
 }: {
   onClose: () => void;
   onCreate: (project: ReelProject, magic: MagicBrief, audio?: ProjectAudio) => void;
@@ -103,13 +104,15 @@ export function MagicDesignDialog({
   /** A description typed on the website: the story is written at once. */
   presetDescription?: string;
   presetLanguage?: string;
+  /** The tab to open on, when the editor sends the user to a specific job. */
+  initialMode?: 'images' | 'chat' | 'write';
 }) {
   const { guest, lock } = useGuest();
   const [brief, setBrief] = useState(initial?.brief ?? presetBrief ?? '');
   // "Describe" lets the story be written for the user; "Write" is scene by scene.
   // "Describe" writes the story; "chat" changes it in conversation; "write" is the raw scene text.
   // Once a reel exists the default is the pictures: that is what people change most.
-  const [mode, setMode] = useState<'describe' | 'images' | 'chat' | 'write'>(initial ? 'images' : presetBrief ? 'write' : 'describe');
+  const [mode, setMode] = useState<'describe' | 'images' | 'chat' | 'write'>(initialMode ?? (initial ? 'images' : presetBrief ? 'write' : 'describe'));
   const [turns, setTurns] = useState<{ role: 'user' | 'assistant'; text: string }[]>(initial?.conversation ?? []);
   const [chatInput, setChatInput] = useState('');
   const chatEnd = useRef<HTMLDivElement>(null);

@@ -20,7 +20,7 @@ import {
   type SceneTransition,
   type VideoTemplateDefinition,
 } from '@socialboost/shared';
-import { api, uploadAudio, uploadToCloudinary, type MediaAsset } from '../lib/api';
+import { api, loadSession, uploadAudio, uploadToCloudinary, type MediaAsset } from '../lib/api';
 import { GUEST_LIMITS, useGuest } from '../lib/guest';
 import {
   drawProjectFrame,
@@ -230,8 +230,11 @@ function ReelEditor({
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   // First time a built reel opens: a short guide, until it is dismissed once.
+  // The written guide is a thing for the platform admin to review; customers
+  // and visitors get the four plain buttons below instead.
+  const isPlatformAdmin = !guest && Boolean(loadSession()?.user.isPlatformAdmin);
   const [showGuide, setShowGuide] = useState(() => {
-    if (!initialProject.magic) return false;
+    if (!initialProject.magic || !isPlatformAdmin) return false;
     try {
       return localStorage.getItem('socialboost.reel-guide') !== 'seen';
     } catch {
@@ -262,7 +265,7 @@ function ReelEditor({
   const [sidePanel, setSidePanel] = useState<'style' | 'media' | 'scene' | 'details'>('style');
   /** Fills the window with the editor, hiding the app's own navigation. */
   const [fullscreen, setFullscreen] = useState(false);
-  const [magicOpen, setMagicOpen] = useState(false);
+  const [magicOpen, setMagicOpen] = useState<false | 'images' | 'chat' | 'write'>(false);
 
   useEffect(() => {
     if (!fullscreen) return;
@@ -843,7 +846,7 @@ function ReelEditor({
         />
 
         <button
-          onClick={() => setMagicOpen(true)}
+          onClick={() => setMagicOpen('images')}
           title={project.magic ? 'Tell the AI what to change: words, pictures, effects' : 'Describe your business and build the whole reel'}
           className="min-h-11 shrink-0 rounded-lg border border-brand-300 bg-brand-50 px-3 text-sm font-medium text-brand-700 transition hover:bg-brand-100 lg:min-h-0 lg:py-1.5"
         >
@@ -922,7 +925,7 @@ function ReelEditor({
           <Button onClick={() => void handleCreate()} disabled={recording}>
             {recording ? `Recording ${Math.round(progress * 100)}%` : '● Create reel'}
           </Button>
-          {project.magic && !showGuide && (
+          {project.magic && isPlatformAdmin && !showGuide && (
             <button
               onClick={() => setShowGuide(true)}
               title="How to edit this reel"
@@ -942,6 +945,45 @@ function ReelEditor({
           </button>
         </div>
       </div>
+
+      {project.magic && !showGuide && (
+        <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2">
+          <span className="text-sm font-medium text-slate-700">Change:</span>
+          {(
+            [
+              ['🖼 Images', () => setMagicOpen('images')],
+              ['✍️ Text', () => setMagicOpen('write')],
+              [
+                '🎵 Voice-over / music',
+                () => {
+                  setSidePanel('media');
+                  setPanel('media');
+                  setNotice('Add a voice-over or music under Photos & sound, then press Create reel.');
+                },
+              ],
+              [
+                '✨ Effects',
+                () => {
+                  addLayer(createParticleLayer());
+                  setSidePanel('style');
+                  setPanel('style');
+                  setNotice('Sparkles added to this scene. Pick another effect on the right, or add it to other scenes with the scene numbers.');
+                },
+              ],
+            ] as const
+          ).map(([label, run]) => (
+            <button
+              key={label}
+              type="button"
+              onClick={run}
+              className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-800 shadow-sm transition hover:border-brand-400 hover:bg-brand-50"
+            >
+              {label}
+            </button>
+          ))}
+          <span className="ml-auto hidden text-xs text-slate-500 sm:inline">Then press ● Create reel.</span>
+        </div>
+      )}
 
       {showGuide && (
         <div className="rounded-2xl border border-brand-200 bg-gradient-to-r from-brand-50 to-fuchsia-50 p-3 sm:p-4">
@@ -968,7 +1010,7 @@ function ReelEditor({
             </div>
             <div className="flex shrink-0 flex-col gap-1.5">
               <Button onClick={() => { setPlaying(true); closeGuide(); }} className="!py-1.5 !text-xs">▶ Play it</Button>
-              <Button variant="secondary" onClick={() => { closeGuide(); setMagicOpen(true); }} className="!py-1.5 !text-xs">✨ Change with AI</Button>
+              <Button variant="secondary" onClick={() => { closeGuide(); setMagicOpen('chat'); }} className="!py-1.5 !text-xs">✨ Change with AI</Button>
               <button type="button" onClick={closeGuide} className="text-xs text-slate-500 hover:underline">Got it</button>
             </div>
           </div>
@@ -1431,6 +1473,7 @@ function ReelEditor({
       {magicOpen && (
         <MagicDesignDialog
           initial={project.magic}
+          initialMode={magicOpen}
           onClose={() => setMagicOpen(false)}
           onCreate={(built, magic, audio) => {
             setProject(
