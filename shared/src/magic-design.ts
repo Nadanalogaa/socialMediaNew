@@ -259,6 +259,36 @@ function isContactLine(line: string): boolean {
   return CONTACT_LINE.test(line) || BARE_PHONE.test(line) || BARE_URL.test(line) || BARE_EMAIL.test(line);
 }
 
+/**
+ * Sets, replaces or removes the "Effect:" line of one scene in the brief
+ * text, so a choice made with a control lands in the same place a person
+ * would have written it. Scenes are counted the way `parseBrief` counts them.
+ */
+export function withSceneEffect(brief: string, sceneIndex: number, effect: ParticleEffect | undefined): string {
+  const lines = brief.split('\n');
+  const hasMarkers = lines.some((line) => SCENE_MARKER.test(line));
+  // Block boundaries: [start, end) line indexes, in scene order.
+  const blocks: { start: number; end: number; heading: boolean }[] = [];
+  let open: { start: number; end: number; heading: boolean } | null = null;
+  lines.forEach((line, i) => {
+    if (hasMarkers ? SCENE_MARKER.test(line) : line.trim() !== '' && !open) {
+      open = { start: i, end: i + 1, heading: hasMarkers };
+      blocks.push(open);
+    } else if (!hasMarkers && line.trim() === '' && open) {
+      open = null;
+    } else if (open) {
+      open.end = i + 1;
+    } else if (hasMarkers && blocks.length === 0) {
+      // Directive lines above Scene 1 belong to no scene.
+    }
+  });
+  const block = blocks[sceneIndex];
+  if (!block) return brief;
+  const body = lines.slice(block.start, block.end).filter((line) => readDirective(line)?.kind !== 'effect');
+  if (effect) body.splice(block.heading ? 1 : 0, 0, `Effect: ${effect}`);
+  return [...lines.slice(0, block.start), ...body, ...lines.slice(block.end)].join('\n');
+}
+
 /** Splits a brief into scenes, however it was written. */
 export function parseBrief(brief: string): ParsedScene[] {
   const lines = brief.split('\n');
@@ -404,6 +434,8 @@ export interface MagicDesignOptions {
   scenePhotos?: (string[] | undefined)[];
   /** Backdrop or tiles, per scene. Several photos are always tiles. */
   photoLayout?: (ScenePhotoLayout | undefined)[];
+  /** How solid the photos are, per scene, 0.2–1; the colour shows through below 1. */
+  photoOpacity?: (number | undefined)[];
   /** Photos to draw on when a scene asked for one but none was chosen. */
   photos: string[];
   /** Shown on every scene. */
@@ -667,7 +699,7 @@ function buildScene(
       content: photo,
       box: { x: 0, y: 0, w: 100, h: 100 },
       // Darkened, because white text over an unknown photo is a gamble.
-      style: { fit: 'cover', overlay: 'rgba(15,23,42,0.55)', focusX: 50, focusY: 45 },
+      style: { fit: 'cover', overlay: 'rgba(15,23,42,0.55)', focusX: 50, focusY: 45, opacity: options.photoOpacity?.[index] ?? 1 },
       animation: 'ken-burns',
       delaySeconds: 0,
     });
@@ -783,7 +815,7 @@ function buildScene(
             w: tileW,
             h: tileH,
           },
-          style: { fit: 'cover', focusX: 50, focusY: 50, borderRadiusPct: 10 },
+          style: { fit: 'cover', focusX: 50, focusY: 50, borderRadiusPct: 10, opacity: options.photoOpacity?.[index] ?? 1 },
           animation: 'pop',
           delaySeconds: 0.3 + n * 0.1,
         });

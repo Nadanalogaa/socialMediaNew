@@ -74,6 +74,8 @@ export interface MagicBrief {
   scenePhotos: Record<number, string[] | string>;
   /** Backdrop or tiles, per scene, when one photo could be either. */
   photoLayout?: Record<number, 'background' | 'blocks'>;
+  /** How solid the photos are, per scene (0.2–1). */
+  photoOpacity?: Record<number, number>;
   logo?: string;
   logoPosition?: string;
   brandColor: string;

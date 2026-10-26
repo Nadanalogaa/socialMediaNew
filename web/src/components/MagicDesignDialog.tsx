@@ -3,6 +3,10 @@ import QRCode from 'qrcode';
 import {
   MAGIC_INDUSTRIES,
   MAGIC_TEMPLATES,
+  PARTICLE_EFFECTS,
+  PARTICLE_LABELS,
+  withSceneEffect,
+  type ParticleEffect,
   buildProjectFromBrief,
   parseBrief,
   parseBriefDirectives,
@@ -145,6 +149,7 @@ export function MagicDesignDialog({
     toPhotoLists(initial?.scenePhotos),
   );
   /** Backdrop or tiles, for scenes with a single photo. */
+  const [photoOpacity, setPhotoOpacity] = useState<Record<number, number>>(initial?.photoOpacity ?? {});
   const [photoLayout, setPhotoLayout] = useState<Record<number, PhotoLayout>>(
     initial?.photoLayout ?? {},
   );
@@ -225,6 +230,7 @@ export function MagicDesignDialog({
         Object.entries(saved.options?.photoLayout ?? {}).map(([k, v]) => [Number(k), v]),
       ),
     );
+    setPhotoOpacity(Object.fromEntries(Object.entries(saved.options?.photoOpacity ?? {}).map(([k, v]) => [Number(k), v])));
     setLogo(saved.options?.logo);
     setLogoPosition(saved.options?.logoPosition ?? '');
     setDescription(saved.options?.description ?? '');
@@ -547,6 +553,7 @@ export function MagicDesignDialog({
       photoLayout: Object.fromEntries(
         Object.entries(photoLayout).map(([k, v]) => [String(k), v]),
       ) as Record<string, PhotoLayout>,
+      photoOpacity: Object.fromEntries(Object.entries(photoOpacity).map(([k, v]) => [String(k), v])),
       ...(logo ? { logo } : {}),
       ...(logoPosition ? { logoPosition } : {}),
       ...(description.trim() ? { description: description.trim() } : {}),
@@ -595,6 +602,7 @@ export function MagicDesignDialog({
         // Photos chosen for a scene win; "add a photo" draws on the library.
         scenePhotos: scenes.map((_, index) => scenePhotos[index]),
         photoLayout: scenes.map((_, index) => photoLayout[index]),
+        photoOpacity: scenes.map((_, index) => photoOpacity[index]),
         photos: [],
         logo: guest && GUEST_LIMITS.enforce ? undefined : logo,
         logoPosition: (logoPosition || undefined) as LogoPosition | undefined,
@@ -618,6 +626,7 @@ export function MagicDesignDialog({
         brief,
         scenePhotos,
         photoLayout,
+        photoOpacity,
         logo,
         logoPosition: logoPosition || undefined,
         brandColor,
@@ -637,68 +646,60 @@ export function MagicDesignDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [writing, busy, storyPhotoScenes, scenes.length]);
 
+  /** Sets one scene's particle effect by editing its "Effect:" line in the brief. */
+  function setSceneEffect(index: number, effect: ParticleEffect | '') {
+    setBrief((current) => withSceneEffect(current, index, effect || undefined));
+  }
+
   /**
-   * The pictures tab: every scene as a card. Tapping a picture opens the
-   * device's file chooser at once; "More" offers the AI's alternatives, a
-   * search box and the library; the library on the right also drops photos
-   * onto the selected scene.
+   * The pictures tab: one clean card per scene. Background replaces the
+   * picture behind the text; + Tile adds a photo as a block between the
+   * lines; Effect and Opacity adjust the scene. The library on the right
+   * drops a photo onto the selected scene.
    */
   function renderImagesTab() {
     if (scenes.length === 0) return null;
-    const open = typeof pickingFor === 'number' && pickInStrip ? pickingFor : null;
     return (
       <div>
         <p className="mb-3 text-sm text-slate-600">
-          <strong className="text-slate-900">Tap a picture to replace it with your own photo.</strong> Or choose one from{' '}
-          <em>Your photos</em> on the right after selecting a scene.
+          <strong className="text-slate-900">Background</strong> puts your photo behind the words.{' '}
+          <strong className="text-slate-900">+ Tile</strong> adds it as a block between them (up to 6). Pick a scene, then tap a photo in{' '}
+          <em>Your photos</em> to reuse one.
         </p>
-        <ul className="grid grid-cols-3 gap-3 sm:grid-cols-4 lg:grid-cols-5">
+        <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {scenes.map((scene, index) => {
-            const photo = scenePhotos[index]?.[0];
-            const selected = typeof pickingFor === 'number' && pickingFor === index;
+            const urls = scenePhotos[index] ?? [];
+            const selected = pickingFor === index;
+            const tiles = urls.length > 1 || (urls.length === 1 && photoLayout[index] === 'blocks');
+            const opacity = Math.round((photoOpacity[index] ?? 1) * 100);
             return (
-              <li key={index} className={`rounded-xl border-2 p-1.5 ${selected ? 'border-brand-500 bg-brand-50/40' : 'border-slate-200'}`}>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setPickInStrip(false);
-                    openUpload(index, true);
-                  }}
-                  className="group relative block aspect-[9/16] w-full overflow-hidden rounded-lg bg-slate-100"
-                  title={`Scene ${index + 1}: choose a photo from your device`}
-                >
-                  {photo ? (
-                    <img src={photo} alt="" className="h-full w-full object-cover" />
+              <li
+                key={index}
+                onClick={() => {
+                  setPickInStrip(false);
+                  setPickingFor(index);
+                }}
+                className={`flex gap-3 rounded-2xl border-2 bg-white p-3 transition ${selected ? 'border-brand-500 shadow-sm' : 'border-slate-200 hover:border-slate-300'}`}
+              >
+                {/* The picture as it will sit: full, or as tiles. */}
+                <div className="relative aspect-[9/16] w-24 shrink-0 overflow-hidden rounded-xl bg-slate-900">
+                  {urls.length === 0 ? (
+                    <span className="flex h-full w-full items-center justify-center text-[11px] text-slate-400">no photo</span>
+                  ) : tiles ? (
+                    <div className={`grid h-full w-full gap-0.5 p-2 ${urls.length >= 4 ? 'grid-cols-2' : 'grid-cols-1'} content-center`}>
+                      {urls.slice(0, 4).map((url, n) => (
+                        <img key={url + n} src={url} alt="" className="aspect-[4/3] w-full rounded object-cover" style={{ opacity: opacity / 100 }} />
+                      ))}
+                    </div>
                   ) : (
-                    <span className="flex h-full w-full flex-col items-center justify-center text-xs text-slate-500">
-                      <span className="text-2xl">＋</span>add photo
-                    </span>
+                    <img src={urls[0]} alt="" className="h-full w-full object-cover" style={{ opacity: opacity / 100 }} />
                   )}
                   <span className="absolute left-1 top-1 rounded bg-black/60 px-1.5 text-[11px] font-semibold text-white">{index + 1}</span>
-                  <span className="absolute inset-x-0 bottom-0 bg-brand-600/90 py-1 text-center text-[11px] font-medium text-white">
-                    {uploading && selected ? 'Uploading…' : '⬆ Upload photo'}
-                  </span>
-                </button>
-                <p className="mt-1 truncate text-center text-[11px] text-slate-600" title={scene.headline}>
-                  {scene.headline || `Scene ${index + 1}`}
-                </p>
-                <div className="mt-1 flex justify-center gap-1">
-                  <button
-                    type="button"
-                    onClick={() => {
-                        setStockQuery('');
-                      setPickInStrip(!(open === index));
-                      setPickingFor(index);
-                    }}
-                    className={`rounded-md border px-1.5 py-0.5 text-[11px] ${open === index ? 'border-brand-500 bg-brand-600 text-white' : 'border-slate-300 text-slate-700 hover:bg-slate-50'}`}
-                    title="Alternatives, search and your library"
-                  >
-                    🔍 More
-                  </button>
-                  {photo && (
+                  {urls.length > 0 && (
                     <button
                       type="button"
-                      onClick={() => {
+                      onClick={(event) => {
+                        event.stopPropagation();
                         setScenePhotos((prev) => {
                           const next = { ...prev };
                           delete next[index];
@@ -706,38 +707,101 @@ export function MagicDesignDialog({
                         });
                         skip(`photo-${index}`);
                       }}
-                      className="rounded-md border border-slate-300 px-1.5 py-0.5 text-[11px] text-slate-700 hover:bg-slate-50"
-                      title="No picture on this scene"
+                      className="absolute right-1 top-1 rounded bg-black/60 px-1.5 text-[11px] text-white hover:bg-red-600"
+                      title="Remove the photos from this scene"
                     >
                       ✕
                     </button>
                   )}
                 </div>
+
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium text-slate-900" title={scene.headline}>
+                    {scene.headline || `Scene ${index + 1}`}
+                  </p>
+                  <div className="mt-2 grid grid-cols-2 gap-1.5">
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        openUpload(index, true);
+                      }}
+                      disabled={uploading}
+                      className="rounded-lg bg-brand-600 px-2 py-1.5 text-xs font-medium text-white hover:bg-brand-700 disabled:opacity-50"
+                      title="Choose a photo from your device for the background"
+                    >
+                      {uploading && selected ? 'Uploading…' : '🖼 Background'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setPhotoLayout((prev) => ({ ...prev, [index]: 'blocks' }));
+                        openUpload(index, false);
+                      }}
+                      disabled={uploading || urls.length >= 6}
+                      className="rounded-lg border border-brand-300 bg-brand-50 px-2 py-1.5 text-xs font-medium text-brand-700 hover:bg-brand-100 disabled:opacity-50"
+                      title="Add a photo as a block between the lines"
+                    >
+                      ▦ + Tile{urls.length > 0 && tiles ? ` (${urls.length})` : ''}
+                    </button>
+                  </div>
+                  {urls.length === 1 && (
+                    <div className="mt-1.5 flex gap-1 text-[11px]">
+                      {(['background', 'blocks'] as const).map((layoutMode) => (
+                        <button
+                          key={layoutMode}
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            setPhotoLayout((prev) => ({ ...prev, [index]: layoutMode }));
+                          }}
+                          className={`rounded-full border px-2 py-0.5 ${
+                            (photoLayout[index] ?? 'background') === layoutMode ? 'border-brand-500 bg-brand-50 text-brand-700' : 'border-slate-200 text-slate-500 hover:bg-slate-50'
+                          }`}
+                        >
+                          {layoutMode === 'background' ? 'Shown as background' : 'Shown as a tile'}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                  <label className="mt-2 flex items-center gap-2 text-xs text-slate-600" onClick={(event) => event.stopPropagation()}>
+                    <span className="w-14 shrink-0">✨ Effect</span>
+                    <select
+                      value={scene.effect ?? ''}
+                      onChange={(event) => setSceneEffect(index, event.target.value as ParticleEffect | '')}
+                      className="min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs"
+                    >
+                      <option value="">None</option>
+                      {PARTICLE_EFFECTS.map((effect) => (
+                        <option key={effect} value={effect}>
+                          {PARTICLE_LABELS[effect]}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="mt-1.5 flex items-center gap-2 text-xs text-slate-600" onClick={(event) => event.stopPropagation()}>
+                    <span className="w-14 shrink-0">◐ Opacity</span>
+                    <input
+                      type="range"
+                      min={20}
+                      max={100}
+                      step={5}
+                      value={opacity}
+                      disabled={urls.length === 0}
+                      onChange={(event) => setPhotoOpacity((prev) => ({ ...prev, [index]: Number(event.target.value) / 100 }))}
+                      className="min-w-0 flex-1 accent-brand-600 disabled:opacity-40"
+                    />
+                    <span className="w-9 text-right tabular-nums">{opacity}%</span>
+                  </label>
+                </div>
               </li>
             );
           })}
         </ul>
-        {open !== null && (
-          <div className="mt-3 rounded-xl border border-brand-200 bg-white p-2">
-            <div className="mb-1 flex flex-wrap items-center gap-2 text-xs">
-              <span className="font-medium text-slate-800">Scene {open + 1} — other ways to pick:</span>
-              {(aiAvailable || guest) && (
-                <button
-                  type="button"
-                  disabled={writing}
-                  onClick={() => void sendChange(`Scene ${open + 1}: use a different picture that fits it better`)}
-                  className="rounded-full bg-brand-600 px-2.5 py-1 font-medium text-white hover:bg-brand-700 disabled:opacity-50"
-                >
-                  ✨ Let AI pick another
-                </button>
-              )}
-            </div>
-            {renderPicker(open)}
-          </div>
-        )}
         {initial && (
           <p className="mt-3 text-xs text-slate-500">
-            Done with the pictures? Press <strong>Rebuild</strong> at the top to see them in the reel.
+            Done? Press <strong>Rebuild</strong> at the top to see the changes in the reel.
           </p>
         )}
       </div>
@@ -1324,7 +1388,7 @@ export function MagicDesignDialog({
               <p className="mt-0.5 text-xs text-slate-500">
                 {typeof pickingFor === 'number'
                   ? `Tap a photo to use it on scene ${pickingFor + 1}.`
-                  : 'Everything you upload or pick is kept here. Select a scene under Edit images, then tap a photo to use it.'}
+                  : 'Everything you upload or pick is kept here. Tap a scene card under Edit images, then tap a photo to use it there.'}
               </p>
               {library === null ? (
                 <Spinner className="mt-2 h-4 w-4 text-slate-400" />
@@ -1344,7 +1408,7 @@ export function MagicDesignDialog({
                             onClick={() => {
                               if (typeof pickingFor !== 'number') {
                                 setMode('images');
-                                setError('Select a scene first: tap 🔍 More under it, then this photo.');
+                                setError('Select a scene first: tap its card under Edit images, then this photo.');
                                 return;
                               }
                               placePhoto(pickingFor, asset.url, true);
