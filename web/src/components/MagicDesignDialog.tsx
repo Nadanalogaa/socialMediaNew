@@ -108,7 +108,8 @@ export function MagicDesignDialog({
   const [brief, setBrief] = useState(initial?.brief ?? presetBrief ?? '');
   // "Describe" lets the story be written for the user; "Write" is scene by scene.
   // "Describe" writes the story; "chat" changes it in conversation; "write" is the raw scene text.
-  const [mode, setMode] = useState<'describe' | 'chat' | 'write'>(initial ? 'chat' : presetBrief ? 'write' : 'describe');
+  // Once a reel exists the default is the pictures: that is what people change most.
+  const [mode, setMode] = useState<'describe' | 'images' | 'chat' | 'write'>(initial ? 'images' : presetBrief ? 'write' : 'describe');
   const [turns, setTurns] = useState<{ role: 'user' | 'assistant'; text: string }[]>(initial?.conversation ?? []);
   const [chatInput, setChatInput] = useState('');
   const chatEnd = useRef<HTMLDivElement>(null);
@@ -229,7 +230,7 @@ export function MagicDesignDialog({
     setBriefId(saved.id);
     setShowHistory(false);
     setTurns([]);
-    setMode('chat');
+    setMode('images');
   }
 
   async function writeStory(instruction?: string, text: string = description): Promise<MagicStory | null> {
@@ -281,7 +282,8 @@ export function MagicDesignDialog({
         setSuggestions(found);
       }
       if (imported.length > 0) setLibrary((prev) => [...imported, ...(prev ?? [])]);
-      setMode('chat');
+      // A fresh story lands on its pictures; a change asked for in the chat stays there.
+      setMode((current) => (current === 'describe' ? 'images' : current));
       return story;
     } catch (err) {
       // The page stays open for the user to try again; nothing builds on its own.
@@ -316,7 +318,7 @@ export function MagicDesignDialog({
     setBrief(fillTemplate(template.brief).replace(/^(Contact|Website):\s*$/gm, '').replace(/\n{3,}/g, '\n\n'));
     setStoryPhotoScenes(null);
     setShowTemplates(false);
-    setMode('chat');
+    setMode('images');
   }
 
   // Arriving from the website with a description: the story is written at once.
@@ -478,7 +480,26 @@ export function MagicDesignDialog({
     }
   }
 
-  async function handlePhotoFile(file: File, target: number | 'logo') {
+  /** Where the next chosen file goes: a scene (replacing its picture), the logo, or just the library. */
+  const uploadTarget = useRef<{ target: number | 'logo' | 'library'; replace: boolean } | null>(null);
+
+  function openUpload(target: number | 'logo' | 'library', replace = true) {
+    uploadTarget.current = { target, replace };
+    if (typeof target === 'number') setPickingFor(target);
+    photoInput.current?.click();
+  }
+
+  /** Puts a photo on a scene: in place of what was there, or added as a tile. */
+  function placePhoto(sceneIndex: number, url: string, replace: boolean) {
+    if (replace) {
+      setScenePhotos((prev) => ({ ...prev, [sceneIndex]: [url] }));
+      setPhotoLayout((prev) => ({ ...prev, [sceneIndex]: 'background' }));
+    } else {
+      togglePhoto(sceneIndex, url);
+    }
+  }
+
+  async function handlePhotoFile(file: File, target: number | 'logo' | 'library', replace = false) {
     setUploading(true);
     setError(null);
     if (guest) {
@@ -487,7 +508,7 @@ export function MagicDesignDialog({
       const asset: MediaAsset = { id: url, kind: 'image', url, thumbnailUrl: null, width: null, height: null };
       setLibrary((prev) => [asset, ...(prev ?? [])]);
       if (target === 'logo') lock('A logo on every scene');
-      else togglePhoto(target, url);
+      else if (typeof target === 'number') placePhoto(target, url, replace);
       setUploading(false);
       return;
     }
@@ -504,8 +525,8 @@ export function MagicDesignDialog({
       if (target === 'logo') {
         setLogo(asset.url);
         setPickingFor(null);
-      } else {
-        togglePhoto(target, asset.url);
+      } else if (typeof target === 'number') {
+        placePhoto(target, asset.url, replace);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Could not upload that photo.');
@@ -616,88 +637,109 @@ export function MagicDesignDialog({
   }, [writing, busy, storyPhotoScenes, scenes.length]);
 
   /**
-   * Every scene's picture in one row at the top of the change screen, so
-   * changing a photo never needs a scroll: tap one, pick another right here.
+   * The pictures tab: every scene as a card. Tapping a picture opens the
+   * device's file chooser at once; "More" offers the AI's alternatives, a
+   * search box and the library; the library on the right also drops photos
+   * onto the selected scene.
    */
-  function renderPictureStrip() {
+  function renderImagesTab() {
     if (scenes.length === 0) return null;
-    const open = pickInStrip && typeof pickingFor === 'number' ? pickingFor : null;
+    const open = typeof pickingFor === 'number' && pickInStrip ? pickingFor : null;
     return (
-      <div className={`mb-3 rounded-2xl border-2 p-3 transition ${stripSeen ? 'border-slate-200 bg-white' : 'animate-[pulse_2s_ease-in-out_3] border-amber-300 bg-amber-50'}`}>
-        <div className="mb-2 flex flex-wrap items-center gap-2">
-          <p className="text-sm font-semibold text-slate-900">🖼 Your pictures</p>
-          <p className="text-xs text-slate-600">
-            Tap a picture to change it — pick another, search, or upload your own.
-            {initial ? ' Then press Rebuild at the top to see it in the reel.' : ''}
-          </p>
-        </div>
-        <ul className="flex gap-2 overflow-x-auto pb-1">
+      <div>
+        <p className="mb-3 text-sm text-slate-600">
+          <strong className="text-slate-900">Tap a picture to replace it with your own photo.</strong> Or choose one from{' '}
+          <em>Your photos</em> on the right after selecting a scene.
+        </p>
+        <ul className="grid grid-cols-3 gap-3 sm:grid-cols-4 lg:grid-cols-5">
           {scenes.map((scene, index) => {
             const photo = scenePhotos[index]?.[0];
-            const active = open === index;
+            const selected = typeof pickingFor === 'number' && pickingFor === index;
             return (
-              <li key={index} className="shrink-0">
+              <li key={index} className={`rounded-xl border-2 p-1.5 ${selected ? 'border-brand-500 bg-brand-50/40' : 'border-slate-200'}`}>
                 <button
                   type="button"
                   onClick={() => {
                     setStripSeen(true);
-                    setStockQuery('');
-                    setPickInStrip(true);
-                    setPickingFor(active ? null : index);
+                    setPickInStrip(false);
+                    openUpload(index, true);
                   }}
-                  className={`group relative block h-28 w-[4.4rem] overflow-hidden rounded-xl border-2 sm:h-32 sm:w-20 ${active ? 'border-brand-500 ring-2 ring-brand-500/30' : 'border-slate-200 hover:border-brand-400'}`}
-                  title={`Change the picture on scene ${index + 1}`}
+                  className="group relative block aspect-[9/16] w-full overflow-hidden rounded-lg bg-slate-100"
+                  title={`Scene ${index + 1}: choose a photo from your device`}
                 >
                   {photo ? (
                     <img src={photo} alt="" className="h-full w-full object-cover" />
                   ) : (
-                    <span className="flex h-full w-full flex-col items-center justify-center bg-slate-100 text-[10px] leading-tight text-slate-500">
-                      <span className="text-lg">＋</span>add photo
+                    <span className="flex h-full w-full flex-col items-center justify-center text-xs text-slate-500">
+                      <span className="text-2xl">＋</span>add photo
                     </span>
                   )}
-                  <span className="absolute left-1 top-1 rounded bg-black/60 px-1 text-[10px] font-semibold text-white">{index + 1}</span>
-                  <span className={`absolute inset-x-0 bottom-0 bg-brand-600/90 py-0.5 text-center text-[10px] font-medium text-white ${active ? '' : 'opacity-90 group-hover:opacity-100'}`}>
-                    {active ? 'Choosing…' : 'Change'}
+                  <span className="absolute left-1 top-1 rounded bg-black/60 px-1.5 text-[11px] font-semibold text-white">{index + 1}</span>
+                  <span className="absolute inset-x-0 bottom-0 bg-brand-600/90 py-1 text-center text-[11px] font-medium text-white">
+                    {uploading && selected ? 'Uploading…' : '⬆ Upload photo'}
                   </span>
                 </button>
-                <p className="mt-0.5 w-[4.4rem] truncate text-center text-[10px] text-slate-500 sm:w-20" title={scene.headline}>{scene.headline || `Scene ${index + 1}`}</p>
+                <p className="mt-1 truncate text-center text-[11px] text-slate-600" title={scene.headline}>
+                  {scene.headline || `Scene ${index + 1}`}
+                </p>
+                <div className="mt-1 flex justify-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setStripSeen(true);
+                      setStockQuery('');
+                      setPickInStrip(!(open === index));
+                      setPickingFor(index);
+                    }}
+                    className={`rounded-md border px-1.5 py-0.5 text-[11px] ${open === index ? 'border-brand-500 bg-brand-600 text-white' : 'border-slate-300 text-slate-700 hover:bg-slate-50'}`}
+                    title="Alternatives, search and your library"
+                  >
+                    🔍 More
+                  </button>
+                  {photo && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setScenePhotos((prev) => {
+                          const next = { ...prev };
+                          delete next[index];
+                          return next;
+                        });
+                        skip(`photo-${index}`);
+                      }}
+                      className="rounded-md border border-slate-300 px-1.5 py-0.5 text-[11px] text-slate-700 hover:bg-slate-50"
+                      title="No picture on this scene"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
               </li>
             );
           })}
         </ul>
         {open !== null && (
-          <div>
-            {(aiAvailable || guest) && (
-              <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
-                <span className="text-slate-600">Scene {open + 1}:</span>
+          <div className="mt-3 rounded-xl border border-brand-200 bg-white p-2">
+            <div className="mb-1 flex flex-wrap items-center gap-2 text-xs">
+              <span className="font-medium text-slate-800">Scene {open + 1} — other ways to pick:</span>
+              {(aiAvailable || guest) && (
                 <button
                   type="button"
                   disabled={writing}
                   onClick={() => void sendChange(`Scene ${open + 1}: use a different picture that fits it better`)}
                   className="rounded-full bg-brand-600 px-2.5 py-1 font-medium text-white hover:bg-brand-700 disabled:opacity-50"
                 >
-                  ✨ Let AI pick a better one
+                  ✨ Let AI pick another
                 </button>
-                {scenePhotos[open]?.length ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setScenePhotos((prev) => {
-                        const next = { ...prev };
-                        delete next[open];
-                        return next;
-                      });
-                      skip(`photo-${open}`);
-                    }}
-                    className="text-red-600 hover:underline"
-                  >
-                    No picture on this scene
-                  </button>
-                ) : null}
-              </div>
-            )}
+              )}
+            </div>
             {renderPicker(open)}
           </div>
+        )}
+        {initial && (
+          <p className="mt-3 text-xs text-slate-500">
+            Done with the pictures? Press <strong>Rebuild</strong> at the top to see them in the reel.
+          </p>
         )}
       </div>
     );
@@ -1003,21 +1045,22 @@ export function MagicDesignDialog({
                     {(
                       (brief.trim()
                         ? [
-                            ['chat', '💬 Change with AI'],
-                            ['write', '✍️ Edit the words myself'],
+                            ['images', '🖼 Edit images'],
+                            ['write', '✍️ Edit the words'],
+                            ['chat', '💬 Ask AI to change'],
                             ['describe', '↺ Start over'],
                           ]
                         : [
                             ['describe', '✨ Describe your business'],
                             ['write', '✍️ Write the scenes myself'],
-                          ]) as readonly (readonly ['describe' | 'chat' | 'write', string])[]
+                          ]) as readonly (readonly ['describe' | 'images' | 'chat' | 'write', string])[]
                     ).map(([value, label]) => (
                       <button
                         key={value}
                         type="button"
                         onClick={() => setMode(value)}
-                        className={`rounded-full border px-3 py-1 text-xs font-medium ${
-                          mode === value ? 'border-brand-500 bg-brand-50 text-brand-700' : 'border-slate-200 text-slate-600 hover:bg-slate-50'
+                        className={`rounded-lg border px-3 py-1.5 text-sm font-semibold shadow-sm transition ${
+                          mode === value ? 'border-brand-600 bg-brand-600 text-white' : 'border-slate-300 bg-white text-slate-700 hover:border-brand-400 hover:bg-brand-50'
                         }`}
                       >
                         {label}
@@ -1027,7 +1070,9 @@ export function MagicDesignDialog({
                 )}
               </div>
 
-              {mode === 'chat' ? (
+              {mode === 'images' ? (
+                renderImagesTab()
+              ) : mode === 'chat' ? (
                 <div>
                   {brief.trim() === '' ? (
                     <p className="rounded-xl border border-dashed border-slate-300 p-4 text-center text-sm text-slate-500">
@@ -1039,7 +1084,6 @@ export function MagicDesignDialog({
                     </p>
                   ) : (
                     <>
-                      {renderPictureStrip()}
                       <div className="max-h-72 space-y-2 overflow-y-auto rounded-xl bg-slate-50 p-3">
                         {description.trim() && (
                           <div className="flex gap-2">
@@ -1050,7 +1094,7 @@ export function MagicDesignDialog({
                         <div className="flex gap-2">
                           <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gradient-to-br from-indigo-600 to-fuchsia-500 text-xs text-white">✨</span>
                           <p className="rounded-2xl rounded-tl-sm bg-brand-50 px-3 py-2 text-sm text-slate-800">
-                            Here is your reel in {parsedScenes.length} scenes{parsedScenes[0]?.headline ? `, opening with “${parsedScenes[0].headline}”` : ''}. Tell me what to change in your own words — or use the buttons under each scene below.
+                            Here is your reel in {parsedScenes.length} scenes{parsedScenes[0]?.headline ? `, opening with “${parsedScenes[0].headline}”` : ''}. Tell me what to change in your own words: a scene, the tone, the language, the offer, a picture, an effect.
                           </p>
                         </div>
                         {turns.map((turn, i) => (
@@ -1185,6 +1229,17 @@ export function MagicDesignDialog({
                       </button>
                     )}
                   </div>
+                  {scenes.length > 0 && (
+                    <p className="mt-2 text-xs text-slate-500">
+                      {scenes.length} scene{scenes.length === 1 ? '' : 's'} · {totalSeconds.toFixed(1)}s ·{' '}
+                      {scenes.map((scene, i) => `${i + 1}. ${scene.headline || '…'}`).join('  ')}
+                      {scenesHeld > 0 && (
+                        <button type="button" onClick={() => lock('More than 3 scenes')} className="ml-2 text-brand-600 hover:underline">
+                          🔒 {scenesHeld} more with a free account
+                        </button>
+                      )}
+                    </p>
+                  )}
                   {showInstructions && (
                     <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">
                       {INSTRUCTION_GROUPS.map((group) => (
@@ -1202,11 +1257,9 @@ export function MagicDesignDialog({
               )}
             </section>
 
-            {storyPhotoScenes !== null && mode !== 'describe' && scenes.length > 0 && (
-              <section className={`rounded-2xl border p-4 ${openQuestions > 0 ? 'border-amber-200 bg-amber-50' : 'border-emerald-200 bg-emerald-50'}`}>
-                <h3 className={`text-sm font-semibold ${openQuestions > 0 ? 'text-amber-900' : 'text-emerald-900'}`}>
-                  {openQuestions > 0 ? '2 · A few quick questions' : '2 · All set — create the reel when you are ready'}
-                </h3>
+            {storyPhotoScenes !== null && mode !== 'describe' && scenes.length > 0 && openQuestions > 0 && (
+              <section className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+                <h3 className="text-sm font-semibold text-amber-900">Before you create — a few quick questions</h3>
                 {openQuestions > 0 && (
                   <ul className="mt-2 space-y-2 text-sm text-slate-800">
                     {wantLogo && (
@@ -1253,179 +1306,116 @@ export function MagicDesignDialog({
               </section>
             )}
 
-            {scenes.length > 0 && (
-              <section className="rounded-2xl border border-slate-200 bg-white p-4">
-                <div className="mb-2 flex flex-wrap items-center gap-2">
-                  <h3 className="text-sm font-semibold text-slate-900">
-                    {storyPhotoScenes !== null ? '3' : '2'} · Scenes
-                  </h3>
-                  <span className="text-xs text-slate-500">
-                    {scenes.length} scene{scenes.length === 1 ? '' : 's'} · {totalSeconds.toFixed(1)}s
-                  </span>
-                  {scenesHeld > 0 && (
-                    <button type="button" onClick={() => lock('More than 3 scenes')} className="text-xs text-brand-600 hover:underline">
-                      🔒 {scenesHeld} more scene{scenesHeld === 1 ? '' : 's'} with a free account
-                    </button>
-                  )}
-                  <span className="ml-auto text-xs text-slate-500">
-                    {storyPhotoScenes !== null && stockPhotos ? 'Photos were chosen for you — tap one to change it.' : 'Tap a photo box to add pictures to that scene.'}
-                  </span>
-                </div>
-                <ul className="space-y-2">
-                  {scenes.map((scene, index) => (
-                    <li key={index} id={`magic-scene-${index}`} className={`rounded-xl border p-2 ${pickingFor === index ? 'border-brand-400 bg-brand-50/30' : 'border-slate-200'}`}>
-                      <div className="flex items-start gap-2">
-                        <span className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded bg-brand-600 text-xs font-medium text-white">{index + 1}</span>
-                        <span className="min-w-0 flex-1 text-sm">
-                          <span className="block font-medium text-slate-900">{scene.headline || <em className="text-slate-400">No headline</em>}</span>
-                          {scene.label && <span className="block text-xs text-slate-400">{scene.label}</span>}
-                          {scene.body.length > 0 && <span className="block text-xs text-slate-500">{scene.body.join(' · ')}</span>}
-                          {scene.contact.length > 0 && <span className="block text-xs text-slate-500">{scene.contact.join(' · ')}</span>}
-                          {(scene.qr || scene.footer.length > 0 || scene.wantsPhoto) && (
-                            <span className="mt-0.5 flex flex-wrap gap-1">
-                              {scene.wantsPhoto && !scenePhotos[index]?.length && (
-                                <span className="rounded bg-amber-100 px-1 text-[10px] text-amber-800">wants a photo</span>
-                              )}
-                              {scene.qr && <span className="rounded bg-slate-100 px-1 text-[10px] text-slate-600">QR · {scene.qr}</span>}
-                              {scene.footer.map((line) => (
-                                <span key={line} className="rounded bg-slate-100 px-1 text-[10px] text-slate-600">Footer · {line}</span>
-                              ))}
-                            </span>
-                          )}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setStockQuery('');
-                            setPickingFor(pickingFor === index ? null : index);
-                          }}
-                          className={`shrink-0 overflow-hidden rounded-lg border-2 transition ${pickingFor === index ? 'border-brand-500' : 'border-slate-200 hover:border-slate-400'}`}
-                          title="Choose photos for this scene"
-                        >
-                          {scenePhotos[index]?.length ? (
-                            scenePhotos[index].length === 1 ? (
-                              <img src={scenePhotos[index][0]} alt="" className="h-12 w-12 object-cover" />
-                            ) : (
-                              <span className="grid h-12 w-12 grid-cols-2 gap-px bg-slate-200">
-                                {scenePhotos[index].slice(0, 4).map((url, n) => (
-                                  <img key={url + n} src={url} alt="" className="h-full w-full object-cover" />
-                                ))}
-                              </span>
-                            )
-                          ) : (
-                            <span className="flex h-12 w-12 flex-col items-center justify-center bg-slate-50 text-[10px] leading-tight text-slate-500">
-                              <span className="text-base leading-none">＋</span>
-                              photo
-                            </span>
-                          )}
-                        </button>
-                      </div>
-                      {(aiAvailable || guest) && brief.trim() && (
-                        <div className="mt-1.5 flex flex-wrap gap-1 pl-7">
-                          {[
-                            ['🖼 New picture', `Scene ${index + 1}: use a different picture that fits it better`],
-                            ['✏️ Rewrite words', `Scene ${index + 1}: rewrite the words, same message, more catchy`],
-                            ['✨ Add sparkle', `Scene ${index + 1}: add a sparkles effect`],
-                            ['🗑 Remove', `Remove scene ${index + 1}`],
-                          ].map(([label, ask]) => (
-                            <button
-                              key={label}
-                              type="button"
-                              disabled={writing}
-                              onClick={() => {
-                                setMode('chat');
-                                void sendChange(ask!);
-                              }}
-                              className="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[11px] text-slate-600 hover:border-brand-300 hover:bg-brand-50 disabled:opacity-50"
-                            >
-                              {label}
-                            </button>
-                          ))}
-                        </div>
-                      )}
-                      {pickingFor === index && !pickInStrip && renderPicker(index)}
-                    </li>
-                  ))}
-                </ul>
-              </section>
-            )}
           </div>
 
-          {/* ---- Right: look and sound ---------------------------------- */}
+          {/* ---- Right: your photos, then the look ----------------------- */}
           <aside className="space-y-4">
-            <section ref={logoCardRef} className={`rounded-2xl border bg-white p-4 ${pickingFor === 'logo' ? 'border-brand-400' : 'border-slate-200'}`}>
-              <h3 className="text-sm font-semibold text-slate-900">Logo</h3>
-              <p className="mt-0.5 text-xs text-slate-500">Shown small on every scene, never as a background.</p>
-              <div className="mt-2 flex items-center gap-2">
+            <section className="rounded-2xl border border-slate-200 bg-white p-4">
+              <div className="flex items-center gap-2">
+                <h3 className="text-sm font-semibold text-slate-900">Your photos</h3>
+                <button
+                  type="button"
+                  onClick={() => openUpload(typeof pickingFor === 'number' ? pickingFor : 'library', true)}
+                  disabled={uploading}
+                  className="ml-auto rounded-md bg-brand-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-brand-700 disabled:opacity-50"
+                >
+                  {uploading ? 'Uploading…' : '⬆ Upload'}
+                </button>
+              </div>
+              <p className="mt-0.5 text-xs text-slate-500">
+                {typeof pickingFor === 'number'
+                  ? `Tap a photo to use it on scene ${pickingFor + 1}.`
+                  : 'Everything you upload or pick is kept here. Select a scene under Edit images, then tap a photo to use it.'}
+              </p>
+              {library === null ? (
+                <Spinner className="mt-2 h-4 w-4 text-slate-400" />
+              ) : library.filter((asset) => asset.url !== logo).length === 0 ? (
+                <p className="mt-2 rounded-lg border border-dashed border-slate-300 p-3 text-center text-xs text-slate-500">No photos yet. Upload one from your device.</p>
+              ) : (
+                <ul className="mt-2 grid grid-cols-4 gap-1.5">
+                  {library
+                    .filter((asset) => asset.url !== logo)
+                    .slice(0, 24)
+                    .map((asset) => {
+                      const usedOn = Object.entries(scenePhotos).filter(([, urls]) => urls.includes(asset.url)).map(([k]) => Number(k) + 1);
+                      return (
+                        <li key={asset.id}>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (typeof pickingFor !== 'number') {
+                                setMode('images');
+                                setError('Select a scene first: tap 🔍 More under it, then this photo.');
+                                return;
+                              }
+                              placePhoto(pickingFor, asset.url, true);
+                            }}
+                            className={`relative block w-full overflow-hidden rounded-md border-2 ${usedOn.length > 0 ? 'border-brand-400' : 'border-transparent hover:border-slate-300'}`}
+                            title={usedOn.length > 0 ? `On scene ${usedOn.join(', ')}` : 'Use this photo'}
+                          >
+                            <img src={asset.thumbnailUrl ?? asset.url} alt="" className="aspect-square w-full object-cover" />
+                            {usedOn.length > 0 && (
+                              <span className="absolute left-0.5 top-0.5 rounded bg-brand-600 px-1 text-[10px] font-medium text-white">{usedOn.join(',')}</span>
+                            )}
+                          </button>
+                        </li>
+                      );
+                    })}
+                </ul>
+              )}
+            </section>
+
+            <section ref={logoCardRef} className={`rounded-2xl border bg-white p-3 ${pickingFor === 'logo' ? 'border-brand-400' : 'border-slate-200'}`}>
+              <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
                   onClick={() => setPickingFor(pickingFor === 'logo' ? null : 'logo')}
                   className={`overflow-hidden rounded-lg border-2 ${pickingFor === 'logo' ? 'border-brand-500' : 'border-slate-200 hover:border-slate-400'}`}
-                  title="Choose or upload a logo"
+                  title="Logo on every scene"
                 >
                   {logo ? (
-                    <img src={logo} alt="" className="h-12 w-24 bg-slate-100 object-contain" />
+                    <img src={logo} alt="" className="h-9 w-16 bg-slate-100 object-contain" />
                   ) : (
-                    <span className="flex h-12 w-24 items-center justify-center bg-slate-50 text-xs text-slate-500">＋ Add logo</span>
+                    <span className="flex h-9 w-16 items-center justify-center bg-slate-50 text-[10px] text-slate-500">＋ logo</span>
                   )}
                 </button>
                 {logo ? (
-                  <div className="flex flex-col gap-1">
-                    <select value={logoPosition || directives.logoPosition || 'top-right'} onChange={(e) => setLogoPosition(e.target.value)} className="rounded-lg border border-slate-300 px-2 py-1 text-xs" title="Where the logo sits">
-                      {LOGO_POSITIONS.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.label}
-                        </option>
-                      ))}
-                    </select>
-                    <div className="flex gap-2 text-xs">
-                      <button type="button" onClick={() => setPickingFor('logo')} className="font-medium text-brand-600 hover:underline">
-                        Change
-                      </button>
-                      <button type="button" onClick={() => { setLogo(undefined); setPickingFor(null); }} className="text-red-600 hover:underline">
-                        Remove
-                      </button>
-                    </div>
-                  </div>
+                  <select value={logoPosition || directives.logoPosition || 'top-right'} onChange={(e) => setLogoPosition(e.target.value)} className="rounded-lg border border-slate-300 px-1.5 py-1 text-xs" title="Where the logo sits">
+                    {LOGO_POSITIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
                 ) : (
-                  <button type="button" onClick={() => setPickingFor('logo')} className="text-xs font-medium text-brand-600 hover:underline">
-                    Choose or upload
+                  <span className="text-xs text-slate-500">Logo</span>
+                )}
+                {logo && (
+                  <button type="button" onClick={() => { setLogo(undefined); setPickingFor(null); }} className="text-xs text-red-600 hover:underline">
+                    Remove
+                  </button>
+                )}
+                <span className="ml-auto flex items-center gap-1.5 text-xs text-slate-600">
+                  <input type="color" value={brandColor} onChange={(e) => setBrandColor(e.target.value)} title="Main colour" className="h-7 w-9 cursor-pointer rounded border border-slate-300" />
+                  <input type="color" value={accentColor} onChange={(e) => setAccentColor(e.target.value)} title="Alternate colour" className="h-7 w-9 cursor-pointer rounded border border-slate-300" />
+                  Colours
+                </span>
+              </div>
+              {pickingFor === 'logo' && renderPicker('logo')}
+              <div className="mt-2 flex items-center gap-2 border-t border-slate-100 pt-2 text-xs">
+                {audio ? (
+                  <>
+                    <span className="min-w-0 flex-1 truncate text-slate-700">🎵 {audio.name}</span>
+                    <button type="button" onClick={() => setAudio(undefined)} className="text-red-600 hover:underline">
+                      Remove
+                    </button>
+                  </>
+                ) : (
+                  <button type="button" onClick={() => audioInput.current?.click()} className="font-medium text-brand-600 hover:underline">
+                    🎵 Add music or a voice-over
                   </button>
                 )}
               </div>
-              {pickingFor === 'logo' && renderPicker('logo')}
-            </section>
-
-            <section className="rounded-2xl border border-slate-200 bg-white p-4">
-              <h3 className="text-sm font-semibold text-slate-900">Colours</h3>
-              <div className="mt-2 flex items-center gap-3 text-xs text-slate-600">
-                <label className="flex items-center gap-1.5">
-                  <input type="color" value={brandColor} onChange={(e) => setBrandColor(e.target.value)} title="Main colour" className="h-8 w-12 cursor-pointer rounded border border-slate-300" />
-                  Main
-                </label>
-                <label className="flex items-center gap-1.5">
-                  <input type="color" value={accentColor} onChange={(e) => setAccentColor(e.target.value)} title="Alternate colour" className="h-8 w-12 cursor-pointer rounded border border-slate-300" />
-                  Alternate
-                </label>
-              </div>
-              <p className="mt-1.5 text-xs text-slate-500">Scenes alternate between the two. They start from your brand kit.</p>
-            </section>
-
-            <section className="rounded-2xl border border-slate-200 bg-white p-4">
-              <h3 className="text-sm font-semibold text-slate-900">Sound</h3>
-              {audio ? (
-                <div className="mt-2 flex items-center gap-2">
-                  <span className="min-w-0 flex-1 truncate text-xs text-slate-700">🎵 {audio.name}</span>
-                  <button type="button" onClick={() => setAudio(undefined)} className="text-xs text-red-600 hover:underline">
-                    Remove
-                  </button>
-                </div>
-              ) : (
-                <Button variant="secondary" className="mt-2 !py-1 !text-xs" onClick={() => audioInput.current?.click()}>
-                  Add music or a voice-over
-                </Button>
-              )}
-              <p className="mt-1.5 text-xs text-slate-500">Use audio you have the rights to. You can add or change it later.</p>
             </section>
           </aside>
         </div>
@@ -1446,7 +1436,9 @@ export function MagicDesignDialog({
         hidden
         onChange={(e) => {
           const file = e.target.files?.[0];
-          if (file && pickingFor !== null) void handlePhotoFile(file, pickingFor);
+          const where = uploadTarget.current ?? (pickingFor !== null ? { target: pickingFor, replace: false } : null);
+          uploadTarget.current = null;
+          if (file && where) void handlePhotoFile(file, where.target, where.replace);
           e.target.value = '';
         }}
       />
