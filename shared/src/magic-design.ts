@@ -434,6 +434,8 @@ export interface MagicDesignOptions {
   scenePhotos?: (string[] | undefined)[];
   /** Backdrop or tiles, per scene. Several photos are always tiles. */
   photoLayout?: (ScenePhotoLayout | undefined)[];
+  /** A photo behind the words, per scene; with one set, every scene photo is a tile. */
+  backgrounds?: (string | undefined)[];
   /** How solid the photos are, per scene, 0.2–1; the colour shows through below 1. */
   photoOpacity?: (number | undefined)[];
   /** Photos to draw on when a scene asked for one but none was chosen. */
@@ -660,15 +662,16 @@ function buildScene(
 ): ProjectScene {
   const layers: ProjectLayer[] = [];
   const chosen = (options.scenePhotos?.[index] ?? []).filter(Boolean);
+  const background = options.backgrounds?.[index];
   const layout: ScenePhotoLayout =
-    chosen.length > 1 ? 'blocks' : (options.photoLayout?.[index] ?? 'background');
+    background || chosen.length > 1 ? 'blocks' : (options.photoLayout?.[index] ?? 'background');
 
   // A scene shows a photo only when the author chose one for it, or wrote
   // "add a photo" and left the choice to the library. A scene with neither
   // gets a plain colour: nothing the author did not ask for.
   const fallback = photos.length > 0 ? photos[index % photos.length] : undefined;
   const backdrop =
-    layout === 'background' ? (chosen[0] ?? (scene.wantsPhoto ? fallback : undefined)) : undefined;
+    background ?? (layout === 'background' ? (chosen[0] ?? (scene.wantsPhoto ? fallback : undefined)) : undefined);
   const tiles = layout === 'blocks' ? chosen : [];
   const usePhoto = Boolean(backdrop);
   const photo = backdrop;

@@ -580,6 +580,7 @@ export interface SavedBrief {
   options: {
     photoLayout?: Record<string, 'background' | 'blocks'>;
     photoOpacity?: Record<string, number>;
+    sceneBackgrounds?: Record<string, string>;
     logo?: string;
     logoPosition?: string;
     /** The plain description the story was written from, if it was. */

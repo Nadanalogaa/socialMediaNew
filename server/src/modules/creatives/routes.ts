@@ -313,6 +313,7 @@ const saveBriefSchema = z.object({
     .object({
       photoLayout: z.record(z.string(), z.enum(['background', 'blocks'])).optional(),
       photoOpacity: z.record(z.string(), z.number().min(0.1).max(1)).optional(),
+      sceneBackgrounds: z.record(z.string(), z.string().url()).optional(),
       logo: z.string().url().optional(),
       logoPosition: z.string().max(20).optional(),
       description: z.string().max(4000).optional(),

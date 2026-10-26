@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { drawProjectFrame, preloadProjectImages, type ImageCache } from '../lib/renderProject';
 import QRCode from 'qrcode';
 import {
   MAGIC_INDUSTRIES,
@@ -13,6 +14,7 @@ import {
   sceneDurationFor,
   type LogoPosition,
   type MagicBrief,
+  type ProjectScene,
   type ProjectAudio,
   type ReelProject,
 } from '@socialboost/shared';
@@ -150,6 +152,8 @@ export function MagicDesignDialog({
   );
   /** Backdrop or tiles, for scenes with a single photo. */
   const [photoOpacity, setPhotoOpacity] = useState<Record<number, number>>(initial?.photoOpacity ?? {});
+  /** A photo behind the words; with one set, the scene's other photos are tiles. */
+  const [sceneBackgrounds, setSceneBackgrounds] = useState<Record<number, string>>(initial?.sceneBackgrounds ?? {});
   const [photoLayout, setPhotoLayout] = useState<Record<number, PhotoLayout>>(
     initial?.photoLayout ?? {},
   );
@@ -231,6 +235,7 @@ export function MagicDesignDialog({
       ),
     );
     setPhotoOpacity(Object.fromEntries(Object.entries(saved.options?.photoOpacity ?? {}).map(([k, v]) => [Number(k), v])));
+    setSceneBackgrounds(Object.fromEntries(Object.entries(saved.options?.sceneBackgrounds ?? {}).map(([k, v]) => [Number(k), v])));
     setLogo(saved.options?.logo);
     setLogoPosition(saved.options?.logoPosition ?? '');
     setDescription(saved.options?.description ?? '');
@@ -431,6 +436,45 @@ export function MagicDesignDialog({
   const directives = useMemo(() => parseBriefDirectives(expanded), [expanded]);
   const totalSeconds = scenes.reduce((total, scene) => total + sceneDurationFor(scene), 0);
 
+  // The reel as it would be built right now, so each scene card can play
+  // itself: photo, tiles, words, logo and effect, with the opacity applied.
+  const previewProject = useMemo(() => {
+    if (scenes.length === 0 || mode !== 'images') return null;
+    const built = buildProjectFromBrief(scenes, {
+      scenePhotos: scenes.map((_, index) => scenePhotos[index]),
+      photoLayout: scenes.map((_, index) => photoLayout[index]),
+      photoOpacity: scenes.map((_, index) => photoOpacity[index]),
+      backgrounds: scenes.map((_, index) => sceneBackgrounds[index]),
+      photos: [],
+      logo,
+      logoPosition: (logoPosition || undefined) as LogoPosition | undefined,
+      qrImages: {},
+      directives: { ...directives, qr: undefined },
+      brandColor,
+      accentColor,
+    });
+    if (brand?.fontFamily) {
+      for (const scene of built.scenes) for (const layer of scene.layers) if (layer.type === 'text' && !layer.style.fontFamily) layer.style.fontFamily = brand.fontFamily;
+    }
+    return built;
+  }, [scenes, scenePhotos, photoLayout, photoOpacity, sceneBackgrounds, logo, logoPosition, directives, brandColor, accentColor, brand, mode]);
+  const [previewImages, setPreviewImages] = useState<ImageCache>(new Map());
+  const previewUrls = useMemo(
+    () => (previewProject ? [...new Set(previewProject.scenes.flatMap((scene) => scene.layers.filter((l) => l.type === 'image').map((l) => l.content)))].join('\n') : ''),
+    [previewProject],
+  );
+  useEffect(() => {
+    if (!previewProject) return;
+    let cancelled = false;
+    void preloadProjectImages(previewProject).then((cache) => {
+      if (!cancelled) setPreviewImages(cache);
+    });
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [previewUrls]);
+
   /** One turn of the conversation: the change is asked for, applied, and reported back. */
   async function sendChange(text: string) {
     const message = text.trim();
@@ -496,13 +540,37 @@ export function MagicDesignDialog({
     photoInput.current?.click();
   }
 
-  /** Puts a photo on a scene: in place of what was there, or added as a tile. */
+  /** The photo behind a scene's words: set explicitly, or the one older briefs stored as its only photo. */
+  function backgroundOf(sceneIndex: number): string | undefined {
+    const urls = scenePhotos[sceneIndex] ?? [];
+    return sceneBackgrounds[sceneIndex] ?? (urls.length === 1 && (photoLayout[sceneIndex] ?? 'background') === 'background' ? urls[0] : undefined);
+  }
+
+  /** The photos shown as blocks between the lines. */
+  function tilesOf(sceneIndex: number): string[] {
+    const urls = scenePhotos[sceneIndex] ?? [];
+    if (sceneBackgrounds[sceneIndex]) return urls;
+    return urls.length > 1 || photoLayout[sceneIndex] === 'blocks' ? urls : [];
+  }
+
+  /**
+   * Puts a photo on a scene: behind the words, or added as a tile. A scene
+   * can have both. An older brief's single background photo is carried over
+   * so adding a tile never turns it into a tile.
+   */
   function placePhoto(sceneIndex: number, url: string, replace: boolean) {
+    const legacyBackground = !sceneBackgrounds[sceneIndex] ? backgroundOf(sceneIndex) : undefined;
     if (replace) {
-      setScenePhotos((prev) => ({ ...prev, [sceneIndex]: [url] }));
-      setPhotoLayout((prev) => ({ ...prev, [sceneIndex]: 'background' }));
+      setSceneBackgrounds((prev) => ({ ...prev, [sceneIndex]: url }));
+      if (legacyBackground) setScenePhotos((prev) => ({ ...prev, [sceneIndex]: [] }));
     } else {
-      togglePhoto(sceneIndex, url);
+      if (legacyBackground) {
+        setSceneBackgrounds((prev) => ({ ...prev, [sceneIndex]: legacyBackground }));
+        setScenePhotos((prev) => ({ ...prev, [sceneIndex]: [url] }));
+      } else {
+        togglePhoto(sceneIndex, url);
+      }
+      setPhotoLayout((prev) => ({ ...prev, [sceneIndex]: 'blocks' }));
     }
   }
 
@@ -554,6 +622,7 @@ export function MagicDesignDialog({
         Object.entries(photoLayout).map(([k, v]) => [String(k), v]),
       ) as Record<string, PhotoLayout>,
       photoOpacity: Object.fromEntries(Object.entries(photoOpacity).map(([k, v]) => [String(k), v])),
+      sceneBackgrounds: Object.fromEntries(Object.entries(sceneBackgrounds).map(([k, v]) => [String(k), v])),
       ...(logo ? { logo } : {}),
       ...(logoPosition ? { logoPosition } : {}),
       ...(description.trim() ? { description: description.trim() } : {}),
@@ -603,6 +672,7 @@ export function MagicDesignDialog({
         scenePhotos: scenes.map((_, index) => scenePhotos[index]),
         photoLayout: scenes.map((_, index) => photoLayout[index]),
         photoOpacity: scenes.map((_, index) => photoOpacity[index]),
+        backgrounds: scenes.map((_, index) => sceneBackgrounds[index]),
         photos: [],
         logo: guest && GUEST_LIMITS.enforce ? undefined : logo,
         logoPosition: (logoPosition || undefined) as LogoPosition | undefined,
@@ -627,6 +697,7 @@ export function MagicDesignDialog({
         scenePhotos,
         photoLayout,
         photoOpacity,
+        sceneBackgrounds,
         logo,
         logoPosition: logoPosition || undefined,
         brandColor,
@@ -668,7 +739,7 @@ export function MagicDesignDialog({
           <div className="flex flex-wrap items-center gap-2">
             <p className="text-sm font-semibold text-slate-900">Your photos</p>
             <p className="text-xs text-slate-500">
-              {selectedScene !== null ? `Tap one to put it on scene ${selectedScene + 1}.` : 'Tap a scene below, then tap a photo to use it there.'}
+              {selectedScene !== null ? `Tap one to make it the background of scene ${selectedScene + 1}.` : 'Tap a scene below, then tap a photo to use it as that scene\'s background.'}
             </p>
             <button
               type="button"
@@ -686,7 +757,7 @@ export function MagicDesignDialog({
           ) : (
             <ul className="mt-2 flex gap-2 overflow-x-auto pb-1">
               {photos.slice(0, 40).map((asset) => {
-                const usedOn = Object.entries(scenePhotos).filter(([, urls]) => urls.includes(asset.url)).map(([k]) => Number(k) + 1);
+                const usedOn = scenes.map((_, i) => i).filter((i) => backgroundOf(i) === asset.url || tilesOf(i).includes(asset.url)).map((i) => i + 1);
                 return (
                   <li key={asset.id} className="shrink-0">
                     <button
@@ -699,7 +770,7 @@ export function MagicDesignDialog({
                         placePhoto(selectedScene, asset.url, true);
                       }}
                       className={`relative block h-16 w-16 overflow-hidden rounded-lg border-2 ${usedOn.length > 0 ? 'border-brand-500' : 'border-transparent hover:border-brand-300'}`}
-                      title={usedOn.length > 0 ? `On scene ${usedOn.join(', ')}` : 'Use this photo'}
+                      title={usedOn.length > 0 ? `On scene ${usedOn.join(', ')}` : 'Use as the background of the selected scene'}
                     >
                       <img src={asset.thumbnailUrl ?? asset.url} alt="" className="h-full w-full object-cover" />
                       {usedOn.length > 0 && (
@@ -715,9 +786,9 @@ export function MagicDesignDialog({
 
         <ul className="grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(21rem,1fr))]">
           {scenes.map((scene, index) => {
-            const urls = scenePhotos[index] ?? [];
+            const background = backgroundOf(index);
+            const tiles = tilesOf(index);
             const selected = selectedScene === index;
-            const tiles = urls.length > 1 || (urls.length === 1 && photoLayout[index] === 'blocks');
             const opacity = Math.round((photoOpacity[index] ?? 1) * 100);
             return (
               <li
@@ -728,27 +799,23 @@ export function MagicDesignDialog({
                 }}
                 className={`flex gap-4 rounded-2xl border-2 bg-white p-4 transition ${selected ? 'border-brand-500 shadow-md' : 'border-slate-200 hover:border-slate-300 hover:shadow-sm'}`}
               >
-                <div className="relative aspect-[9/16] w-28 shrink-0 overflow-hidden rounded-xl bg-slate-900">
-                  {urls.length === 0 ? (
-                    <span className="flex h-full w-full flex-col items-center justify-center gap-1 text-[11px] text-slate-400">
-                      <span className="text-2xl">🖼</span>no photo
-                    </span>
-                  ) : tiles ? (
-                    <div className={`grid h-full w-full content-center gap-1 p-2 ${urls.length >= 4 ? 'grid-cols-2' : 'grid-cols-1'}`}>
-                      {urls.slice(0, 4).map((url, n) => (
-                        <img key={url + n} src={url} alt="" className="aspect-[4/3] w-full rounded-md object-cover" style={{ opacity: opacity / 100 }} />
-                      ))}
-                    </div>
-                  ) : (
-                    <img src={urls[0]} alt="" className="h-full w-full object-cover" style={{ opacity: opacity / 100 }} />
-                  )}
+                {/* The scene itself, playing: photo, tiles, words, logo and effect. */}
+                <div className="relative aspect-[9/16] w-32 shrink-0 overflow-hidden rounded-xl bg-slate-900 shadow-inner">
+                  {previewProject?.scenes[index] ? (
+                    <ScenePreview scene={previewProject.scenes[index]!} project={previewProject} images={previewImages} />
+                  ) : null}
                   <span className="absolute left-1.5 top-1.5 rounded-md bg-black/60 px-1.5 py-0.5 text-[11px] font-semibold text-white">{index + 1}</span>
-                  {urls.length > 0 && (
+                  {(background || tiles.length > 0) && (
                     <button
                       type="button"
                       onClick={(event) => {
                         event.stopPropagation();
                         setScenePhotos((prev) => {
+                          const next = { ...prev };
+                          delete next[index];
+                          return next;
+                        });
+                        setSceneBackgrounds((prev) => {
                           const next = { ...prev };
                           delete next[index];
                           return next;
@@ -761,11 +828,9 @@ export function MagicDesignDialog({
                       ✕
                     </button>
                   )}
-                  {urls.length > 0 && (
-                    <span className="absolute inset-x-0 bottom-0 bg-black/50 py-0.5 text-center text-[10px] text-white">
-                      {tiles ? `${urls.length} tile${urls.length === 1 ? '' : 's'}` : 'background'}
-                    </span>
-                  )}
+                  <span className="absolute inset-x-0 bottom-0 bg-black/50 py-0.5 text-center text-[10px] text-white">
+                    {[background ? 'background' : null, tiles.length > 0 ? `${tiles.length} tile${tiles.length === 1 ? '' : 's'}` : null].filter(Boolean).join(' + ') || 'no photo'}
+                  </span>
                 </div>
 
                 <div className="flex min-w-0 flex-1 flex-col">
@@ -779,27 +844,25 @@ export function MagicDesignDialog({
                       type="button"
                       onClick={(event) => {
                         event.stopPropagation();
-                        setPhotoLayout((prev) => ({ ...prev, [index]: 'background' }));
                         openUpload(index, true);
                       }}
                       disabled={uploading}
                       className="rounded-xl bg-brand-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-700 disabled:opacity-50"
-                      title="A photo from your device, behind the words"
+                      title={background ? 'Replace the photo behind the words' : 'A photo from your device, behind the words'}
                     >
-                      {uploading && selected ? 'Uploading…' : '🖼 Background'}
+                      {uploading && selected ? 'Uploading…' : background ? '🖼 Change background' : '🖼 Background'}
                     </button>
                     <button
                       type="button"
                       onClick={(event) => {
                         event.stopPropagation();
-                        setPhotoLayout((prev) => ({ ...prev, [index]: 'blocks' }));
                         openUpload(index, false);
                       }}
-                      disabled={uploading || urls.length >= 6}
+                      disabled={uploading || tiles.length >= 6}
                       className="rounded-xl border-2 border-brand-200 bg-white px-3 py-2 text-sm font-semibold text-brand-700 hover:bg-brand-50 disabled:opacity-50"
                       title="A photo from your device, as a block between the lines (up to 6)"
                     >
-                      ▦ + Tile
+                      ▦ + Tile{tiles.length > 0 ? ` (${tiles.length})` : ''}
                     </button>
                   </div>
 
@@ -826,7 +889,7 @@ export function MagicDesignDialog({
                       max={100}
                       step={5}
                       value={opacity}
-                      disabled={urls.length === 0}
+                      disabled={!background && tiles.length === 0}
                       onChange={(event) => setPhotoOpacity((prev) => ({ ...prev, [index]: Number(event.target.value) / 100 }))}
                       className="min-w-0 flex-1 accent-brand-600 disabled:opacity-40"
                     />
@@ -1502,4 +1565,36 @@ export function MagicDesignDialog({
       />
     </div>
   );
+}
+
+/**
+ * One scene, playing on a small canvas: the words animate in, the effect
+ * keeps moving, and the loop restarts at the scene's own length. Drawn at a
+ * modest rate so five of them cost little.
+ */
+function ScenePreview({ scene, project, images }: { scene: ProjectScene; project: ReelProject; images: ImageCache }) {
+  const ref = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const canvas = ref.current;
+    const ctx = canvas?.getContext('2d');
+    if (!canvas || !ctx) return;
+    const started = performance.now();
+    let frame = 0;
+    let last = 0;
+    const tick = (now: number) => {
+      if (now - last >= 50) {
+        last = now;
+        const elapsed = (now - started) / 1000;
+        drawProjectFrame(ctx, project, images, 0, canvas.width, canvas.height, {
+          scene,
+          sceneElapsed: elapsed % scene.durationSeconds,
+          effectsElapsed: elapsed,
+        });
+      }
+      frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [scene, project, images]);
+  return <canvas ref={ref} width={270} height={480} className="h-full w-full" aria-label="Scene preview" />;
 }
