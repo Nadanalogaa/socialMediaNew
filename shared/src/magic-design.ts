@@ -923,6 +923,8 @@ export interface StoryScene {
 
 export interface MagicStoryPlan {
   title: string;
+  /** One or two words for what every picture must show: dentist, sweets, gym. */
+  photoTopic?: string;
   /** The language the lines are written in, as the user asked. */
   language: string;
   /** Small line along the bottom of every scene: usually website · phone. */

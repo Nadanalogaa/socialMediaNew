@@ -46,51 +46,104 @@ export async function searchStockPhotos(query: string, options: SearchOptions = 
   return source === 'pixabay' ? searchPixabay(query, options) : searchPexels(query, options);
 }
 
-/** Words that say where a picture belongs; a match on these outweighs the rest. */
-const PLACE_WORDS = /^(india|indian|south|tamil|chennai|madurai|kerala|mumbai|delhi|bengaluru|bangalore|hyderabad|kolkata|goa|rajasthan|punjab|gujarat)$/;
+/** Words that say where a picture belongs, not what is in it. */
+const PLACE_WORDS = /^(india|indian|south|north|tamil|tamilnadu|chennai|madurai|coimbatore|trichy|salem|kerala|kochi|mumbai|delhi|bengaluru|bangalore|hyderabad|kolkata|pune|goa|rajasthan|punjab|gujarat|karnataka|andhra|telangana)$/i;
 
-/**
- * Stock search ranks loosely: "indian hotel exterior" can return a Paris
- * facade first. Results are re-ordered by how many of the query's words
- * their tags actually carry, place words counting triple; when the query
- * names a place and nothing matches it, a broader search for the country
- * is tried before giving up on the place.
- */
-function rankByTags(photos: StockPhoto[], query: string): StockPhoto[] {
-  const words = query.toLowerCase().split(/\s+/).filter((w) => w.length > 2);
-  const score = (photo: StockPhoto) => {
-    const tags = photo.alt.toLowerCase();
-    return words.reduce((total, word) => {
-      const hit = tags.includes(word) || (word === 'indian' && tags.includes('india'));
-      return total + (hit ? (PLACE_WORDS.test(word) ? 3 : 1) : 0);
-    }, 0);
-  };
-  return photos
-    .map((photo, order) => ({ photo, order, score: score(photo) }))
-    .sort((a, b) => b.score - a.score || a.order - b.order)
-    .map((entry) => entry.photo);
+/** Words that make a search vaguer without saying what is in the picture. */
+const FILLER_WORDS = /^(a|an|the|of|with|and|for|in|on|at|to|from|our|your|happy|smiling|modern|front|view|beautiful|best|new|fresh|top|close|closeup|up|shot|photo|image|picture|evening|morning|guiding|treating|sharing|showing|serviced)$/i;
+
+function subjectWords(query: string): string[] {
+  return query
+    .toLowerCase()
+    .split(/[\s,]+/)
+    .filter((w) => w.length > 2 && !PLACE_WORDS.test(w) && !FILLER_WORDS.test(w));
 }
 
-const mentionsPlace = (photo: StockPhoto) => /india|indian|tamil|kerala|chennai|madurai|mumbai|delhi|bengal|rajasthan|punjab|goa|hindu|temple/i.test(photo.alt);
+const mentionsIndia = (photo: StockPhoto) => /\bindia|indian\b|tamil|kerala|chennai|bangalore|mumbai|delhi|hindu|saree|sari/i.test(photo.alt);
 
-/** The best results for a query, or none; a miss must not fail the story. */
-export async function firstStockPhotos(query: string, count = 6): Promise<StockPhoto[]> {
-  try {
-    const wantsPlace = query.toLowerCase().split(/\s+/).some((w) => PLACE_WORDS.test(w));
-    let photos = rankByTags(await searchStockPhotos(query, { perPage: Math.max(count, 20) }), query);
-    if (wantsPlace && !photos.some(mentionsPlace)) {
-      // Too specific: "indian madurai hotel exterior" → "india hotel".
-      const core = query.toLowerCase().split(/\s+/).filter((w) => !PLACE_WORDS.test(w)).slice(0, 2).join(' ');
-      const broader = rankByTags(await searchStockPhotos(`india ${core}`, { perPage: 20 }), `indian ${core}`);
-      if (broader.some(mentionsPlace)) photos = [...broader.filter(mentionsPlace), ...photos];
-    } else if (wantsPlace) {
-      photos = [...photos.filter(mentionsPlace), ...photos.filter((p) => !mentionsPlace(p))];
+const stem = (word: string) => word.replace(/(ing|es|s)$/, '');
+
+/**
+ * How many subject words a photo's tags carry, as whole words: "sweets"
+ * matches the tag "sweets" or "indian sweet", never "sweet love".
+ * Where a tag has several words, the subject word must be its main noun.
+ */
+function subjectScore(photo: StockPhoto, subject: string[]): number {
+  const tags = photo.alt.toLowerCase().split(/\s*,\s*/).filter(Boolean);
+  return subject.reduce((total, word) => {
+    const hit = tags.some((tag) => {
+      const words = tag.split(/\s+/);
+      const last = words[words.length - 1]!;
+      // The last word of a tag is what it names: "indian sweet" is a sweet, "sweet love" is not.
+      return last === word || stem(last) === stem(word);
+    });
+    return total + (hit ? 1 : 0);
+  }, 0);
+}
+
+/** On topic: shows the business, or matches every word of its own scene. */
+function onTopic(photo: StockPhoto, subject: string[], anchor: string[]): boolean {
+  if (anchor.length === 0) return subjectScore(photo, subject) > 0;
+  return subjectScore(photo, anchor) > 0 || (subject.length >= 2 && subjectScore(photo, subject) >= Math.min(2, subject.length));
+}
+
+/**
+ * Pictures for one scene, most relevant first.
+ *
+ * What the picture shows decides: a photo must carry at least one of the
+ * query's subject words in its tags, or it is not used at all — a colour
+ * background beats a wrong picture. Among relevant photos, ones from India
+ * come first when the query asks for India. Searches are short, because
+ * stock libraries match long queries badly: "indian dentist", then
+ * "dentist", then the main noun alone.
+ */
+export async function firstStockPhotos(query: string, count = 6, topic?: string): Promise<StockPhoto[]> {
+  const subject = subjectWords(query);
+  if (subject.length === 0) return [];
+  // What the whole business is about: a photo must show it, whatever the scene.
+  const anchor = topic ? subjectWords(topic) : [];
+  const wantsIndia = /\b(indian|india)\b/i.test(query) || query.toLowerCase().split(/\s+/).some((w) => PLACE_WORDS.test(w));
+  const core = subject.slice(0, 3).join(' ');
+  const searches = [
+    ...(wantsIndia ? [`indian ${core}`] : []),
+    core,
+    ...(subject.length > 1 ? [subject.slice(-1)[0]!, subject[0]!] : []),
+  ].filter((q, i, all) => all.indexOf(q) === i);
+
+  const seen = new Map<string, StockPhoto>();
+  for (const search of searches) {
+    try {
+      for (const photo of await searchStockPhotos(search, { perPage: 20 })) if (!seen.has(photo.id)) seen.set(photo.id, photo);
+    } catch (error) {
+      logger.warn({ err: error, query: search }, 'Stock photo lookup skipped');
     }
-    return photos.slice(0, count);
-  } catch (error) {
-    logger.warn({ err: error, query }, 'Stock photo lookup skipped');
-    return [];
+    const relevant = [...seen.values()].filter((p) => onTopic(p, subject, anchor));
+    if (relevant.length >= count && (!wantsIndia || relevant.some(mentionsIndia))) break;
   }
+
+  const ranked = (pool: StockPhoto[]) => pool
+    .map((photo, order) => ({ photo, order, score: subjectScore(photo, subject) + 2 * subjectScore(photo, anchor) }))
+    .filter((entry) => entry.score > 0 && onTopic(entry.photo, subject, anchor))
+    .sort(
+      (a, b) =>
+        b.score - a.score ||
+        (wantsIndia ? Number(mentionsIndia(b.photo)) - Number(mentionsIndia(a.photo)) : 0) ||
+        a.order - b.order,
+    )
+    .map((entry) => entry.photo);
+
+  let result = ranked([...seen.values()]);
+  if (result.length === 0 && anchor.length > 0) {
+    // The scene's own words found nothing on topic: the business subject alone.
+    const fallback = `${wantsIndia ? 'indian ' : ''}${anchor.join(' ')}`;
+    try {
+      for (const photo of await searchStockPhotos(fallback, { perPage: 20 })) if (!seen.has(photo.id)) seen.set(photo.id, photo);
+    } catch (error) {
+      logger.warn({ err: error, query: fallback }, 'Stock photo lookup skipped');
+    }
+    result = ranked([...seen.values()]);
+  }
+  return result.slice(0, count);
 }
 
 function failed(source: StockSource, status: number, query: string): never {

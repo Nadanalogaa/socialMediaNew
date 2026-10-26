@@ -42,7 +42,7 @@ export const publicCreativesRouter: Router = Router();
  * scene for the user to fill and never fails the story.
  */
 async function pickScenePhotos<T>(
-  plan: { scenes: { photo: boolean; imageQuery?: string; headline: string; replacePhoto?: boolean }[] },
+  plan: { photoTopic?: string; scenes: { photo: boolean; imageQuery?: string; headline: string; replacePhoto?: boolean }[] },
   keep: Set<number>,
   importPhoto: (photo: StockPhoto) => Promise<T>,
 ) {
@@ -50,7 +50,7 @@ async function pickScenePhotos<T>(
     scene.photo ? [{ index, query: scene.imageQuery || scene.headline, replace: scene.replacePhoto === true, skip: keep.has(index) && !scene.replacePhoto }] : [],
   );
   const results = await Promise.all(
-    wanted.map((w) => (w.skip || !stockPhotosConfigured() ? Promise.resolve([] as StockPhoto[]) : firstStockPhotos(w.query, 8))),
+    wanted.map((w) => (w.skip || !stockPhotosConfigured() ? Promise.resolve([] as StockPhoto[]) : firstStockPhotos(w.query, 8, plan.photoTopic))),
   );
   const taken = new Set<string>();
   const picks = wanted.map((w, i) => {

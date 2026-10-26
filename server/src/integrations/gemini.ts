@@ -155,6 +155,7 @@ export function templateCommentReply(brand: BrandContext, comment: { authorName:
 
 const STORY_SHAPE = `{
   "title": "a short name for this reel, under 60 characters",
+  "photoTopic": "1-2 plain English words for what the business's pictures show, e.g. dentist, sweets, gym, motorcycle, hotel, dance, classroom",
   "language": "the language the lines are written in",
   "footer": "the website and the phone number from the allowed contact details, separated by · , without the words phone/email/website; empty string if there are none",
   "scenes": [
@@ -165,7 +166,7 @@ const STORY_SHAPE = `{
       "body": ["0-3 supporting lines, each under 60 characters"],
       "contact": ["0-2 contact lines, only on the final scene, only from the allowed contact details"],
       "photo": true,
-      "imageQuery": "when photo is true: 2-4 English words for a stock photo that fits the scene, e.g. bharatanatyam dancer stage, children music class, cake shop counter",
+      "imageQuery": "when photo is true: 2-3 plain English words naming what is IN the picture, the business's own subject, e.g. dentist patient, indian sweets, gym trainer, bike mechanic, bharatanatyam dancer. No city names, no adjectives like happy or modern",
       "replacePhoto": "only when revising and the instruction asks for a different picture on this scene: true, with a new imageQuery for the picture wanted (e.g. indian man taxi driver)",
       "effect": "only when the instruction asks for an effect, particles, sparkle, celebration or mood: one of ${PARTICLE_EFFECTS.join(', ')}"
     }
@@ -177,7 +178,7 @@ const STORY_RULES = [
   'Story arc: hook the viewer, say who the business is, what it offers, why to trust it (years, students, awards, results that the description gives), then the offer or invitation, then a closing call to action with contact details.',
   'Every line must be short enough to read in a glance. Each body line is a separate line on screen, never a paragraph.',
   'Set "photo": true on scenes that would be stronger with a real picture of the business (people, place, work); not on the pure text scenes.',
-  'Every imageQuery must carry the place, culture and style the description asks for: "use Indian hotel images" gives "indian hotel lobby", a business in Chennai gives "south indian ..." or "indian ...". Never a generic western scene when the business is in India.',
+  'Every imageQuery names the concrete subject of the business (the dish, the treatment, the vehicle, the room, the class), never only the place. When the description asks for Indian or local pictures, add the single word "indian".',
   'Use only the facts in the description and the allowed contact details. Never invent fees, dates, numbers, counts (students, batches, branches), awards, phone numbers or addresses. If the description gives no number for something, say it without a number ("experienced teachers", not "500 students"). Proof scenes use only the proof the description gives.',
   'Write every headline and body line in the language asked for, not in English, unless English is asked for. Tamil, Hindi, Telugu, Kannada and Malayalam are written in their own script. "Tanglish" is spoken Tamil in Latin letters mixed with English words, the way people text — for example "Unga kuzhandhaikku Bharatanatyam kattrukka vaanga!" or "Free demo class indha Saturday". Keep brand names, numbers and contact details as given.',
   'Return only the JSON object, nothing else.',
@@ -217,20 +218,21 @@ const SOUTH_INDIAN = /\b(south indian|chennai|madras|tamil|coimbatore|madurai|tr
 export function photoStyleWords(text: string): string[] {
   const explicit = /\b(?:use|with|show|add)\s+(?:only\s+)?([a-z\s-]{3,40}?)\s+(?:images?|photos?|pictures?|pics)\b/i.exec(text);
   if (explicit) {
-    const words = explicit[1]!.toLowerCase().split(/\s+/).filter((w) => /^(indian|south|north|tamil|kerala|rajasthani|punjabi|bengali|traditional|modern|luxury|village|rural|urban)$/.test(w));
+    const words = explicit[1]!.toLowerCase().split(/\s+/).filter((w) => /^(indian|traditional|luxury|village|rural)$/.test(w));
     if (words.length > 0) return words;
   }
-  if (SOUTH_INDIAN.test(text)) return ['south', 'indian'];
-  if (INDIAN_PLACES.test(text)) return ['indian'];
+  // Just "indian": "south indian" and city names pull in photos of the place
+  // instead of the business.
+  if (SOUTH_INDIAN.test(text) || INDIAN_PLACES.test(text)) return ['indian'];
   return [];
 }
 
 function withStyle(query: string, style: string[]): string {
   const lower = query.toLowerCase();
   const missing = style.filter((word) => !lower.includes(word));
-  // "south indian" is one idea: add it whole or not at all.
-  if (style.join(' ') === 'south indian' && lower.includes('indian')) return query;
-  return missing.length > 0 ? `${missing.join(' ')} ${query}` : query;
+  // City and region names describe the place, not the picture: dropped.
+  const cleaned = query.split(/\s+/).filter((w) => !/^(south|north|chennai|madurai|coimbatore|trichy|salem|kochi|mumbai|delhi|bengaluru|bangalore|hyderabad|kolkata|pune|goa)$/i.test(w)).join(' ');
+  return missing.length > 0 ? `${missing.join(' ')} ${cleaned}` : cleaned;
 }
 
 export interface StoryRequest {
@@ -300,6 +302,7 @@ export async function writeMagicStory(brand: BrandContext, input: StoryRequest):
 
   return {
     title: typeof raw.title === 'string' && raw.title.trim() ? raw.title.trim().slice(0, 80) : scenes[0]!.headline,
+    photoTopic: typeof raw.photoTopic === 'string' && raw.photoTopic.trim() ? raw.photoTopic.trim().toLowerCase().slice(0, 30) : undefined,
     language: typeof raw.language === 'string' ? raw.language.slice(0, 40) : language,
     footer,
     scenes,
