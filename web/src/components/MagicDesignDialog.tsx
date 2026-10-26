@@ -856,7 +856,7 @@ export function MagicDesignDialog({
                       }}
                       disabled={uploading || tiles.length >= 6}
                       className="rounded-xl border-2 border-brand-200 bg-white px-3 py-2 text-sm font-semibold text-brand-700 hover:bg-brand-50 disabled:opacity-50"
-                      title="A photo from your device, as a block between the lines (up to 6)"
+                      title="Photos from your device, as blocks between the lines — select several at once (up to 6)"
                     >
                       ▦ + Tile{tiles.length > 0 ? ` (${tiles.length})` : ''}
                     </button>
@@ -1542,12 +1542,23 @@ export function MagicDesignDialog({
         type="file"
         accept="image/*"
         hidden
+        multiple
         onChange={(e) => {
-          const file = e.target.files?.[0];
+          const files = Array.from(e.target.files ?? []);
           const where = uploadTarget.current ?? (pickingFor !== null ? { target: pickingFor, replace: false } : null);
           uploadTarget.current = null;
-          if (file && where) void handlePhotoFile(file, where.target, where.replace);
           e.target.value = '';
+          if (files.length === 0 || !where) return;
+          // A background or a logo is one photo; tiles take as many as were
+          // chosen, up to the six a scene can hold, one after another.
+          if (where.replace || typeof where.target !== 'number') {
+            void handlePhotoFile(files[0]!, where.target, where.replace);
+            return;
+          }
+          const room = Math.max(0, 6 - (scenePhotos[where.target]?.length ?? 0));
+          void (async () => {
+            for (const file of files.slice(0, room)) await handlePhotoFile(file, where.target, false);
+          })();
         }}
       />
       <input
