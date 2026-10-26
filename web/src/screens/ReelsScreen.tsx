@@ -233,6 +233,12 @@ function ReelEditor({
   // The written guide is a thing for the platform admin to review; customers
   // and visitors get the four plain buttons below instead.
   const isPlatformAdmin = !guest && Boolean(loadSession()?.user.isPlatformAdmin);
+  /**
+   * Customers and visitors get the simple editor: watch the reel, change it
+   * through Magic Design, create the video. Layers, panels, dragging and
+   * scene surgery are the platform admin's tools.
+   */
+  const simple = !isPlatformAdmin;
   const [showGuide, setShowGuide] = useState(() => {
     if (!initialProject.magic || !isPlatformAdmin) return false;
     try {
@@ -839,18 +845,26 @@ function ReelEditor({
           ←
         </button>
 
-        <input
-          value={project.name}
-          onChange={(e) => setProject({ ...project, name: e.target.value }, 'name')}
-          className="min-w-0 flex-1 rounded-lg border border-transparent px-2 py-1 text-base font-semibold text-slate-900 hover:border-slate-300 focus:border-brand-500 focus:outline-none lg:text-lg"
-        />
+        {simple ? (
+          <span className="min-w-0 flex-1 truncate px-2 py-1 text-base font-semibold text-slate-900 lg:text-lg">{project.name}</span>
+        ) : (
+          <input
+            value={project.name}
+            onChange={(e) => setProject({ ...project, name: e.target.value }, 'name')}
+            className="min-w-0 flex-1 rounded-lg border border-transparent px-2 py-1 text-base font-semibold text-slate-900 hover:border-slate-300 focus:border-brand-500 focus:outline-none lg:text-lg"
+          />
+        )}
 
         <button
           onClick={() => setMagicOpen('images')}
           title={project.magic ? 'Tell the AI what to change: words, pictures, effects' : 'Describe your business and build the whole reel'}
-          className="min-h-11 shrink-0 rounded-lg border border-brand-300 bg-brand-50 px-3 text-sm font-medium text-brand-700 transition hover:bg-brand-100 lg:min-h-0 lg:py-1.5"
+          className={`min-h-11 shrink-0 rounded-lg px-3 text-sm font-medium transition lg:min-h-0 lg:py-1.5 ${
+            simple
+              ? 'bg-brand-600 text-white shadow-sm hover:bg-brand-700'
+              : 'border border-brand-300 bg-brand-50 text-brand-700 hover:bg-brand-100'
+          }`}
         >
-          ✨<span className="ml-1 hidden sm:inline">{project.magic ? 'Change with AI' : 'Magic Design'}</span>
+          ✨<span className="ml-1">{project.magic ? 'Change with AI' : 'Magic Design'}</span>
         </button>
 
         {/* Scene selection belongs beside the title: it is the context, and
@@ -873,6 +887,7 @@ function ReelEditor({
               {index + 1}
             </button>
           ))}
+          {!simple && (
           <button
             onClick={addScene}
             title="Add a scene"
@@ -881,12 +896,15 @@ function ReelEditor({
           >
             +
           </button>
+          )}
         </div>
 
         <span className="hidden shrink-0 text-sm text-slate-500 sm:inline">
           {duration.toFixed(1)}s
         </span>
 
+        {!simple && (
+        <>
         <button
           onClick={history.undo}
           disabled={!history.canUndo}
@@ -905,6 +923,8 @@ function ReelEditor({
         >
           ↷
         </button>
+        </>
+        )}
 
         <button
           onClick={() => void handleSave()}
@@ -935,6 +955,7 @@ function ReelEditor({
               ?
             </button>
           )}
+          {!simple && (
           <button
             onClick={() => setFullscreen((on) => !on)}
             title={fullscreen ? 'Leave full screen' : 'Full screen'}
@@ -943,47 +964,9 @@ function ReelEditor({
           >
             {fullscreen ? '⤡' : '⤢'}
           </button>
+          )}
         </div>
       </div>
-
-      {project.magic && !showGuide && (
-        <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2">
-          <span className="text-sm font-medium text-slate-700">Change:</span>
-          {(
-            [
-              ['🖼 Images', () => setMagicOpen('images')],
-              ['✍️ Text', () => setMagicOpen('write')],
-              [
-                '🎵 Voice-over / music',
-                () => {
-                  setSidePanel('media');
-                  setPanel('media');
-                  setNotice('Add a voice-over or music under Photos & sound, then press Create reel.');
-                },
-              ],
-              [
-                '✨ Effects',
-                () => {
-                  addLayer(createParticleLayer());
-                  setSidePanel('style');
-                  setPanel('style');
-                  setNotice('Sparkles added to this scene. Pick another effect on the right, or add it to other scenes with the scene numbers.');
-                },
-              ],
-            ] as const
-          ).map(([label, run]) => (
-            <button
-              key={label}
-              type="button"
-              onClick={run}
-              className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-800 shadow-sm transition hover:border-brand-400 hover:bg-brand-50"
-            >
-              {label}
-            </button>
-          ))}
-          <span className="ml-auto hidden text-xs text-slate-500 sm:inline">Then press ● Create reel.</span>
-        </div>
-      )}
 
       {showGuide && (
         <div className="rounded-2xl border border-brand-200 bg-gradient-to-r from-brand-50 to-fuchsia-50 p-3 sm:p-4">
@@ -1021,14 +1004,16 @@ function ReelEditor({
         className={
           isMobile
             ? 'flex flex-col gap-3'
-            : fullscreen
-              ? 'grid min-h-0 flex-1 gap-3 lg:grid-cols-[minmax(0,1fr)_360px]'
-              : 'grid gap-3 lg:h-[calc(100dvh-11rem)] lg:grid-cols-[minmax(0,1fr)_360px]'
+            : simple
+              ? 'grid gap-3 lg:h-[calc(100dvh-11rem)] lg:grid-cols-[minmax(0,1fr)]'
+              : fullscreen
+                ? 'grid min-h-0 flex-1 gap-3 lg:grid-cols-[minmax(0,1fr)_360px]'
+                : 'grid gap-3 lg:h-[calc(100dvh-11rem)] lg:grid-cols-[minmax(0,1fr)_360px]'
         }
         /* Keeps the preview clear of the panel below it, so nothing shows
            through from behind. */
         style={
-          isMobile
+          isMobile && !simple
             ? {
                 paddingBottom:
                   sheetHeight === 'peek' ? '7.5rem' : sheetHeight === 'half' ? '49dvh' : '75dvh',
@@ -1047,8 +1032,8 @@ function ReelEditor({
               ref={canvasRef}
               width={canvasW}
               height={canvasH}
-              onPointerDown={handlePointerDown}
-              onPointerMove={handlePointerMove}
+              onPointerDown={simple ? undefined : handlePointerDown}
+              onPointerMove={simple ? undefined : handlePointerMove}
               /* Stops a two-finger gesture scrolling or zooming the page. */
               onTouchStart={(event) => event.touches.length > 1 && event.preventDefault()}
               onTouchMove={(event) => event.touches.length > 1 && event.preventDefault()}
@@ -1072,8 +1057,8 @@ function ReelEditor({
               /* The canvas shrinks as the panel grows, so the two never
                  overlap and the preview is always wholly visible. */
               style={{ aspectRatio: '9 / 16' }}
-              className={`w-auto max-w-full touch-none rounded-lg bg-black shadow-xl transition-[height] duration-200 lg:h-full lg:max-h-none lg:cursor-move ${
-                isMobile
+              className={`w-auto max-w-full touch-none rounded-lg bg-black shadow-xl transition-[height] duration-200 lg:h-full lg:max-h-none ${simple ? '' : 'lg:cursor-move'} ${
+                isMobile && !simple
                   ? sheetHeight === 'full'
                     ? 'h-[18dvh]'
                     : sheetHeight === 'half'
@@ -1108,7 +1093,9 @@ function ReelEditor({
               </div>
             ) : (
               <p className="mt-2 text-center text-xs text-slate-400">
-                {repositioning
+                {simple
+                  ? '▶ Play to watch · ✨ Change with AI to change pictures, words, logo or sound'
+                  : repositioning
                   ? 'Drag to choose which part of the photo shows'
                   : isMobile
                     ? 'Tap to select · drag to move · pinch to resize'
@@ -1158,7 +1145,7 @@ function ReelEditor({
 
         {/* Layers and whichever panel is open, scrolling independently. */}
         <div
-          className={`flex min-h-0 flex-col gap-3 lg:overflow-hidden ${isMobile ? 'hidden' : ''}`}
+          className={`flex min-h-0 flex-col gap-3 lg:overflow-hidden ${isMobile || simple ? 'hidden' : ''}`}
         >
           <div className="flex shrink-0 gap-1 rounded-xl border border-slate-200 bg-white p-1">
             {(
@@ -1539,7 +1526,7 @@ function ReelEditor({
       )}
 
 
-      {isMobile && (
+      {isMobile && !simple && (
         <MobileSheet
           height={sheetHeight}
           onHeightChange={setSheetHeight}
