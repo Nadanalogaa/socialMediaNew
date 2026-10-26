@@ -659,17 +659,64 @@ export function MagicDesignDialog({
    */
   function renderImagesTab() {
     if (scenes.length === 0) return null;
+    const photos = (library ?? []).filter((asset) => asset.url !== logo);
+    const selectedScene = typeof pickingFor === 'number' ? pickingFor : null;
     return (
       <div>
-        <p className="mb-3 text-sm text-slate-600">
-          <strong className="text-slate-900">Background</strong> puts your photo behind the words.{' '}
-          <strong className="text-slate-900">+ Tile</strong> adds it as a block between them (up to 6). Pick a scene, then tap a photo in{' '}
-          <em>Your photos</em> to reuse one.
-        </p>
-        <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        {/* Your photos: one strip, always in view, drops onto the selected scene. */}
+        <div className="mb-4 rounded-2xl border border-slate-200 bg-slate-50 p-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <p className="text-sm font-semibold text-slate-900">Your photos</p>
+            <p className="text-xs text-slate-500">
+              {selectedScene !== null ? `Tap one to put it on scene ${selectedScene + 1}.` : 'Tap a scene below, then tap a photo to use it there.'}
+            </p>
+            <button
+              type="button"
+              onClick={() => openUpload(selectedScene ?? 'library', true)}
+              disabled={uploading}
+              className="ml-auto rounded-lg bg-brand-600 px-3 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-brand-700 disabled:opacity-50"
+            >
+              {uploading ? 'Uploading…' : '⬆ Upload photos'}
+            </button>
+          </div>
+          {library === null ? (
+            <Spinner className="mt-2 h-4 w-4 text-slate-400" />
+          ) : photos.length === 0 ? (
+            <p className="mt-2 text-xs text-slate-500">Nothing yet — upload from your device, or let the AI pick (Ask AI to change).</p>
+          ) : (
+            <ul className="mt-2 flex gap-2 overflow-x-auto pb-1">
+              {photos.slice(0, 40).map((asset) => {
+                const usedOn = Object.entries(scenePhotos).filter(([, urls]) => urls.includes(asset.url)).map(([k]) => Number(k) + 1);
+                return (
+                  <li key={asset.id} className="shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (selectedScene === null) {
+                          setError('Tap a scene card first, then this photo.');
+                          return;
+                        }
+                        placePhoto(selectedScene, asset.url, true);
+                      }}
+                      className={`relative block h-16 w-16 overflow-hidden rounded-lg border-2 ${usedOn.length > 0 ? 'border-brand-500' : 'border-transparent hover:border-brand-300'}`}
+                      title={usedOn.length > 0 ? `On scene ${usedOn.join(', ')}` : 'Use this photo'}
+                    >
+                      <img src={asset.thumbnailUrl ?? asset.url} alt="" className="h-full w-full object-cover" />
+                      {usedOn.length > 0 && (
+                        <span className="absolute left-0.5 top-0.5 rounded bg-brand-600 px-1 text-[10px] font-semibold text-white">{usedOn.join(',')}</span>
+                      )}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </div>
+
+        <ul className="grid gap-4 [grid-template-columns:repeat(auto-fill,minmax(21rem,1fr))]">
           {scenes.map((scene, index) => {
             const urls = scenePhotos[index] ?? [];
-            const selected = pickingFor === index;
+            const selected = selectedScene === index;
             const tiles = urls.length > 1 || (urls.length === 1 && photoLayout[index] === 'blocks');
             const opacity = Math.round((photoOpacity[index] ?? 1) * 100);
             return (
@@ -679,22 +726,23 @@ export function MagicDesignDialog({
                   setPickInStrip(false);
                   setPickingFor(index);
                 }}
-                className={`flex gap-3 rounded-2xl border-2 bg-white p-3 transition ${selected ? 'border-brand-500 shadow-sm' : 'border-slate-200 hover:border-slate-300'}`}
+                className={`flex gap-4 rounded-2xl border-2 bg-white p-4 transition ${selected ? 'border-brand-500 shadow-md' : 'border-slate-200 hover:border-slate-300 hover:shadow-sm'}`}
               >
-                {/* The picture as it will sit: full, or as tiles. */}
-                <div className="relative aspect-[9/16] w-24 shrink-0 overflow-hidden rounded-xl bg-slate-900">
+                <div className="relative aspect-[9/16] w-28 shrink-0 overflow-hidden rounded-xl bg-slate-900">
                   {urls.length === 0 ? (
-                    <span className="flex h-full w-full items-center justify-center text-[11px] text-slate-400">no photo</span>
+                    <span className="flex h-full w-full flex-col items-center justify-center gap-1 text-[11px] text-slate-400">
+                      <span className="text-2xl">🖼</span>no photo
+                    </span>
                   ) : tiles ? (
-                    <div className={`grid h-full w-full gap-0.5 p-2 ${urls.length >= 4 ? 'grid-cols-2' : 'grid-cols-1'} content-center`}>
+                    <div className={`grid h-full w-full content-center gap-1 p-2 ${urls.length >= 4 ? 'grid-cols-2' : 'grid-cols-1'}`}>
                       {urls.slice(0, 4).map((url, n) => (
-                        <img key={url + n} src={url} alt="" className="aspect-[4/3] w-full rounded object-cover" style={{ opacity: opacity / 100 }} />
+                        <img key={url + n} src={url} alt="" className="aspect-[4/3] w-full rounded-md object-cover" style={{ opacity: opacity / 100 }} />
                       ))}
                     </div>
                   ) : (
                     <img src={urls[0]} alt="" className="h-full w-full object-cover" style={{ opacity: opacity / 100 }} />
                   )}
-                  <span className="absolute left-1 top-1 rounded bg-black/60 px-1.5 text-[11px] font-semibold text-white">{index + 1}</span>
+                  <span className="absolute left-1.5 top-1.5 rounded-md bg-black/60 px-1.5 py-0.5 text-[11px] font-semibold text-white">{index + 1}</span>
                   {urls.length > 0 && (
                     <button
                       type="button"
@@ -707,28 +755,36 @@ export function MagicDesignDialog({
                         });
                         skip(`photo-${index}`);
                       }}
-                      className="absolute right-1 top-1 rounded bg-black/60 px-1.5 text-[11px] text-white hover:bg-red-600"
+                      className="absolute right-1.5 top-1.5 rounded-md bg-black/60 px-1.5 py-0.5 text-[11px] text-white hover:bg-red-600"
                       title="Remove the photos from this scene"
                     >
                       ✕
                     </button>
                   )}
+                  {urls.length > 0 && (
+                    <span className="absolute inset-x-0 bottom-0 bg-black/50 py-0.5 text-center text-[10px] text-white">
+                      {tiles ? `${urls.length} tile${urls.length === 1 ? '' : 's'}` : 'background'}
+                    </span>
+                  )}
                 </div>
 
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium text-slate-900" title={scene.headline}>
+                <div className="flex min-w-0 flex-1 flex-col">
+                  <p className="truncate text-sm font-semibold text-slate-900" title={scene.headline}>
                     {scene.headline || `Scene ${index + 1}`}
                   </p>
-                  <div className="mt-2 grid grid-cols-2 gap-1.5">
+                  <p className="text-xs text-slate-500">{scene.label ?? `Scene ${index + 1}`}</p>
+
+                  <div className="mt-3 grid grid-cols-2 gap-2">
                     <button
                       type="button"
                       onClick={(event) => {
                         event.stopPropagation();
+                        setPhotoLayout((prev) => ({ ...prev, [index]: 'background' }));
                         openUpload(index, true);
                       }}
                       disabled={uploading}
-                      className="rounded-lg bg-brand-600 px-2 py-1.5 text-xs font-medium text-white hover:bg-brand-700 disabled:opacity-50"
-                      title="Choose a photo from your device for the background"
+                      className="rounded-xl bg-brand-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-700 disabled:opacity-50"
+                      title="A photo from your device, behind the words"
                     >
                       {uploading && selected ? 'Uploading…' : '🖼 Background'}
                     </button>
@@ -740,37 +796,19 @@ export function MagicDesignDialog({
                         openUpload(index, false);
                       }}
                       disabled={uploading || urls.length >= 6}
-                      className="rounded-lg border border-brand-300 bg-brand-50 px-2 py-1.5 text-xs font-medium text-brand-700 hover:bg-brand-100 disabled:opacity-50"
-                      title="Add a photo as a block between the lines"
+                      className="rounded-xl border-2 border-brand-200 bg-white px-3 py-2 text-sm font-semibold text-brand-700 hover:bg-brand-50 disabled:opacity-50"
+                      title="A photo from your device, as a block between the lines (up to 6)"
                     >
-                      ▦ + Tile{urls.length > 0 && tiles ? ` (${urls.length})` : ''}
+                      ▦ + Tile
                     </button>
                   </div>
-                  {urls.length === 1 && (
-                    <div className="mt-1.5 flex gap-1 text-[11px]">
-                      {(['background', 'blocks'] as const).map((layoutMode) => (
-                        <button
-                          key={layoutMode}
-                          type="button"
-                          onClick={(event) => {
-                            event.stopPropagation();
-                            setPhotoLayout((prev) => ({ ...prev, [index]: layoutMode }));
-                          }}
-                          className={`rounded-full border px-2 py-0.5 ${
-                            (photoLayout[index] ?? 'background') === layoutMode ? 'border-brand-500 bg-brand-50 text-brand-700' : 'border-slate-200 text-slate-500 hover:bg-slate-50'
-                          }`}
-                        >
-                          {layoutMode === 'background' ? 'Shown as background' : 'Shown as a tile'}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                  <label className="mt-2 flex items-center gap-2 text-xs text-slate-600" onClick={(event) => event.stopPropagation()}>
-                    <span className="w-14 shrink-0">✨ Effect</span>
+
+                  <label className="mt-3 flex items-center gap-3 text-xs text-slate-600" onClick={(event) => event.stopPropagation()}>
+                    <span className="w-16 shrink-0 font-medium text-slate-700">✨ Effect</span>
                     <select
                       value={scene.effect ?? ''}
                       onChange={(event) => setSceneEffect(index, event.target.value as ParticleEffect | '')}
-                      className="min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-2 py-1 text-xs"
+                      className="min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs"
                     >
                       <option value="">None</option>
                       {PARTICLE_EFFECTS.map((effect) => (
@@ -780,8 +818,8 @@ export function MagicDesignDialog({
                       ))}
                     </select>
                   </label>
-                  <label className="mt-1.5 flex items-center gap-2 text-xs text-slate-600" onClick={(event) => event.stopPropagation()}>
-                    <span className="w-14 shrink-0">◐ Opacity</span>
+                  <label className="mt-2 flex items-center gap-3 text-xs text-slate-600" onClick={(event) => event.stopPropagation()}>
+                    <span className="w-16 shrink-0 font-medium text-slate-700">◐ Opacity</span>
                     <input
                       type="range"
                       min={20}
@@ -792,7 +830,7 @@ export function MagicDesignDialog({
                       onChange={(event) => setPhotoOpacity((prev) => ({ ...prev, [index]: Number(event.target.value) / 100 }))}
                       className="min-w-0 flex-1 accent-brand-600 disabled:opacity-40"
                     />
-                    <span className="w-9 text-right tabular-nums">{opacity}%</span>
+                    <span className="w-10 text-right tabular-nums text-slate-700">{opacity}%</span>
                   </label>
                 </div>
               </li>
@@ -978,7 +1016,7 @@ export function MagicDesignDialog({
     <div role="dialog" aria-modal="true" aria-label="Magic Design" className="fixed inset-0 z-50 overflow-y-auto bg-slate-50">
       {/* Top bar: way back, title, history and the one button that matters. */}
       <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/95 backdrop-blur">
-        <div className="mx-auto flex max-w-6xl items-center gap-3 px-4 py-2.5">
+        <div className="mx-auto flex max-w-[1700px] items-center gap-3 px-4 py-2.5">
           <button type="button" onClick={onClose} className="rounded-lg px-2 py-1 text-sm text-slate-600 hover:bg-slate-100">
             ← Back
           </button>
@@ -1014,7 +1052,7 @@ export function MagicDesignDialog({
         </div>
       </header>
 
-      <div className="mx-auto max-w-6xl px-4 py-4 pb-24 sm:pb-8">
+      <div className="mx-auto max-w-[1700px] px-4 py-4 pb-24 sm:pb-8">
         {error && <Alert>{error}</Alert>}
 
         {showTemplates && (
@@ -1097,8 +1135,63 @@ export function MagicDesignDialog({
           </div>
         )}
 
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_340px]">
-          {/* ---- Left: the story ---------------------------------------- */}
+        {/* Brand toolbar: logo, colours and sound in one slim row. */}
+        <div ref={logoCardRef} className={`mb-4 rounded-2xl border bg-white px-3 py-2 ${pickingFor === 'logo' ? 'border-brand-400' : 'border-slate-200'}`}>
+          <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setPickingFor(pickingFor === 'logo' ? null : 'logo')}
+                className={`overflow-hidden rounded-lg border-2 ${pickingFor === 'logo' ? 'border-brand-500' : 'border-slate-200 hover:border-brand-400'}`}
+                title="Logo on every scene"
+              >
+                {logo ? (
+                  <img src={logo} alt="" className="h-9 w-16 bg-slate-100 object-contain" />
+                ) : (
+                  <span className="flex h-9 w-20 items-center justify-center gap-1 bg-slate-50 text-xs font-medium text-slate-700">＋ Logo</span>
+                )}
+              </button>
+              {logo && (
+                <>
+                  <select value={logoPosition || directives.logoPosition || 'top-right'} onChange={(e) => setLogoPosition(e.target.value)} className="rounded-lg border border-slate-300 px-1.5 py-1 text-xs" title="Where the logo sits">
+                    {LOGO_POSITIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  <button type="button" onClick={() => { setLogo(undefined); setPickingFor(null); }} className="text-xs text-red-600 hover:underline">
+                    Remove
+                  </button>
+                </>
+              )}
+            </div>
+
+            <div className="flex items-center gap-2 text-xs text-slate-600">
+              <span className="font-medium text-slate-700">Colours</span>
+              <input type="color" value={brandColor} onChange={(e) => setBrandColor(e.target.value)} title="Main colour" className="h-8 w-10 cursor-pointer rounded-lg border border-slate-300" />
+              <input type="color" value={accentColor} onChange={(e) => setAccentColor(e.target.value)} title="Alternate colour" className="h-8 w-10 cursor-pointer rounded-lg border border-slate-300" />
+            </div>
+
+            <div className="flex min-w-0 items-center gap-2 text-xs">
+              {audio ? (
+                <>
+                  <span className="min-w-0 max-w-[16rem] truncate text-slate-700">🎵 {audio.name}</span>
+                  <button type="button" onClick={() => setAudio(undefined)} className="text-red-600 hover:underline">
+                    Remove
+                  </button>
+                </>
+              ) : (
+                <button type="button" onClick={() => audioInput.current?.click()} className="rounded-lg border border-slate-300 px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:border-brand-400 hover:bg-brand-50">
+                  🎵 Add voice-over or music
+                </button>
+              )}
+            </div>
+          </div>
+          {pickingFor === 'logo' && renderPicker('logo')}
+        </div>
+
+        <div className="grid gap-4">
           <div className="space-y-4">
             <section className="rounded-2xl border border-slate-200 bg-white p-4">
               <div className="mb-3 flex flex-wrap items-center gap-2">
@@ -1371,116 +1464,7 @@ export function MagicDesignDialog({
 
           </div>
 
-          {/* ---- Right: your photos, then the look ----------------------- */}
-          <aside className="space-y-4">
-            <section className="rounded-2xl border border-slate-200 bg-white p-4">
-              <div className="flex items-center gap-2">
-                <h3 className="text-sm font-semibold text-slate-900">Your photos</h3>
-                <button
-                  type="button"
-                  onClick={() => openUpload(typeof pickingFor === 'number' ? pickingFor : 'library', true)}
-                  disabled={uploading}
-                  className="ml-auto rounded-md bg-brand-600 px-2.5 py-1 text-xs font-medium text-white hover:bg-brand-700 disabled:opacity-50"
-                >
-                  {uploading ? 'Uploading…' : '⬆ Upload'}
-                </button>
-              </div>
-              <p className="mt-0.5 text-xs text-slate-500">
-                {typeof pickingFor === 'number'
-                  ? `Tap a photo to use it on scene ${pickingFor + 1}.`
-                  : 'Everything you upload or pick is kept here. Tap a scene card under Edit images, then tap a photo to use it there.'}
-              </p>
-              {library === null ? (
-                <Spinner className="mt-2 h-4 w-4 text-slate-400" />
-              ) : library.filter((asset) => asset.url !== logo).length === 0 ? (
-                <p className="mt-2 rounded-lg border border-dashed border-slate-300 p-3 text-center text-xs text-slate-500">No photos yet. Upload one from your device.</p>
-              ) : (
-                <ul className="mt-2 grid grid-cols-4 gap-1.5">
-                  {library
-                    .filter((asset) => asset.url !== logo)
-                    .slice(0, 24)
-                    .map((asset) => {
-                      const usedOn = Object.entries(scenePhotos).filter(([, urls]) => urls.includes(asset.url)).map(([k]) => Number(k) + 1);
-                      return (
-                        <li key={asset.id}>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (typeof pickingFor !== 'number') {
-                                setMode('images');
-                                setError('Select a scene first: tap its card under Edit images, then this photo.');
-                                return;
-                              }
-                              placePhoto(pickingFor, asset.url, true);
-                            }}
-                            className={`relative block w-full overflow-hidden rounded-md border-2 ${usedOn.length > 0 ? 'border-brand-400' : 'border-transparent hover:border-slate-300'}`}
-                            title={usedOn.length > 0 ? `On scene ${usedOn.join(', ')}` : 'Use this photo'}
-                          >
-                            <img src={asset.thumbnailUrl ?? asset.url} alt="" className="aspect-square w-full object-cover" />
-                            {usedOn.length > 0 && (
-                              <span className="absolute left-0.5 top-0.5 rounded bg-brand-600 px-1 text-[10px] font-medium text-white">{usedOn.join(',')}</span>
-                            )}
-                          </button>
-                        </li>
-                      );
-                    })}
-                </ul>
-              )}
-            </section>
 
-            <section ref={logoCardRef} className={`rounded-2xl border bg-white p-3 ${pickingFor === 'logo' ? 'border-brand-400' : 'border-slate-200'}`}>
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setPickingFor(pickingFor === 'logo' ? null : 'logo')}
-                  className={`overflow-hidden rounded-lg border-2 ${pickingFor === 'logo' ? 'border-brand-500' : 'border-slate-200 hover:border-slate-400'}`}
-                  title="Logo on every scene"
-                >
-                  {logo ? (
-                    <img src={logo} alt="" className="h-9 w-16 bg-slate-100 object-contain" />
-                  ) : (
-                    <span className="flex h-9 w-16 items-center justify-center bg-slate-50 text-[10px] text-slate-500">＋ logo</span>
-                  )}
-                </button>
-                {logo ? (
-                  <select value={logoPosition || directives.logoPosition || 'top-right'} onChange={(e) => setLogoPosition(e.target.value)} className="rounded-lg border border-slate-300 px-1.5 py-1 text-xs" title="Where the logo sits">
-                    {LOGO_POSITIONS.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  <span className="text-xs text-slate-500">Logo</span>
-                )}
-                {logo && (
-                  <button type="button" onClick={() => { setLogo(undefined); setPickingFor(null); }} className="text-xs text-red-600 hover:underline">
-                    Remove
-                  </button>
-                )}
-                <span className="ml-auto flex items-center gap-1.5 text-xs text-slate-600">
-                  <input type="color" value={brandColor} onChange={(e) => setBrandColor(e.target.value)} title="Main colour" className="h-7 w-9 cursor-pointer rounded border border-slate-300" />
-                  <input type="color" value={accentColor} onChange={(e) => setAccentColor(e.target.value)} title="Alternate colour" className="h-7 w-9 cursor-pointer rounded border border-slate-300" />
-                  Colours
-                </span>
-              </div>
-              {pickingFor === 'logo' && renderPicker('logo')}
-              <div className="mt-2 flex items-center gap-2 border-t border-slate-100 pt-2 text-xs">
-                {audio ? (
-                  <>
-                    <span className="min-w-0 flex-1 truncate text-slate-700">🎵 {audio.name}</span>
-                    <button type="button" onClick={() => setAudio(undefined)} className="text-red-600 hover:underline">
-                      Remove
-                    </button>
-                  </>
-                ) : (
-                  <button type="button" onClick={() => audioInput.current?.click()} className="font-medium text-brand-600 hover:underline">
-                    🎵 Add music or a voice-over
-                  </button>
-                )}
-              </div>
-            </section>
-          </aside>
         </div>
       </div>
 
