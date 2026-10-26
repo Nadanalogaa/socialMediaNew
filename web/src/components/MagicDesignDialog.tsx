@@ -148,6 +148,10 @@ export function MagicDesignDialog({
   const [logoPosition, setLogoPosition] = useState<string>(initial?.logoPosition ?? '');
   /** Which scene — or the logo — the picker below is choosing for. */
   const [pickingFor, setPickingFor] = useState<number | 'logo' | null>(null);
+  /** The chooser opened from the picture strip at the top, not from the scene list. */
+  const [pickInStrip, setPickInStrip] = useState(false);
+  /** The strip pulses until the user has touched a picture once. */
+  const [stripSeen, setStripSeen] = useState(false);
   const [uploading, setUploading] = useState(false);
   const photoInput = useRef<HTMLInputElement>(null);
   const [audio, setAudio] = useState<ProjectAudio | undefined>();
@@ -171,6 +175,7 @@ export function MagicDesignDialog({
   /** Opens a scene's photo chooser and scrolls to it. */
   function focusScene(index: number) {
     setStockQuery('');
+    setPickInStrip(false);
     setPickingFor(index);
     setTimeout(() => document.getElementById(`magic-scene-${index}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }), 0);
   }
@@ -610,6 +615,94 @@ export function MagicDesignDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [writing, busy, storyPhotoScenes, scenes.length]);
 
+  /**
+   * Every scene's picture in one row at the top of the change screen, so
+   * changing a photo never needs a scroll: tap one, pick another right here.
+   */
+  function renderPictureStrip() {
+    if (scenes.length === 0) return null;
+    const open = pickInStrip && typeof pickingFor === 'number' ? pickingFor : null;
+    return (
+      <div className={`mb-3 rounded-2xl border-2 p-3 transition ${stripSeen ? 'border-slate-200 bg-white' : 'animate-[pulse_2s_ease-in-out_3] border-amber-300 bg-amber-50'}`}>
+        <div className="mb-2 flex flex-wrap items-center gap-2">
+          <p className="text-sm font-semibold text-slate-900">🖼 Your pictures</p>
+          <p className="text-xs text-slate-600">
+            Tap a picture to change it — pick another, search, or upload your own.
+            {initial ? ' Then press Rebuild at the top to see it in the reel.' : ''}
+          </p>
+        </div>
+        <ul className="flex gap-2 overflow-x-auto pb-1">
+          {scenes.map((scene, index) => {
+            const photo = scenePhotos[index]?.[0];
+            const active = open === index;
+            return (
+              <li key={index} className="shrink-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setStripSeen(true);
+                    setStockQuery('');
+                    setPickInStrip(true);
+                    setPickingFor(active ? null : index);
+                  }}
+                  className={`group relative block h-28 w-[4.4rem] overflow-hidden rounded-xl border-2 sm:h-32 sm:w-20 ${active ? 'border-brand-500 ring-2 ring-brand-500/30' : 'border-slate-200 hover:border-brand-400'}`}
+                  title={`Change the picture on scene ${index + 1}`}
+                >
+                  {photo ? (
+                    <img src={photo} alt="" className="h-full w-full object-cover" />
+                  ) : (
+                    <span className="flex h-full w-full flex-col items-center justify-center bg-slate-100 text-[10px] leading-tight text-slate-500">
+                      <span className="text-lg">＋</span>add photo
+                    </span>
+                  )}
+                  <span className="absolute left-1 top-1 rounded bg-black/60 px-1 text-[10px] font-semibold text-white">{index + 1}</span>
+                  <span className={`absolute inset-x-0 bottom-0 bg-brand-600/90 py-0.5 text-center text-[10px] font-medium text-white ${active ? '' : 'opacity-90 group-hover:opacity-100'}`}>
+                    {active ? 'Choosing…' : 'Change'}
+                  </span>
+                </button>
+                <p className="mt-0.5 w-[4.4rem] truncate text-center text-[10px] text-slate-500 sm:w-20" title={scene.headline}>{scene.headline || `Scene ${index + 1}`}</p>
+              </li>
+            );
+          })}
+        </ul>
+        {open !== null && (
+          <div>
+            {(aiAvailable || guest) && (
+              <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                <span className="text-slate-600">Scene {open + 1}:</span>
+                <button
+                  type="button"
+                  disabled={writing}
+                  onClick={() => void sendChange(`Scene ${open + 1}: use a different picture that fits it better`)}
+                  className="rounded-full bg-brand-600 px-2.5 py-1 font-medium text-white hover:bg-brand-700 disabled:opacity-50"
+                >
+                  ✨ Let AI pick a better one
+                </button>
+                {scenePhotos[open]?.length ? (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setScenePhotos((prev) => {
+                        const next = { ...prev };
+                        delete next[open];
+                        return next;
+                      });
+                      skip(`photo-${open}`);
+                    }}
+                    className="text-red-600 hover:underline"
+                  >
+                    No picture on this scene
+                  </button>
+                ) : null}
+              </div>
+            )}
+            {renderPicker(open)}
+          </div>
+        )}
+      </div>
+    );
+  }
+
   /** The photo or logo chooser, drawn where the choice is being made. */
   function renderPicker(target: number | 'logo') {
     const forLogo = target === 'logo';
@@ -946,6 +1039,7 @@ export function MagicDesignDialog({
                     </p>
                   ) : (
                     <>
+                      {renderPictureStrip()}
                       <div className="max-h-72 space-y-2 overflow-y-auto rounded-xl bg-slate-50 p-3">
                         {description.trim() && (
                           <div className="flex gap-2">
@@ -1249,7 +1343,7 @@ export function MagicDesignDialog({
                           ))}
                         </div>
                       )}
-                      {pickingFor === index && renderPicker(index)}
+                      {pickingFor === index && !pickInStrip && renderPicker(index)}
                     </li>
                   ))}
                 </ul>
