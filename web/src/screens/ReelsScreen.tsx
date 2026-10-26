@@ -24,6 +24,7 @@ import { api, loadSession, uploadAudio, uploadToCloudinary, type MediaAsset } fr
 import { GUEST_LIMITS, useGuest } from '../lib/guest';
 import {
   drawProjectFrame,
+  sceneAt,
   drawSelectionOutline,
   layerHitBox,
   preloadProjectImages,
@@ -225,6 +226,11 @@ function ReelEditor({
   const [sceneIndex, setSceneIndex] = useState(0);
   const [selectedLayerId, setSelectedLayerId] = useState<string | null>(null);
   const [playing, setPlaying] = useState(false);
+  /** When playback started, kept across re-renders so following the scene does not restart it. */
+  const playClock = useRef(performance.now());
+  useEffect(() => {
+    if (playing) playClock.current = performance.now();
+  }, [playing]);
   const [recording, setRecording] = useState(false);
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
@@ -359,7 +365,7 @@ function ReelEditor({
     if (!canvas || !ctx) return;
 
     let frameId = 0;
-    const startedAt = performance.now();
+    const startedAt = playing ? playClock.current : performance.now();
     const total = projectDuration(project);
 
     const drawPaused = () => {
@@ -404,9 +410,16 @@ function ReelEditor({
       return () => cancelAnimationFrame(frameId);
     }
 
+    let shownIndex = sceneIndex;
     const loop = () => {
-      const elapsed = (performance.now() - startedAt) / 1000;
-      drawProjectFrame(ctx, project, images, elapsed % total, canvasW, canvasH);
+      const elapsed = ((performance.now() - startedAt) / 1000) % total;
+      drawProjectFrame(ctx, project, images, elapsed, canvasW, canvasH);
+      // The scene numbers follow the reel as it plays.
+      const { index } = sceneAt(project, elapsed);
+      if (index !== shownIndex) {
+        shownIndex = index;
+        setSceneIndex(index);
+      }
       frameId = requestAnimationFrame(loop);
     };
     loop();
@@ -465,6 +478,15 @@ function ReelEditor({
     setProject(applyImageToAllScenes(project, url));
     setActivePhoto(url);
     setNotice('Photo applied to every scene.');
+  }
+
+  /** Shows a scene; while playing, playback jumps to its start. */
+  function goToScene(index: number) {
+    setSceneIndex(index);
+    setSelectedLayerId(null);
+    if (!playing) return;
+    const offset = project.scenes.slice(0, index).reduce((sum, item) => sum + item.durationSeconds, 0);
+    playClock.current = performance.now() - offset * 1000;
   }
 
   function addLayer(layer: ProjectLayer) {
@@ -873,10 +895,7 @@ function ReelEditor({
           {project.scenes.map((item, index) => (
             <button
               key={item.id}
-              onClick={() => {
-                setSceneIndex(index);
-                setSelectedLayerId(null);
-              }}
+              onClick={() => goToScene(index)}
               title={`${item.name} · ${item.durationSeconds.toFixed(1)}s — tap to see and edit this scene`}
               className={`h-8 w-8 rounded-lg text-sm transition ${
                 index === sceneIndex
@@ -1549,10 +1568,7 @@ function ReelEditor({
               {project.scenes.map((item, index) => (
                 <button
                   key={item.id}
-                  onClick={() => {
-                    setSceneIndex(index);
-                    setSelectedLayerId(null);
-                  }}
+                  onClick={() => goToScene(index)}
                   className={`min-h-9 shrink-0 rounded-lg px-3 text-sm transition ${
                     index === sceneIndex
                       ? 'bg-brand-600 font-medium text-white'

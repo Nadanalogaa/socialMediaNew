@@ -235,6 +235,18 @@ function withStyle(query: string, style: string[]): string {
   return missing.length > 0 ? `${missing.join(' ')} ${cleaned}` : cleaned;
 }
 
+/**
+ * Phone numbers, websites and emails the user typed into the description.
+ * They are as good as the brand kit's: allowed in the story and copied
+ * verbatim into the footer and the closing scene.
+ */
+export function contactsIn(text: string): { phones: string[]; websites: string[]; emails: string[] } {
+  const phones = [...new Set((text.match(/(?:\+91[\s-]?)?(?:\d[\s-]?){10}(?!\d)/g) ?? []).map((m) => m.trim()))];
+  const emails = [...new Set(text.match(/[\w.+-]+@[\w-]+\.[\w.-]+/g) ?? [])];
+  const websites = [...new Set((text.match(/\b(?:https?:\/\/)?(?:www\.)?[a-z0-9-]+(?:\.[a-z0-9-]+)*\.(?:com|in|co\.in|org|net|io|app|shop|store|site|online)\b/gi) ?? []).filter((w) => !emails.some((e) => e.includes(w))))];
+  return { phones, websites, emails };
+}
+
 export interface StoryRequest {
   description: string;
   sceneCount?: number;
@@ -262,7 +274,11 @@ export async function writeMagicStory(brand: BrandContext, input: StoryRequest):
       ];
   task.push(`Return JSON in exactly this shape:\n${STORY_SHAPE}`);
 
-  const text = await generateText(`${brandInstruction(brand)}\n${STORY_RULES}`, task.join('\n\n'), { json: true });
+  const given = contactsIn(input.description);
+  const givenLine = [...given.websites, ...given.phones, ...given.emails].length > 0
+    ? `\nContact details the business gave in its description, which you may also use exactly as written: ${[...given.websites, ...given.phones, ...given.emails].join(', ')}.`
+    : '';
+  const text = await generateText(`${brandInstruction(brand)}${givenLine}\n${STORY_RULES}`, task.join('\n\n'), { json: true });
   const raw = parseJson<Partial<MagicStoryPlan>>(text);
   const scenes = (Array.isArray(raw.scenes) ? raw.scenes : [])
     .filter((scene): scene is StoryScene => !!scene && typeof scene === 'object' && typeof (scene as StoryScene).headline === 'string')
@@ -290,7 +306,10 @@ export async function writeMagicStory(brand: BrandContext, input: StoryRequest):
 
   // Contact details are copied from the brand kit, never typed by the model:
   // a digit or a letter wrong in a phone number or a website is worse than none.
-  const contacts = [brand.website, brand.phone, brand.email].filter((v): v is string => Boolean(v && v.trim()));
+  const website = brand.website?.trim() || given.websites[0];
+  const phone = brand.phone?.trim() || given.phones[0];
+  const email = brand.email?.trim() || given.emails[0];
+  const contacts = [website, phone, email, ...given.websites, ...given.phones, ...given.emails].filter((v): v is string => Boolean(v && v.trim()));
   const normalise = (v: string) => v.toLowerCase().replace(/[\s\-()]/g, '');
   const isKnownContact = (line: string) => contacts.some((c) => normalise(line).includes(normalise(c)));
   for (const scene of scenes) scene.contact = scene.contact.filter(isKnownContact);
@@ -298,7 +317,7 @@ export async function writeMagicStory(brand: BrandContext, input: StoryRequest):
     const last = scenes[scenes.length - 1]!;
     if (last.contact.length === 0) last.contact = contacts.slice(0, 2);
   }
-  const footer = contacts.length > 0 ? [brand.website, brand.phone].filter(Boolean).join(' · ') : undefined;
+  const footer = contacts.length > 0 ? [website, phone].filter(Boolean).join(' · ') : undefined;
 
   return {
     title: typeof raw.title === 'string' && raw.title.trim() ? raw.title.trim().slice(0, 80) : scenes[0]!.headline,
